@@ -5,7 +5,7 @@ export type QuoteStatus = 'Rascunho' | 'Enviado' | 'Aprovado' | 'Cancelado' | 'P
 export interface CompanyInfo {
   name: string;
   address: string;
-  taxId: string; // CNPJ/CPF
+  taxid: string; // CNPJ/CPF
   phone: string;
   email: string;
   logoDataUrl?: string;
@@ -20,7 +20,7 @@ export interface Vendor {
 export interface Client {
   id: string;
   name: string;
-  taxId?: string;
+  taxid: string;
   phone?: string;
   email?: string;
   address?: string;

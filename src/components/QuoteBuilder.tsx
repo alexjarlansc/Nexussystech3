@@ -40,7 +40,24 @@ export default function QuoteBuilder() {
     phone: '',
     email: ''
   });
-  const [clients, setClients] = useState<Client[]>(() => getJSON<Client[]>(StorageKeys.clients, []));
+  const [clients, setClients] = useState<Client[]>([]);
+  // Buscar clientes do banco de dados Supabase ao carregar
+  // Função para buscar clientes do banco
+  async function fetchClients() {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('*')
+      .order('name');
+    if (error) {
+      toast.error('Erro ao buscar clientes do banco');
+      return;
+    }
+    setClients(data || []);
+  }
+
+  useEffect(() => {
+    fetchClients();
+  }, []);
   const [products, setProducts] = useState<Product[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>(() => getJSON<Quote[]>(StorageKeys.quotes, []));
 
@@ -73,19 +90,16 @@ export default function QuoteBuilder() {
   const subtotalWithDiscount = useMemo(() => subtotal - discountValue, [subtotal, discountValue]);
   const total = useMemo(() => subtotalWithDiscount + freight, [subtotalWithDiscount, freight]);
 
-  useEffect(() => {
-    setJSON(StorageKeys.clients, clients);
-  }, [clients]);
+
+  // Removido: não persiste mais clientes localmente
   useEffect(() => {
     setJSON(StorageKeys.quotes, quotes);
   }, [quotes]);
 
   // Carregar produtos do banco de dados
   useEffect(() => {
-    if (profile?.company_id) {
-      loadProducts();
-    }
-  }, [profile?.company_id]);
+    loadProducts();
+  }, []);
 
   // Atualizar dados do vendedor quando o perfil mudar
   useEffect(() => {
@@ -104,9 +118,7 @@ export default function QuoteBuilder() {
         .from('products')
         .select('*')
         .order('name');
-      
       if (error) throw error;
-      
       const formattedProducts: Product[] = data.map(p => ({
         id: p.id,
         name: p.name,
@@ -115,7 +127,6 @@ export default function QuoteBuilder() {
         imageDataUrl: p.image_url || '',
         price: Number(p.price)
       }));
-      
       setProducts(formattedProducts);
     } catch (error) {
       console.error('Erro ao carregar produtos:', error);
@@ -210,35 +221,31 @@ export default function QuoteBuilder() {
 
   async function addClient() {
     if (!cName) { toast.error('Nome do cliente é obrigatório'); return; }
-    const client: Client = {
-      id: crypto.randomUUID(),
-      name: cName,
-      taxId: cTax,
-      phone: cPhone,
-      email: cEmail,
-      address: cAddr,
-    };
-    setClients((arr) => [client, ...arr]);
-    setClientId(client.id);
-    setOpenClient(false);
-    setCName(''); setCTax(''); setCPhone(''); setCEmail(''); setCAddr('');
     // Salvar no Supabase
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('clients')
       .insert({
-        name: client.name,
-        taxid: client.taxId || null,
-        phone: client.phone || null,
-        email: client.email || null,
-        address: client.address || null,
+        name: cName,
+        taxid: cTax || null,
+        phone: cPhone || null,
+        email: cEmail || null,
+        address: cAddr || null,
         company_id: profile?.company_id || null,
         created_by: user?.id || null
-      });
+      })
+      .select()
+      .single();
     if (error) {
       toast.error('Erro ao salvar cliente no banco: ' + error.message);
-    } else {
-      toast.success('Cliente cadastrado no banco!');
+      return;
     }
+    if (data) {
+      setClientId(data.id);
+      toast.success('Cliente cadastrado no banco!');
+      fetchClients(); // Atualiza lista após cadastro
+    }
+    setOpenClient(false);
+    setCName(''); setCTax(''); setCPhone(''); setCEmail(''); setCAddr('');
   }
 
   // Product modal state
@@ -389,7 +396,13 @@ export default function QuoteBuilder() {
                 </div>
                 <ClientSearch
                   clients={clients}
-                  onSelect={c => setClientId(c.id)}
+                  onSelect={c => {
+                    if (!c || !c.id) {
+                      toast.error('Selecione um cliente válido do banco de dados!');
+                      return;
+                    }
+                    setClientId(c.id);
+                  }}
                 />
               </div>
             </div>
@@ -743,7 +756,10 @@ export default function QuoteBuilder() {
       </Dialog>
 
       {/* Search Product Modal */}
-      <Dialog open={openSearchProduct} onOpenChange={setOpenSearchProduct}>
+      <Dialog open={openSearchProduct} onOpenChange={async (open) => {
+        setOpenSearchProduct(open);
+        if (open) await loadProducts(); // Sempre recarrega produtos ao abrir
+      }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>Buscar Produto</DialogTitle></DialogHeader>
           <SearchProductModal 
@@ -939,7 +955,7 @@ function ReceiptView({ quote }: { quote: Quote }) {
   const company = getJSON<CompanyInfo>(StorageKeys.company, {
     name: 'Nexus Systech',
     address: '',
-    taxId: '',
+  taxid: '',
     phone: '',
     email: '',
     logoDataUrl: undefined,
@@ -952,7 +968,7 @@ function ReceiptView({ quote }: { quote: Quote }) {
           <div className="text-2xl font-bold">{company.name || 'Nexus Systech'}</div>
           {company.address && <div className="text-muted-foreground">{company.address}</div>}
           <div className="text-muted-foreground">
-            {[company.taxId ? `CNPJ/CPF: ${company.taxId}` : null, company.phone, company.email]
+            {[company.taxid ? `CNPJ/CPF: ${company.taxid}` : null, company.phone, company.email]
               .filter(Boolean)
               .join(' · ')}
           </div>
@@ -970,7 +986,7 @@ function ReceiptView({ quote }: { quote: Quote }) {
         <div className="mt-2">Vendedor: {quote.vendor.name} · {quote.vendor.phone} · {quote.vendor.email}</div>
         <div className="mt-1">
           Cliente: {quote.clientSnapshot.name}
-          {quote.clientSnapshot.taxId ? ` · ${quote.clientSnapshot.taxId}` : ''}
+          {quote.clientSnapshot.taxid ? ` · ${quote.clientSnapshot.taxid}` : ''}
           {quote.clientSnapshot.phone ? ` · ${quote.clientSnapshot.phone}` : ''}
           {quote.clientSnapshot.email ? ` · ${quote.clientSnapshot.email}` : ''}
           {quote.clientSnapshot.address ? ` · ${quote.clientSnapshot.address}` : ''}
