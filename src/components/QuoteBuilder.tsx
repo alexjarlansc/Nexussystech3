@@ -749,7 +749,9 @@ export default function QuoteBuilder() {
                 <div key={q.id} className="border rounded-md p-2">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-semibold">{q.number}</div>
+                      <div className={q.type === 'PEDIDO' ? 'font-semibold text-green-600' : 'font-semibold'}>
+                        {q.type === 'PEDIDO' ? 'Pedido' : q.number}
+                      </div>
                       <div className="text-xs text-muted-foreground">{q.type==='ORCAMENTO' ? 'Orçamento' : 'Pedido'} · {new Date(q.createdAt).toLocaleDateString('pt-BR')} · Validade {q.validityDays}d</div>
                       <div className="text-xs">Cliente: {q.clientSnapshot.name}</div>
                       <div className="text-xs">Total: {currencyBRL(q.total)}</div>
@@ -757,6 +759,31 @@ export default function QuoteBuilder() {
                     </div>
                     <div className="flex flex-col gap-2">
                       <Button size="sm" onClick={() => setOpenReceipt(q.id)}>Recibo</Button>
+                      {/* Botão para gerar pedido de venda se for orçamento */}
+                      {q.type === 'ORCAMENTO' && (
+                        <Button size="sm" variant="default" onClick={async () => {
+                          // Atualiza o tipo para PEDIDO
+                          const { error } = await supabase.from('quotes').update({ type: 'PEDIDO' }).eq('id', q.id);
+                          if (!error) {
+                            toast.success('Pedido de venda gerado!');
+                            fetchQuotes();
+                          } else {
+                            toast.error('Erro ao gerar pedido');
+                          }
+                        }}>Gerar Pedido de Venda</Button>
+                      )}
+                      {/* Botão para retornar para orçamento, só admin */}
+                      {q.type === 'PEDIDO' && profile?.role === 'admin' && (
+                        <Button size="sm" variant="outline" onClick={async () => {
+                          const { error } = await supabase.from('quotes').update({ type: 'ORCAMENTO' }).eq('id', q.id);
+                          if (!error) {
+                            toast.success('Retornado para orçamento!');
+                            fetchQuotes();
+                          } else {
+                            toast.error('Erro ao retornar para orçamento');
+                          }
+                        }}>Retornar para Orçamento</Button>
+                      )}
                       {profile?.role === 'admin' ? (
                         <Button size="sm" variant="destructive" onClick={() => handleDeleteQuote(q.id)}>Excluir</Button>
                       ) : (
