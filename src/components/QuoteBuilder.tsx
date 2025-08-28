@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
 import { Client, Product, Quote, QuoteItemSnapshot, QuoteStatus, QuoteType, PaymentMethod, Vendor, CompanyInfo } from '@/types';
-import { StorageKeys, getJSON, setJSON, getString } from '@/utils/storage';
+import { StorageKeys, getString } from '@/utils/storage';
 import { hashSHA256 } from '@/utils/crypto';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -60,7 +60,7 @@ export default function QuoteBuilder() {
     fetchClients();
   }, []);
   const [products, setProducts] = useState<Product[]>([]);
-  const [quotes, setQuotes] = useState<Quote[]>(() => getJSON<Quote[]>(StorageKeys.quotes, []));
+  const [quotes, setQuotes] = useState<Quote[]>([]);
 
   const [clientId, setClientId] = useState<string>('');
   const [items, setItems] = useState<QuoteItemSnapshot[]>([]);
@@ -93,9 +93,38 @@ export default function QuoteBuilder() {
 
 
   // Removido: não persiste mais clientes localmente
+
+  // Buscar orçamentos do Supabase conforme permissão
+  async function fetchQuotes() {
+    if (!user) return;
+  let query = supabase.from('quotes').select('*').order('created_at', { ascending: false });
+    if (profile?.role !== 'admin') {
+      query = query.eq('created_by', user.id);
+    }
+    const { data, error } = await query;
+    if (error) {
+      toast.error('Erro ao buscar orçamentos');
+      return;
+    }
+    // Converter snake_case para camelCase para uso no frontend
+    const mapped = (data || []).map((q: any) => ({
+      ...q,
+      clientId: q.client_id,
+      createdAt: q.created_at,
+      validityDays: q.validity_days,
+      paymentMethod: q.payment_method,
+      paymentTerms: q.payment_terms,
+      clientSnapshot: q.client_snapshot,
+      companyId: q.company_id,
+      createdBy: q.created_by,
+    }));
+    setQuotes(mapped);
+  }
+
   useEffect(() => {
-    setJSON(StorageKeys.quotes, quotes);
-  }, [quotes]);
+    fetchQuotes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, profile]);
 
   // Carregar produtos do banco de dados
   useEffect(() => {
@@ -162,7 +191,7 @@ export default function QuoteBuilder() {
     setItems((arr) => arr.filter((_, i) => i !== index));
   }
 
-  function handleSaveQuote() {
+  async function handleSaveQuote() {
     const used = new Set(quotes.map((q) => q.number));
     const number = nextNumber(type, used);
     const client = clients.find((c) => c.id === clientId);
@@ -179,27 +208,33 @@ export default function QuoteBuilder() {
       return;
     }
 
-    const quote: Quote = {
-      id: crypto.randomUUID(),
+    const quote: any = {
       number,
       type,
-      createdAt: new Date().toISOString(),
-      validityDays,
+      created_at: new Date().toISOString(),
+      validity_days: validityDays,
       vendor,
-      clientId,
-      clientSnapshot: client,
+      client_id: client.id,
+      client_snapshot: client,
       items,
       freight,
-      paymentMethod,
-      paymentTerms,
+      payment_method: paymentMethod,
+      payment_terms: paymentTerms,
       notes,
       status,
       subtotal,
       total,
+      created_by: user?.id,
+      company_id: profile?.company_id,
     };
-    setQuotes((qs) => [quote, ...qs]);
+  const { data, error } = await supabase.from('quotes').insert(quote).select().single();
+    if (error) {
+      toast.error('Erro ao salvar orçamento: ' + error.message);
+      return;
+    }
     setItems([]);
     toast.success(`${type === 'ORCAMENTO' ? 'Orçamento' : 'Pedido'} ${number} salvo`);
+    fetchQuotes();
   }
 
   async function handleDeleteQuote(id: string) {
@@ -213,8 +248,13 @@ export default function QuoteBuilder() {
       toast.error('Senha incorreta');
       return;
     }
-    setQuotes((qs) => qs.filter((q) => q.id !== id));
+    const { error } = await supabase.from('quotes').delete().eq('id', id);
+    if (error) {
+      toast.error('Erro ao excluir orçamento: ' + error.message);
+      return;
+    }
     toast.success('Registro excluído');
+    fetchQuotes();
   }
 
   // Client modal state
@@ -305,7 +345,7 @@ export default function QuoteBuilder() {
       setPName(''); setPDesc(''); setPOpt(''); setPPrice(''); setPImg(undefined);
       toast.success('Produto cadastrado com sucesso!');
       loadProducts();
-    } catch (error: any) {
+  } catch (error: unknown) {
       console.error('Erro ao cadastrar produto:', error);
       toast.error('Erro ao cadastrar produto: ' + (error?.message || JSON.stringify(error)));
     }
@@ -800,9 +840,11 @@ export default function QuoteBuilder() {
       <Dialog open={!!openReceipt} onOpenChange={() => setOpenReceipt(null)}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader><DialogTitle>Recibo</DialogTitle></DialogHeader>
-          {openReceipt && (
-            <ReceiptView quote={quotes.find((q) => q.id === openReceipt)!} />
-            )}
+          {openReceipt && (() => {
+            const quote = quotes.find((q) => q.id === openReceipt);
+            if (!quote) return <div className="text-red-600 text-sm">Orçamento não encontrado.</div>;
+            return <ReceiptView quote={quote} />;
+          })()}
           <DialogFooter>
             <Button className="no-print" onClick={() => window.print()}>Exportar PDF</Button>
           </DialogFooter>
@@ -961,15 +1003,23 @@ function EditProductModal({
   );
 }
 
+
 function ReceiptView({ quote }: { quote: Quote }) {
-  const company = getJSON<CompanyInfo>(StorageKeys.company, {
+  // Buscar dados da empresa do localStorage, se existir
+  let company: CompanyInfo = {
     name: 'Nexus Systech',
     address: '',
-  taxid: '',
+    taxid: '',
     phone: '',
     email: '',
     logoDataUrl: undefined,
-  });
+  };
+  try {
+    const raw = localStorage.getItem(StorageKeys.company);
+    if (raw) {
+      company = { ...company, ...JSON.parse(raw) };
+    }
+  } catch {}
 
   return (
     <article className="text-sm print-area">
