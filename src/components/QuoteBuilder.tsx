@@ -20,12 +20,18 @@ function currencyBRL(n: number) {
 }
 
 function nextNumber(type: QuoteType, used: Set<string>): string {
-  const key = type === 'ORCAMENTO' ? StorageKeys.orcCounter : StorageKeys.pedCounter;
+  // Sequência separada para orçamento e pedido
+  let key = StorageKeys.orcCounter;
+  let prefix = 'ORC';
+  if (type === 'PEDIDO') {
+    key = 'pedCounter'; // Defina StorageKeys.pedCounter se não existir
+    prefix = 'PED';
+  }
   let idx = parseInt(getString(key, '0') || '0', 10);
   let number = '';
   do {
     idx += 1;
-    number = `${type === 'ORCAMENTO' ? 'ORC' : 'PED'}-${String(idx).padStart(6, '0')}`;
+    number = `${prefix}-${String(idx).padStart(6, '0')}`;
   } while (used.has(number));
   localStorage.setItem(key, String(idx));
   return number;
@@ -1009,11 +1015,17 @@ export default function QuoteBuilder() {
       {/* Receipt Modal */}
       <Dialog open={!!openReceipt} onOpenChange={() => setOpenReceipt(null)}>
         <DialogContent className="sm:max-w-2xl">
-          <DialogHeader><DialogTitle>Recibo</DialogTitle></DialogHeader>
           {openReceipt && (() => {
             const quote = quotes.find((q) => q.id === openReceipt);
             if (!quote) return <div className="text-red-600 text-sm">Orçamento não encontrado.</div>;
-            return <ReceiptView quote={quote} />;
+            // Se for pedido, não exibe título
+            if (quote.type === 'PEDIDO') {
+              return <ReceiptView quote={quote} hideTitle />;
+            }
+            return <>
+              <DialogHeader><DialogTitle>Recibo</DialogTitle></DialogHeader>
+              <ReceiptView quote={quote} />
+            </>;
           })()}
           <DialogFooter>
             <Button className="no-print" onClick={() => window.print()}>Exportar PDF</Button>
@@ -1174,7 +1186,7 @@ function EditProductModal({
 }
 
 
-function ReceiptView({ quote }: { quote: Quote }) {
+function ReceiptView({ quote, hideTitle }: { quote: Quote, hideTitle?: boolean }) {
   // Buscar dados da empresa do localStorage, se existir
   let company: CompanyInfo = {
     name: 'Nexus Systech',
@@ -1193,20 +1205,22 @@ function ReceiptView({ quote }: { quote: Quote }) {
 
   return (
     <article className="text-sm print-area">
-      <header className="flex items-start justify-between avoid-break">
-        <div>
-          <div className="text-2xl font-bold">{company.name || 'Nexus Systech'}</div>
-          {company.address && <div className="text-muted-foreground">{company.address}</div>}
-          <div className="text-muted-foreground">
-            {[company.taxid ? `CNPJ/CPF: ${company.taxid}` : null, company.phone, company.email]
-              .filter(Boolean)
-              .join(' · ')}
+      {!hideTitle && (
+        <header className="flex items-start justify-between avoid-break">
+          <div>
+            <div className="text-2xl font-bold">{company.name || 'Nexus Systech'}</div>
+            {company.address && <div className="text-muted-foreground">{company.address}</div>}
+            <div className="text-muted-foreground">
+              {[company.taxid ? `CNPJ/CPF: ${company.taxid}` : null, company.phone, company.email]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
           </div>
-        </div>
-        {company.logoDataUrl && (
-          <img src={company.logoDataUrl} alt={`Logo ${company.name || 'da empresa'}`} className="h-16 w-16 object-contain" />
-        )}
-      </header>
+          {company.logoDataUrl && (
+            <img src={company.logoDataUrl} alt={`Logo ${company.name || 'da empresa'}`} className="h-16 w-16 object-contain" />
+          )}
+        </header>
+      )}
 
       <section className="mt-4 avoid-break">
         <div className="text-xl font-bold">{quote.type === 'ORCAMENTO' ? 'Orçamento' : 'Pedido'} {quote.number}</div>
@@ -1281,6 +1295,20 @@ function ReceiptView({ quote }: { quote: Quote }) {
             <div className="text-muted-foreground whitespace-pre-wrap">{quote.notes}</div>
           </div>
         )}
+      </section>
+
+      {/* Assinaturas */}
+      <section className="mt-8 flex flex-col md:flex-row gap-8 items-end justify-between print:mt-16">
+        <div className="flex flex-col items-center w-full md:w-1/2">
+          <div className="border-t border-dashed border-gray-400 w-60 h-0 mb-1" />
+          <div className="text-xs text-muted-foreground">Assinatura do Vendedor</div>
+          <div className="font-medium text-sm mt-1">{quote.vendor?.name || '_________________'}</div>
+        </div>
+        <div className="flex flex-col items-center w-full md:w-1/2 mt-8 md:mt-0">
+          <div className="border-t border-dashed border-gray-400 w-60 h-0 mb-1" />
+          <div className="text-xs text-muted-foreground">Assinatura do Cliente</div>
+          <div className="font-medium text-sm mt-1">{quote.clientSnapshot?.name || '_________________'}</div>
+        </div>
       </section>
     </article>
   );
