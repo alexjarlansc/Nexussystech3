@@ -32,9 +32,55 @@ function nextNumber(type: QuoteType, used: Set<string>): string {
 }
 
 export default function QuoteBuilder() {
+  // Token gerado pelo admin (deve ser o primeiro hook do componente)
+  const [generatedToken, setGeneratedToken] = useState('');
+
+  // Controle de token usado e validade
+  function isTokenValid(token: string) {
+    if (!token.startsWith('DESC')) return false;
+    const used = localStorage.getItem(`used_token_${token}`);
+    if (used) return false; // já usado
+    const gen = localStorage.getItem(`gen_token_${token}`);
+    if (!gen) return false;
+    const genTime = parseInt(gen, 10);
+    if (isNaN(genTime)) return false;
+    // 15 minutos = 900000 ms
+    if (Date.now() - genTime > 900000) return false;
+    return true;
+  }
+
+  function markTokenUsed(token: string) {
+    localStorage.setItem(`used_token_${token}`, '1');
+  }
+
+  // Quando admin gera token, salva timestamp
+  useEffect(() => {
+    if (generatedToken) {
+      localStorage.setItem(`gen_token_${generatedToken}`, String(Date.now()));
+    }
+  }, [generatedToken]);
   const { profile, user } = useAuth();
   const [type, setType] = useState<QuoteType>('ORCAMENTO');
   const [validityDays, setValidityDays] = useState(7);
+  // Estados para controle de desconto com token
+  const [discountToken, setDiscountToken] = useState('');
+  const [maxDiscount, setMaxDiscount] = useState(5);
+  useEffect(() => {
+    // Se admin, libera qualquer desconto
+    if (profile?.role === 'admin') {
+      setMaxDiscount(100);
+      return;
+    }
+    // Se token válido, libera até o valor do token
+    if (discountToken.startsWith('DESC')) {
+      const perc = parseInt(discountToken.replace('DESC', ''));
+      if (!isNaN(perc) && perc > 5) {
+        setMaxDiscount(perc);
+        return;
+      }
+    }
+    setMaxDiscount(5);
+  }, [profile, discountToken]);
   const [vendor, setVendor] = useState<Vendor>({
     name: '',
     phone: '',
@@ -64,7 +110,7 @@ export default function QuoteBuilder() {
 
   const [clientId, setClientId] = useState<string>('');
   const [items, setItems] = useState<QuoteItemSnapshot[]>([]);
-  const [freight, setFreight] = useState(0);
+  const [freight, setFreight] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Pix');
   const [paymentTerms, setPaymentTerms] = useState('');
   const [notes, setNotes] = useState('');
@@ -79,17 +125,18 @@ export default function QuoteBuilder() {
 
   // Discount state
   const [discountType, setDiscountType] = useState<'percentage' | 'value'>('percentage');
-  const [discountAmount, setDiscountAmount] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState('');
 
   const subtotal = useMemo(() => items.reduce((s, it) => s + it.subtotal, 0), [items]);
   const discountValue = useMemo(() => {
+    const value = parseFloat(discountAmount || '0');
     if (discountType === 'percentage') {
-      return subtotal * (discountAmount / 100);
+      return subtotal * (value / 100);
     }
-    return discountAmount;
+    return value;
   }, [subtotal, discountType, discountAmount]);
   const subtotalWithDiscount = useMemo(() => subtotal - discountValue, [subtotal, discountValue]);
-  const total = useMemo(() => subtotalWithDiscount + freight, [subtotalWithDiscount, freight]);
+  const total = useMemo(() => subtotalWithDiscount + Number(freight || '0'), [subtotalWithDiscount, freight]);
 
 
   // Removido: não persiste mais clientes localmente
@@ -192,6 +239,16 @@ export default function QuoteBuilder() {
   }
 
   async function handleSaveQuote() {
+    // Se usuário comum e desconto > 5%, precisa de token válido
+    if (parseFloat(discountAmount || '0') > 5 && profile?.role !== 'admin') {
+      if (!isTokenValid(discountToken)) {
+        toast.error('Token inválido, expirado ou já utilizado. Solicite um novo ao administrador.');
+        return;
+      }
+      markTokenUsed(discountToken); // marca como usado, expira para outros orçamentos
+      setMaxDiscount(5); // volta o limite para 5% após uso
+      setDiscountToken(''); // limpa o campo
+    }
     const used = new Set(quotes.map((q) => q.number));
     const number = nextNumber(type, used);
     const client = clients.find((c) => c.id === clientId);
@@ -217,7 +274,7 @@ export default function QuoteBuilder() {
       client_id: client.id,
       client_snapshot: client,
       items,
-      freight,
+  freight: Number(freight || '0'),
       payment_method: paymentMethod,
       payment_terms: paymentTerms,
       notes,
@@ -520,7 +577,9 @@ export default function QuoteBuilder() {
               <div className="space-y-1 md:space-y-2">
                 <Label htmlFor="frete">Frete</Label>
                 <Input id="frete" type="number" step="0.01" value={freight}
-                  onChange={(e) => setFreight(Number(e.target.value))}
+                  placeholder="0"
+                  onFocus={e => e.target.select()}
+                  onChange={e => setFreight(e.target.value.replace(/[^0-9.,-]/g, ''))}
                 />
                 <Label>Método de pagamento</Label>
                 <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}>
@@ -552,24 +611,108 @@ export default function QuoteBuilder() {
             {/* Discount Section */}
             <div className="mt-4 grid grid-cols-12 gap-2 md:gap-4 items-center">
               <div className="col-span-12 md:col-span-4">
-                <Label>Desconto:</Label>
+                <Label>Desconto (%):</Label>
+                {profile?.role === 'admin' ? (
+                  <div className="mt-2 flex flex-col gap-2">
+                    <div className="flex gap-2 items-center">
+                      <Input
+                        type="number"
+                        min={6}
+                        max={100}
+                        step="1"
+                        placeholder="% para liberar"
+                        style={{ width: 120 }}
+                        id="admin-discount-token-value"
+                      />
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          const val = (document.getElementById('admin-discount-token-value') as HTMLInputElement)?.value;
+                          const perc = parseInt(val || '');
+                          if (!perc || perc <= 5 || perc > 100) {
+                            toast.error('Informe um percentual acima de 5 e até 100');
+                            return;
+                          }
+                          setGeneratedToken(`DESC${perc}`);
+                        }}
+                      >Gerar Token</Button>
+                    </div>
+                    {generatedToken && (
+                      <div className="flex items-center gap-2">
+                        <Input readOnly value={generatedToken} style={{ width: 100 }} />
+                        <Button type="button" onClick={() => {navigator.clipboard.writeText(generatedToken); toast.success('Token copiado!')}}>Copiar</Button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-2 flex flex-col gap-2">
+                    <div className="flex gap-2 items-center">
+                      <Input
+                        type="text"
+                        value={discountToken}
+                        onChange={e => setDiscountToken(e.target.value.toUpperCase())}
+                        placeholder="Token do administrador"
+                        style={{ width: 120 }}
+                        id="user-discount-token-value"
+                      />
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (!discountToken) {
+                            toast.error('Digite o token para aplicar');
+                            return;
+                          }
+                          if (!isTokenValid(discountToken)) {
+                            toast.error('Token inválido, expirado ou já utilizado. Solicite um novo ao administrador.');
+                            return;
+                          }
+                          setMaxDiscount(parseInt(discountToken.replace('DESC', '')));
+                          toast.success('Token aplicado! Agora você pode usar o desconto liberado.');
+                        }}
+                      >Aplicar Token</Button>
+                    </div>
+                    {discountToken && !isTokenValid(discountToken) && (
+                      <span className="text-xs text-red-600">Token inválido, expirado ou já utilizado. Solicite um novo ao administrador.</span>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="col-span-12 md:col-span-8 flex flex-col sm:flex-row gap-2">
-                <Select value={discountType} onValueChange={(v: 'percentage' | 'value') => setDiscountType(v)}>
-                  <SelectTrigger className="w-20">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="percentage">%</SelectItem>
-                    <SelectItem value="value">R$</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="col-span-12 md:col-span-8 flex flex-col gap-2">
                 <Input
                   type="number"
                   value={discountAmount}
-                  onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  onFocus={e => e.target.select()}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^0-9.,-]/g, '');
+                    if (parseFloat(val || '0') > maxDiscount) {
+                      toast.error(`Desconto máximo permitido: ${maxDiscount}%`);
+                      return;
+                    }
+                    setDiscountAmount(val);
+                  }}
                   className="flex-1"
+                  min="0"
+                  max={maxDiscount}
+                  step="any"
                 />
+                {parseFloat(discountAmount || '0') > 5 && profile?.role !== 'admin' && (
+                  <div className="flex flex-col gap-1 mt-2">
+                    <Input
+                      type="text"
+                      value={discountToken}
+                      onChange={e => setDiscountToken(e.target.value.toUpperCase())}
+                      placeholder="Token do administrador"
+                      className="flex-1 border-red-500"
+                    />
+                    {discountToken && !isTokenValid(discountToken) && (
+                      <span className="text-xs text-red-600">Token inválido, expirado ou já utilizado. Solicite um novo ao administrador.</span>
+                    )}
+                    {!discountToken && (
+                      <span className="text-xs text-red-600">Token obrigatório para desconto acima de 5%</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -584,7 +727,7 @@ export default function QuoteBuilder() {
                   </>
                 )}
                 <div className="text-sm text-muted-foreground">Frete</div>
-                <div className="text-lg font-semibold">{currencyBRL(freight)}</div>
+                <div className="text-lg font-semibold">{currencyBRL(Number(freight || '0'))}</div>
                 <div className="text-sm text-muted-foreground">Total</div>
                 <div className="text-2xl font-bold">{currencyBRL(total)}</div>
               </div>
