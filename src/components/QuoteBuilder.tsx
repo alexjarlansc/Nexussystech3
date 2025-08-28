@@ -44,6 +44,7 @@ export default function QuoteBuilder() {
   // Buscar clientes do banco de dados Supabase ao carregar
   // Função para buscar clientes do banco
   async function fetchClients() {
+    // Buscar clientes da tabela correta
     const { data, error } = await supabase
       .from('clients')
       .select('*')
@@ -202,6 +203,10 @@ export default function QuoteBuilder() {
   }
 
   async function handleDeleteQuote(id: string) {
+    if (profile?.role !== 'admin') {
+      toast.error('Apenas administradores podem excluir orçamentos.');
+      return;
+    }
     const pwd = prompt('Digite a senha para excluir (reikar2025)');
     if (pwd === null) return;
     if (pwd !== 'reikar2025') {
@@ -279,9 +284,13 @@ export default function QuoteBuilder() {
     }
     
     try {
+  // Gerar código numérico único para o produto (apenas números)
+  let code = Date.now().toString() + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  code = code.replace(/[^0-9]/g, ''); // Garante só números
       const { error } = await supabase
         .from('products')
         .insert({
+          id: code, // apenas números
           name: pName,
           description: pDesc || null,
           options: pOpt || null,
@@ -292,16 +301,13 @@ export default function QuoteBuilder() {
         });
 
       if (error) throw error;
-      
       setOpenProduct(false);
       setPName(''); setPDesc(''); setPOpt(''); setPPrice(''); setPImg(undefined);
       toast.success('Produto cadastrado com sucesso!');
-      
-      // Recarregar produtos
       loadProducts();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao cadastrar produto:', error);
-      toast.error('Erro ao cadastrar produto');
+      toast.error('Erro ao cadastrar produto: ' + (error?.message || JSON.stringify(error)));
     }
   };
 
@@ -352,12 +358,12 @@ export default function QuoteBuilder() {
   };
 
   return (
-    <main className="container mx-auto">
-      <section aria-labelledby="editor" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <Card className="card-elevated p-4 md:p-6">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-flex rounded-md border overflow-hidden">
+    <main className="container mx-auto px-1 sm:px-2 md:px-4">
+      <section aria-labelledby="editor" className="grid grid-cols-1 lg:grid-cols-3 gap-2 md:gap-4 lg:gap-6">
+        <div className="lg:col-span-2 space-y-2 md:space-y-4">
+          <Card className="card-elevated p-2 sm:p-4 md:p-6">
+            <div className="flex flex-col sm:flex-row flex-wrap items-center gap-2 sm:gap-3">
+              <div className="inline-flex flex-col sm:flex-row rounded-md border overflow-hidden w-full sm:w-auto mb-2 sm:mb-0">
                 <button
                   className={`px-4 py-2 text-sm ${type==='ORCAMENTO' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
                   onClick={() => setType('ORCAMENTO')}
@@ -382,14 +388,14 @@ export default function QuoteBuilder() {
               </div>
             </div>
 
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
+              <div className="space-y-1 md:space-y-2">
                 <h3 className="font-semibold">Dados do Vendedor</h3>
                 <Input placeholder="Nome" value={vendor.name} onChange={(e) => setVendor({ ...vendor, name: e.target.value })} />
                 <Input placeholder="Telefone" value={vendor.phone} onChange={(e) => setVendor({ ...vendor, phone: e.target.value })} />
                 <Input placeholder="Email" type="email" value={vendor.email} onChange={(e) => setVendor({ ...vendor, email: e.target.value })} />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1 md:space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">Cliente</h3>
                   <Button size="sm" variant="secondary" onClick={() => setOpenClient(true)}>Cadastrar Cliente</Button>
@@ -407,10 +413,10 @@ export default function QuoteBuilder() {
               </div>
             </div>
 
-            <div className="mt-6">
-              <div className="flex items-center justify-between mb-2">
+            <div className="mt-4">
+              <div className="flex flex-col sm:flex-row items-center justify-between mb-2 gap-2">
                 <h3 className="font-semibold">Itens</h3>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2 w-full">
                   <Button size="sm" variant="secondary" onClick={() => setOpenSearchProduct(true)}>Buscar Produto</Button>
                   <Button 
                     size="sm" 
@@ -428,15 +434,15 @@ export default function QuoteBuilder() {
                   <Button size="sm" variant="outline" onClick={() => setOpenManageProducts(true)}>Gerenciar Produtos</Button>
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-3">
-                <div className="grid grid-cols-12 gap-2 text-xs text-muted-foreground">
+              <div className="grid grid-cols-1 gap-2 md:gap-3">
+                <div className="grid grid-cols-12 gap-1 md:gap-2 text-xs text-muted-foreground">
                   <div className="col-span-6 md:col-span-6">Produto</div>
                   <div className="col-span-2 text-right">Qtd</div>
                   <div className="col-span-2 text-right">Unitário</div>
                   <div className="col-span-2 text-right">Subtotal</div>
                 </div>
                 {items.map((it, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center border rounded-md p-2">
+                  <div key={idx} className="grid grid-cols-12 gap-1 md:gap-2 items-center border rounded-md p-1 md:p-2">
                     <div className="col-span-6 flex items-center gap-3">
                       {it.imageDataUrl ? (
                         <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
@@ -470,8 +476,8 @@ export default function QuoteBuilder() {
               </div>
             </div>
 
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
+              <div className="space-y-1 md:space-y-2">
                 <Label htmlFor="frete">Frete</Label>
                 <Input id="frete" type="number" step="0.01" value={freight}
                   onChange={(e) => setFreight(Number(e.target.value))}
@@ -488,7 +494,7 @@ export default function QuoteBuilder() {
                 <Label>Condições de pagamento</Label>
                 <Input placeholder="Ex: 30/60 dias, entrada + parcelas..." value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1 md:space-y-2">
                 <Label>Observações</Label>
                 <Textarea rows={7} value={notes} onChange={(e) => setNotes(e.target.value)} />
                 <Label>Status</Label>
@@ -504,11 +510,11 @@ export default function QuoteBuilder() {
             </div>
 
             {/* Discount Section */}
-            <div className="mt-6 grid grid-cols-12 gap-4 items-center">
-              <div className="col-span-4">
+            <div className="mt-4 grid grid-cols-12 gap-2 md:gap-4 items-center">
+              <div className="col-span-12 md:col-span-4">
                 <Label>Desconto:</Label>
               </div>
-              <div className="col-span-8 flex gap-2">
+              <div className="col-span-12 md:col-span-8 flex flex-col sm:flex-row gap-2">
                 <Select value={discountType} onValueChange={(v: 'percentage' | 'value') => setDiscountType(v)}>
                   <SelectTrigger className="w-20">
                     <SelectValue />
@@ -527,8 +533,8 @@ export default function QuoteBuilder() {
               </div>
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
-              <div className="text-right ml-auto">
+            <div className="mt-4 flex flex-col md:flex-row flex-wrap items-center justify-between gap-2 md:gap-4">
+              <div className="text-right ml-auto w-full md:w-auto">
                 <div className="text-sm text-muted-foreground">Subtotal</div>
                 <div className="text-lg font-semibold">{currencyBRL(subtotal)}</div>
                 {discountValue > 0 && (
@@ -568,7 +574,11 @@ export default function QuoteBuilder() {
                     </div>
                     <div className="flex flex-col gap-2">
                       <Button size="sm" onClick={() => setOpenReceipt(q.id)}>Recibo</Button>
-                      <Button size="sm" variant="destructive" onClick={() => handleDeleteQuote(q.id)}>Excluir</Button>
+                      {profile?.role === 'admin' ? (
+                        <Button size="sm" variant="destructive" onClick={() => handleDeleteQuote(q.id)}>Excluir</Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground text-center">Somente administradores podem excluir orçamentos</span>
+                      )}
                     </div>
                   </div>
                 </div>
