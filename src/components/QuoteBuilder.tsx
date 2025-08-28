@@ -1197,25 +1197,46 @@ function ReceiptView({ quote }: { quote: Quote }) {
       </section>
 
       <section className="mt-4 border rounded-md overflow-hidden avoid-break">
-        <div className="grid grid-cols-12 gap-2 p-2 bg-accent/60 font-medium">
-          <div className="col-span-7">Produto</div>
-          <div className="col-span-1 text-right">Qtd</div>
-          <div className="col-span-2 text-right">Unitário</div>
-          <div className="col-span-2 text-right">Subtotal</div>
-        </div>
-        {quote.items.map((it, i) => (
-          <div key={i} className="grid grid-cols-12 gap-2 p-2 border-t product-row avoid-break">
-            <div className="col-span-7">
-              <div className="font-semibold">{it.name}</div>
-              {(it.description || it.options) && (
-                <div className="text-xs text-muted-foreground">{it.description} {it.options ? `· ${it.options}` : ''}</div>
-              )}
-            </div>
-            <div className="col-span-1 text-right">{it.quantity}</div>
-            <div className="col-span-2 text-right">{currencyBRL(it.unitPrice)}</div>
-            <div className="col-span-2 text-right">{currencyBRL(it.subtotal)}</div>
+        <div className="w-full overflow-x-auto">
+          <div className="hidden min-w-[600px] md:grid grid-cols-12 gap-2 p-2 bg-accent/60 font-medium">
+            <div className="col-span-7">Produto</div>
+            <div className="col-span-1 text-right">Qtd</div>
+            <div className="col-span-2 text-right">Unitário</div>
+            <div className="col-span-2 text-right">Subtotal</div>
           </div>
-        ))}
+          {/* Mobile layout */}
+          <div className="md:hidden">
+            {quote.items.map((it, i) => (
+              <div key={i} className="border-t p-2 flex flex-col gap-1 text-xs">
+                <div className="font-semibold text-sm">{it.name}</div>
+                {(it.description || it.options) && (
+                  <div className="text-muted-foreground">{it.description} {it.options ? `· ${it.options}` : ''}</div>
+                )}
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <span><span className="font-medium">Qtd:</span> {it.quantity}</span>
+                  <span><span className="font-medium">Unitário:</span> {currencyBRL(it.unitPrice)}</span>
+                  <span><span className="font-medium">Subtotal:</span> {currencyBRL(it.subtotal)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop layout */}
+          <div className="hidden md:block">
+            {quote.items.map((it, i) => (
+              <div key={i} className="grid grid-cols-12 gap-2 p-2 border-t product-row avoid-break">
+                <div className="col-span-7">
+                  <div className="font-semibold">{it.name}</div>
+                  {(it.description || it.options) && (
+                    <div className="text-xs text-muted-foreground">{it.description} {it.options ? `· ${it.options}` : ''}</div>
+                  )}
+                </div>
+                <div className="col-span-1 text-right">{it.quantity}</div>
+                <div className="col-span-2 text-right">{currencyBRL(it.unitPrice)}</div>
+                <div className="col-span-2 text-right">{currencyBRL(it.subtotal)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="mt-4 ml-auto max-w-xs space-y-1 avoid-break">
