@@ -1204,9 +1204,9 @@ function ReceiptView({ quote, hideTitle }: { quote: Quote, hideTitle?: boolean }
   } catch {}
 
   return (
-    <article className="text-sm print-area">
+  <article className="text-sm print-area pt-2 md:pt-4" style={{ marginTop: 0 }}>
       {!hideTitle && (
-        <header className="flex items-start justify-between avoid-break">
+        <header className="flex items-start justify-between avoid-break mt-0 mb-2">
           <div>
             <div className="text-2xl font-bold">{company.name || 'Nexus Systech'}</div>
             {company.address && <div className="text-muted-foreground">{company.address}</div>}
