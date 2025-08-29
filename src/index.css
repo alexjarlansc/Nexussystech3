@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap');
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Brand palette (HSL) */
+    --brand-1: 187 83% 14%; /* #063940 - deep teal */
+    --brand-2: 184 60% 24%; /* #195e63 - primary */
+    --brand-3: 187 39% 40%; /* #3e838c - secondary */
+    --brand-sand: 44 52% 85%; /* #ece1c3 - sand */
+
+    /* App surfaces */
+    --background: 44 52% 97%;
+    --foreground: var(--brand-1);
+
+    --card: 0 0% 100%;
+    --card-foreground: var(--brand-1);
+
+    --popover: 0 0% 100%;
+    --popover-foreground: var(--brand-1);
+
+    --primary: var(--brand-2);
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: var(--brand-3);
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 35%;
+
+    --accent: var(--brand-sand);
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 210 20% 88%;
+    --input: 210 20% 88%;
+    --ring: var(--brand-2);
+
+    --radius: 0.75rem;
+
+    /* Sidebar tokens */
+    --sidebar-background: 44 52% 96%;
+    --sidebar-foreground: var(--brand-1);
+    --sidebar-primary: var(--brand-2);
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 44 52% 92%;
+    --sidebar-accent-foreground: var(--brand-1);
+    --sidebar-border: 44 30% 84%;
+    --sidebar-ring: var(--brand-3);
+
+    /* Motion + effects */
+    --shadow-elev: 0 10px 30px -10px hsl(var(--brand-2) / 0.25);
+    --shadow-glow: 0 0 40px hsl(var(--brand-3) / 0.25);
+  }
+
+  .dark {
+    --background: 222.2 84% 6%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 8%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 187 39% 62%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 187 39% 30%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 44 52% 25%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 187 39% 62%;
+
+    --sidebar-background: 222.2 84% 6%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 187 39% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217.2 32.6% 17.5%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-ring: 187 39% 62%;
+  }
+}
+
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+  }
+
+  h1, h2, h3 {
+    font-family: 'Poppins', 'Inter', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
+  }
+}
+
+@layer components {
+  .gradient-hero {
+    background: radial-gradient(1200px 600px at 10% 10%, hsl(var(--brand-3)/0.25), transparent 60%),
+                radial-gradient(900px 500px at 95% 5%, hsl(var(--brand-2)/0.18), transparent 60%),
+                linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
+  }
+  .card-elevated {
+    @apply bg-card border rounded-lg;
+    box-shadow: var(--shadow-elev);
+  }
+  .btn-hero {
+    @apply inline-flex items-center justify-center h-11 px-6 rounded-md font-semibold text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+    color: hsl(var(--primary-foreground));
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
+  }
+  .btn-hero:hover { filter: brightness(1.05); }
+}
+
+/* Print styles for PDF export (text-based, no screenshots) */
+@media print {
+  @page { 
+    size: A4; 
+    margin: 10mm; 
+  }
+
+  html, body { 
+    height: auto !important; 
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  body { 
+    background: white !important; 
+    font-size: 12pt !important;
+  }
+
+  /* Hide everything except the designated print area */
+  body * { visibility: hidden !important; }
+  .print-area, .print-area * { visibility: visible !important; }
+  .print-area { 
+    position: absolute; 
+    inset: 0 auto auto 0; 
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Do not print configuration buttons/controls */
+  .no-print, button, [role="button"], input, select, textarea { display: none !important; }
+
+  /* Avoid content being cut across pages */
+  .avoid-break, .product-row, .card-elevated, table, tr, img { 
+    break-inside: avoid; 
+    page-break-inside: avoid; 
+  }
+  
+  img { 
+    max-width: 100% !important; 
+    height: auto !important; 
+  }
+}
+
