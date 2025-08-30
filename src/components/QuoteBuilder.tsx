@@ -1205,132 +1205,150 @@ function EditProductModal({
 }
 
 
-function ReceiptView({ quote, hideTitle }: { quote: Quote, hideTitle?: boolean }) {
-  // Buscar dados da empresa do localStorage, se existir
+function ReceiptView({ quote }: { quote: Quote }) {
+  // Preferir dados da empresa via hook
+  const { company: authCompany } = useAuth();
   let company: CompanyInfo = {
-    name: 'Nexus Systech',
-    address: '',
-    taxid: '',
-    phone: '',
-    email: '',
+    name: authCompany?.name || 'Empresa',
+    address: authCompany?.address || '',
+    taxid: authCompany?.cnpj_cpf || '',
+    phone: authCompany?.phone || '',
+    email: authCompany?.email || '',
     logoDataUrl: undefined,
   };
+  // Completar com storage se tiver logo custom salva
   try {
     const raw = localStorage.getItem(StorageKeys.company);
     if (raw) {
-      company = { ...company, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      company = { ...company, ...parsed };
     }
-  } catch {
-    // ignore JSON parse errors silently; fallback defaults already set
-  }
+  } catch {/* ignore */}
+
+  const issueDate = new Date(quote.createdAt).toLocaleDateString('pt-BR');
+  const validade = new Date(new Date(quote.createdAt).getTime() + quote.validityDays * 86400000).toLocaleDateString('pt-BR');
+
+  // Processar condições de pagamento em linhas
+  const paymentLines = (quote.paymentTerms || '').split(/\n|;/).map(l => l.trim()).filter(Boolean);
 
   return (
-  <article className="text-sm print-area" style={{ marginTop: 0, paddingTop: 0 }}>
-      {!hideTitle && (
-        <header className="flex items-start justify-between avoid-break mt-0 mb-2" style={{ marginTop: 0, paddingTop: 0 }}>
-          <div>
-            <div className="text-2xl font-bold">{company.name || 'Nexus Systech'}</div>
-            {company.address && <div className="text-muted-foreground">{company.address}</div>}
-            <div className="text-muted-foreground">
-              {[company.taxid ? `CNPJ/CPF: ${company.taxid}` : null, company.phone, company.email]
-                .filter(Boolean)
-                .join(' · ')}
-            </div>
-          </div>
-          {company.logoDataUrl && (
-            <img src={company.logoDataUrl} alt={`Logo ${company.name || 'da empresa'}`} className="h-16 w-16 object-contain" />
-          )}
-        </header>
-      )}
-
-      <section className="mt-4 avoid-break">
-        <div className="text-xl font-bold">{quote.type === 'ORCAMENTO' ? 'Orçamento' : 'Pedido'} {quote.number}</div>
-        <div className="text-muted-foreground">
-          Emissão: {new Date(quote.createdAt).toLocaleDateString('pt-BR')} · Validade: {quote.validityDays} dias
-        </div>
-        <div className="mt-2">Vendedor: {quote.vendor.name} · {quote.vendor.phone} · {quote.vendor.email}</div>
-        <div className="mt-1">
-          Cliente: {quote.clientSnapshot.name}
-          {quote.clientSnapshot.taxid ? ` · ${quote.clientSnapshot.taxid}` : ''}
-          {quote.clientSnapshot.phone ? ` · ${quote.clientSnapshot.phone}` : ''}
-          {quote.clientSnapshot.email ? ` · ${quote.clientSnapshot.email}` : ''}
-          {quote.clientSnapshot.address ? ` · ${quote.clientSnapshot.address}` : ''}
-        </div>
-      </section>
-
-      <section className="mt-4 border rounded-md overflow-hidden avoid-break">
-        <div className="w-full overflow-x-auto">
-          <div className="hidden min-w-[600px] md:grid grid-cols-12 gap-2 p-2 bg-accent/60 font-medium">
-            <div className="col-span-7">Produto</div>
-            <div className="col-span-1 text-right">Qtd</div>
-            <div className="col-span-2 text-right">Unitário</div>
-            <div className="col-span-2 text-right">Subtotal</div>
-          </div>
-          {/* Mobile layout */}
-          <div className="md:hidden">
-            {quote.items.map((it, i) => (
-              <div key={i} className="border-t p-2 flex flex-col gap-1 text-xs">
-                <div className="font-semibold text-sm">{it.name}</div>
-                {(it.description || it.options) && (
-                  <div className="text-muted-foreground">{it.description} {it.options ? `· ${it.options}` : ''}</div>
-                )}
-                <div className="flex flex-wrap gap-2 mt-1">
-                  <span><span className="font-medium">Qtd:</span> {it.quantity}</span>
-                  <span><span className="font-medium">Unitário:</span> {currencyBRL(it.unitPrice)}</span>
-                  <span><span className="font-medium">Subtotal:</span> {currencyBRL(it.subtotal)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          {/* Desktop layout */}
-          <div className="hidden md:block">
-            {quote.items.map((it, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2 p-2 border-t product-row avoid-break">
-                <div className="col-span-7">
-                  <div className="font-semibold">{it.name}</div>
-                  {(it.description || it.options) && (
-                    <div className="text-xs text-muted-foreground">{it.description} {it.options ? `· ${it.options}` : ''}</div>
-                  )}
-                </div>
-                <div className="col-span-1 text-right">{it.quantity}</div>
-                <div className="col-span-2 text-right">{currencyBRL(it.unitPrice)}</div>
-                <div className="col-span-2 text-right">{currencyBRL(it.subtotal)}</div>
-              </div>
-            ))}
+    <article className="print-area text-[12px] leading-relaxed text-foreground">
+      {/* Cabeçalho */}
+      <div className="flex items-start justify-between gap-4 pb-3 border-b border-gray-300">
+        <div className="space-y-1">
+          <h1 className="font-semibold text-lg">{company.name}</h1>
+          {company.address && <div>{company.address}</div>}
+          <div className="text-muted-foreground">
+            {[company.taxid && `CNPJ/CPF: ${company.taxid}`, company.phone, company.email].filter(Boolean).join(' · ')}
           </div>
         </div>
-      </section>
+        {company.logoDataUrl && (
+          <img src={company.logoDataUrl} alt="Logo" className="h-16 w-32 object-contain ml-auto" />
+        )}
+      </div>
 
-      <section className="mt-4 ml-auto max-w-xs space-y-1 avoid-break">
-        <div className="flex justify-between"><span>Subtotal</span><span>{currencyBRL(quote.subtotal)}</span></div>
-        <div className="flex justify-between"><span>Frete</span><span>{currencyBRL(quote.freight)}</span></div>
-        <div className="flex justify-between font-semibold text-lg"><span>Total</span><span>{currencyBRL(quote.total)}</span></div>
-      </section>
+      {/* Linha título orçamento */}
+      <div className="mt-3 font-semibold text-sm border-b border-gray-300 pb-1 flex flex-wrap gap-x-8 gap-y-1">
+        <span>{quote.type === 'ORCAMENTO' ? 'Orçamento' : 'Pedido'} Nº {quote.number}</span>
+        <span>Criado em {issueDate}</span>
+        <span>Válido até {validade}</span>
+      </div>
 
-      <section className="mt-4 avoid-break">
-        <div>Método de pagamento: {quote.paymentMethod}</div>
-        {quote.paymentTerms && <div>Condições: {quote.paymentTerms}</div>}
-        {quote.notes && (
-          <div className="mt-2">
-            <div className="font-medium">Observações</div>
-            <div className="text-muted-foreground whitespace-pre-wrap">{quote.notes}</div>
+      {/* Dados Comerciais */}
+      <div className="mt-3 grid gap-1">
+        <div><span className="font-semibold">Representante:</span> {quote.vendor?.name || '-'}{quote.vendor?.phone && `  •  ${quote.vendor.phone}`}{quote.vendor?.email && `  •  ${quote.vendor.email}`}</div>
+        <div>
+          <span className="font-semibold">Cliente:</span> {quote.clientSnapshot.name}
+          {quote.clientSnapshot.taxid && `  •  ${quote.clientSnapshot.taxid}`}
+        </div>
+        {(quote.clientSnapshot.phone || quote.clientSnapshot.email || quote.clientSnapshot.address) && (
+          <div className="text-muted-foreground">
+            {[quote.clientSnapshot.phone, quote.clientSnapshot.email, quote.clientSnapshot.address].filter(Boolean).join(' • ')}
           </div>
         )}
-      </section>
+      </div>
+
+      {/* Produtos */}
+      <div className="mt-4">
+        <h2 className="font-semibold mb-2">Produtos:</h2>
+        <div className="space-y-4">
+          {quote.items.map((it, i) => (
+            <div key={i} className="flex gap-4 items-start border-b pb-4 last:border-b-0">
+              {it.imageDataUrl && (
+                <img src={it.imageDataUrl} alt={it.name} className="w-28 h-28 object-cover rounded border" />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold uppercase text-sm">{it.name}</div>
+                <div className="text-muted-foreground mb-2">Preço unitário: {currencyBRL(it.unitPrice)}  •  Quantidade: {it.quantity}</div>
+                {(it.description || it.options) && (
+                  <div className="whitespace-pre-wrap text-[11px] leading-snug">
+                    {it.description}
+                    {it.options && (it.description ? '\n' : '')}{it.options}
+                  </div>
+                )}
+                <div className="mt-2 font-medium">Subtotal: {currencyBRL(it.subtotal)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Resumo financeiro */}
+      <div className="mt-4 space-y-1 max-w-sm">
+        <div><span className="font-semibold">Subtotal:</span> {currencyBRL(quote.subtotal)}</div>
+        <div><span className="font-semibold">Frete:</span> {currencyBRL(quote.freight)}</div>
+        <div><span className="font-semibold">Método de pagamento:</span> {quote.paymentMethod}</div>
+      </div>
+
+      {/* Condições de pagamento */}
+      {(paymentLines.length > 0) && (
+        <div className="mt-4">
+          <h3 className="font-semibold mb-1">Condições de pagamento:</h3>
+          <table className="w-full text-xs border border-gray-300">
+            <thead className="bg-muted/60">
+              <tr className="border-b border-gray-300">
+                <th className="text-left p-1 font-medium">Descrição</th>
+                <th className="text-left p-1 font-medium">Detalhes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paymentLines.map((l, idx) => (
+                <tr key={idx} className="border-t border-gray-200">
+                  <td className="p-1 align-top">Parcela {idx + 1}</td>
+                  <td className="p-1 whitespace-pre-wrap">{l}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Observações / Notas */}
+      {(quote.notes || paymentLines.length === 0) && (
+        <div className="mt-4">
+          <h3 className="font-semibold mb-1">Observações:</h3>
+          <div className="text-xs whitespace-pre-wrap leading-snug">
+            {quote.notes || '—'}
+          </div>
+        </div>
+      )}
+
+      {/* Total Destaque */}
+      <div className="mt-6 text-lg font-bold">Total: {currencyBRL(quote.total)}</div>
 
       {/* Assinaturas */}
-      <section className="mt-8 flex flex-col md:flex-row gap-8 items-end justify-between print:mt-16">
-        <div className="flex flex-col items-center w-full md:w-1/2">
-          <div className="border-t border-dashed border-gray-400 w-60 h-0 mb-1" />
-          <div className="text-xs text-muted-foreground">Assinatura do Vendedor</div>
-          <div className="font-medium text-sm mt-1">{quote.vendor?.name || '_________________'}</div>
+      <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-10 print:mt-16">
+        <div className="flex flex-col items-center">
+          <div className="w-56 border-t border-dashed border-gray-500 h-0" />
+          <span className="mt-1 text-[11px] text-muted-foreground">Assinatura do Vendedor</span>
+          <span className="text-xs font-medium mt-1">{quote.vendor?.name || '_________________'}</span>
         </div>
-        <div className="flex flex-col items-center w-full md:w-1/2 mt-8 md:mt-0">
-          <div className="border-t border-dashed border-gray-400 w-60 h-0 mb-1" />
-          <div className="text-xs text-muted-foreground">Assinatura do Cliente</div>
-          <div className="font-medium text-sm mt-1">{quote.clientSnapshot?.name || '_________________'}</div>
+        <div className="flex flex-col items-center">
+          <div className="w-56 border-t border-dashed border-gray-500 h-0" />
+          <span className="mt-1 text-[11px] text-muted-foreground">Assinatura do Cliente</span>
+          <span className="text-xs font-medium mt-1">{quote.clientSnapshot?.name || '_________________'}</span>
         </div>
-      </section>
+      </div>
     </article>
   );
 }
