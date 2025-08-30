@@ -23,9 +23,10 @@ function currencyBRL(n: number) {
 async function generateNextNumber(type: QuoteType): Promise<string> {
   const { data, error } = await supabase.rpc('next_quote_number', { p_type: type });
   if (error || !data) {
-    // fallback simples
-    const prefix = type === 'PEDIDO' ? 'PED' : 'ORC';
-    return `${prefix}-FALLBACK-${Date.now().toString().slice(-6)}`;
+  // Fallback sem a palavra FALLBACK: usa timestamp compacto (YYMMDDHHMM) para evitar colisão
+  const prefix = type === 'PEDIDO' ? 'PED' : 'ORC';
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(2,12); // YYMMDDHHMM
+  return `${prefix}-${stamp}`;
   }
   return data as string;
 }
@@ -109,6 +110,7 @@ export default function QuoteBuilder() {
 
   const [clientId, setClientId] = useState<string>('');
   const [items, setItems] = useState<QuoteItemSnapshot[]>([]);
+  // Campo de entrada do frete (pode ser valor fixo ou percentual ex: "5%")
   const [freight, setFreight] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Pix');
   const [paymentTerms, setPaymentTerms] = useState('');
@@ -151,7 +153,21 @@ export default function QuoteBuilder() {
     return value;
   }, [subtotal, discountType, discountAmount]);
   const subtotalWithDiscount = useMemo(() => subtotal - discountValue, [subtotal, discountValue]);
-  const total = useMemo(() => subtotalWithDiscount + Number(freight || '0'), [subtotalWithDiscount, freight]);
+  // Detecta se frete é percentual
+  const freightIsPercent = useMemo(() => freight.trim().endsWith('%'), [freight]);
+  const freightValue = useMemo(() => {
+    if (!freight) return 0;
+    const raw = freight.trim();
+    if (raw.endsWith('%')) {
+      const num = parseFloat(raw.slice(0, -1).replace(',', '.'));
+      if (isNaN(num) || num <= 0) return 0;
+      return subtotalWithDiscount * (num / 100);
+    }
+    const num = parseFloat(raw.replace(/\./g,'').replace(',', '.'));
+    if (isNaN(num) || num < 0) return 0;
+    return num;
+  }, [freight, subtotalWithDiscount]);
+  const total = useMemo(() => subtotalWithDiscount + freightValue, [subtotalWithDiscount, freightValue]);
 
 
   // Removido: não persiste mais clientes localmente
@@ -301,7 +317,7 @@ export default function QuoteBuilder() {
       client_id: client.id,
       client_snapshot: client,
       items,
-  freight: Number(freight || '0'),
+  freight: freightValue,
       payment_method: paymentMethod,
       payment_terms: paymentTerms,
       notes,
@@ -573,9 +589,10 @@ export default function QuoteBuilder() {
         h3 { font-size:12px; text-transform:uppercase; letter-spacing:.4px; color:var(--brand); margin:18px 0 4px; }
         .muted { color:#555; }
         .small { font-size:10px; }
-        .header { display:flex; justify-content:space-between; gap:24px; padding-bottom:10px; border-bottom:1px solid var(--border); }
-        .company-block { display:flex; flex-direction:column; gap:4px; }
-        .logo { max-height:72px; max-width:170px; object-fit:contain; }
+  .header { display:flex; justify-content:space-between; gap:24px; padding-bottom:12px; border-bottom:1px solid var(--border); }
+  .company-block { display:flex; flex-direction:column; gap:6px; font-size:12px; }
+  .company-block h1 { font-size:22px; }
+  .logo { max-height:80px; max-width:190px; object-fit:contain; }
         .meta { margin-top:10px; display:flex; flex-wrap:wrap; gap:22px; padding:6px 0 8px; border-bottom:1px solid var(--border); font-weight:600; font-size:11px; }
         .info-grid { margin-top:10px; display:grid; gap:8px; }
         .info-box { padding-bottom:6px; border-bottom:1px solid var(--border); }
@@ -810,11 +827,25 @@ export default function QuoteBuilder() {
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
               <div className="space-y-1 md:space-y-2">
                 <Label htmlFor="frete">Frete</Label>
-                <Input id="frete" type="number" step="0.01" value={freight}
-                  placeholder="0"
+                <Input id="frete" value={freight}
+                  placeholder="Ex: 150 ou 5%"
                   onFocus={e => e.target.select()}
-                  onChange={e => setFreight(e.target.value.replace(/[^0-9.,-]/g, ''))}
+                  onChange={e => {
+                    const v = e.target.value.toUpperCase();
+                    // Permite dígitos, ponto, vírgula e %
+                    const cleaned = v.replace(/[^0-9.,%]/g, '');
+                    // Apenas um % no final se existir
+                    const norm = cleaned.replace(/%+/g,'%');
+                    // Se tiver % no meio remove
+                    const finalVal = norm.includes('%') ? norm.replace('%','') + '%' : norm;
+                    setFreight(finalVal);
+                  }}
                 />
+                {freight && (
+                  <div className="text-[10px] text-muted-foreground">
+                    {freightIsPercent ? `Frete = ${freightValue.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} (${freight.trim()})` : 'Valor fixo de frete'}
+                  </div>
+                )}
                 <Label>Método de pagamento</Label>
                 <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}>
                   <SelectTrigger><SelectValue placeholder="Método" /></SelectTrigger>
@@ -1022,7 +1053,7 @@ export default function QuoteBuilder() {
                   </>
                 )}
                 <div className="text-sm text-muted-foreground">Frete</div>
-                <div className="text-lg font-semibold">{currencyBRL(Number(freight || '0'))}</div>
+                <div className="text-lg font-semibold">{currencyBRL(freightValue)}</div>
                 <div className="text-sm text-muted-foreground">Total</div>
                 <div className="text-2xl font-bold">{currencyBRL(total)}</div>
               </div>
