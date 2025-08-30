@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/sonner";
-import { LogOut, Settings, User, Building2, Key, Copy } from "lucide-react";
+import { LogOut, Settings, User, Building2, Key, Copy, Boxes } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { useAuth } from "@/hooks/useAuth";
 import { StorageKeys, setJSON } from '@/utils/storage';
@@ -202,6 +202,14 @@ export function NexusProtectedHeader() {
               {profile?.role === 'pdv' && (
                 <Link to="/pdv" className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted">PDV</Link>
               )}
+              {/* Novo ícone para módulo ERP */}
+              <Link
+                to="/erp"
+                aria-label="Módulo ERP"
+                className="h-8 w-8 p-0 flex items-center justify-center rounded hover:bg-muted text-primary/80 hover:text-primary transition-colors"
+              >
+                <Boxes className="h-4 w-4" />
+              </Link>
               {profile?.role === 'admin' && (
                 <Button
                   variant="ghost"
