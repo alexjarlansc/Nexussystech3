@@ -1,12 +1,17 @@
 import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Package, Users, Truck, Boxes, Settings2, Tags } from 'lucide-react';
+import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw } from 'lucide-react';
 import { ErpSuppliers } from '@/components/erp/ErpSuppliers';
 import { ErpCarriers } from '@/components/erp/ErpCarriers';
 import { ErpClients } from '@/components/erp/ErpClients';
 import { Card } from '@/components/ui/card';
+import { supabase } from '@/integrations/supabase/client';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/components/ui/sonner';
 
 type SectionKey = 'dashboard' | 'clients' | 'suppliers' | 'carriers' | 'products' | 'stock' | 'labels';
 
@@ -84,17 +89,96 @@ function ErpDashboard() {
   );
 }
 
+// reutilizar Button como UIButton para diferenciar no escopo estoque
+const UIButton = Button;
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+interface MovementRow { id:string; product_id:string; type:string; quantity:number; unit_cost:number|null; reference:string|null; notes:string|null; created_at:string }
+interface StockRow { product_id:string; stock:number }
+
 function StockPlaceholder() {
+  const [movs, setMovs] = useState<MovementRow[]>([]);
+  const [stock, setStock] = useState<StockRow[]>([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ product_id:'', type:'ENTRADA', quantity:'', unit_cost:'', reference:'', notes:'' });
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+  const { data: m, error: e1 } = await (supabase as any).from('inventory_movements').select('*').order('created_at',{ascending:false}).limit(50);
+    if (e1) toast.error('Erro movimentos'); else setMovs(m as MovementRow[]);
+  const { data: s, error: e2 } = await (supabase as any).from('product_stock').select('*');
+    if (e2) toast.error('Erro estoque'); else setStock(s as StockRow[]);
+  }
+  useEffect(()=>{ load(); },[]);
+
+  async function save() {
+    const qty = Number(form.quantity);
+    if (!form.product_id || !qty || qty<=0) { toast.error('Produto e quantidade'); return; }
+    setLoading(true);
+  const payload: any = { product_id: form.product_id, type: form.type, quantity: qty, reference: form.reference||null, notes: form.notes||null };
+    if (form.type==='ENTRADA' && form.unit_cost) payload.unit_cost = Number(form.unit_cost)||null;
+  const { error } = await (supabase as any).from('inventory_movements').insert(payload);
+    if (error) { toast.error('Falha ao lançar'); setLoading(false); return; }
+    toast.success('Movimentação registrada');
+    setForm({ product_id:'', type:'ENTRADA', quantity:'', unit_cost:'', reference:'', notes:'' });
+    setOpen(false); setLoading(false); load();
+  }
+
   return (
-    <Card className="p-6">
-      <h2 className="text-xl font-semibold mb-2">Estoque</h2>
-      <p className="text-sm text-muted-foreground mb-4">Movimentações (inventory_movements) e posição atual (view product_stock). Implementar: filtros por produto, data, tipo; lançamento rápido de entrada/saída; ajuste com motivo.</p>
-      <ul className="list-disc pl-5 text-xs space-y-1 text-muted-foreground">
-        <li>Entrada: registra quantidade e custo unitário</li>
-        <li>Saída: originada por venda/pedido (automatizar posteriormente)</li>
-        <li>Ajuste: positivo/negativo com motivo (inventário, perda, quebra)</li>
-      </ul>
-    </Card>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <UIButton size="sm" onClick={()=>setOpen(true)}><Plus className="h-4 w-4 mr-1"/>Nova Movimentação</UIButton>
+        <UIButton size="sm" variant="outline" onClick={load}><RefreshCcw className="h-4 w-4 mr-1"/>Atualizar</UIButton>
+        <div className="text-xs text-muted-foreground ml-auto">{movs.length} movs exibidas | {stock.length} produtos estoque</div>
+      </div>
+      <Card className="p-4">
+        <h2 className="text-xl font-semibold mb-2">Estoque (posição)</h2>
+        <div className="max-h-56 overflow-auto border rounded">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Produto</th><th className="px-2 py-1 text-left">Qtd</th></tr></thead>
+            <tbody>
+              {stock.map(s=> <tr key={s.product_id} className="border-t"><td className="px-2 py-1">{s.product_id}</td><td className="px-2 py-1">{s.stock}</td></tr>)}
+              {stock.length===0 && <tr><td colSpan={2} className="text-center py-4 text-muted-foreground">Sem dados</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Card className="p-4">
+        <h2 className="text-xl font-semibold mb-2">Últimas Movimentações</h2>
+        <div className="max-h-72 overflow-auto border rounded">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Data</th><th className="px-2 py-1 text-left">Produto</th><th className="px-2 py-1">Tipo</th><th className="px-2 py-1 text-right">Qtd</th><th className="px-2 py-1 text-right">Custo</th><th className="px-2 py-1">Ref</th></tr></thead>
+            <tbody>
+              {movs.map(m=> <tr key={m.id} className="border-t"><td className="px-2 py-1">{new Date(m.created_at).toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'})}</td><td className="px-2 py-1">{m.product_id}</td><td className="px-2 py-1">{m.type}</td><td className="px-2 py-1 text-right">{m.quantity}</td><td className="px-2 py-1 text-right">{m.unit_cost??'-'}</td><td className="px-2 py-1 truncate max-w-[120px]" title={m.reference||''}>{m.reference||'-'}</td></tr>)}
+              {movs.length===0 && <tr><td colSpan={6} className="text-center py-4 text-muted-foreground">Sem movimentações</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Nova Movimentação</DialogTitle></DialogHeader>
+          <div className="grid gap-2 text-sm">
+            <Input placeholder="Código do Produto *" value={form.product_id} onChange={e=>setForm(f=>({...f,product_id:e.target.value}))} />
+            <select className="border rounded h-9 px-2 text-sm" value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
+              <option value="ENTRADA">ENTRADA</option>
+              <option value="SAIDA">SAIDA</option>
+              <option value="AJUSTE">AJUSTE</option>
+            </select>
+            <div className="grid grid-cols-2 gap-2">
+              <Input placeholder="Quantidade *" value={form.quantity} onChange={e=>setForm(f=>({...f,quantity:e.target.value}))} />
+              {form.type==='ENTRADA' && (<Input placeholder="Custo Unitário" value={form.unit_cost} onChange={e=>setForm(f=>({...f,unit_cost:e.target.value}))} />)}
+            </div>
+            <Input placeholder="Referência (pedido, nota)" value={form.reference} onChange={e=>setForm(f=>({...f,reference:e.target.value}))} />
+            <Textarea placeholder="Observações" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={3} />
+          </div>
+          <DialogFooter>
+            <UIButton variant="outline" onClick={()=>setOpen(false)}>Cancelar</UIButton>
+            <UIButton disabled={loading} onClick={save}>{loading?'Salvando...':'Salvar'}</UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
@@ -103,7 +187,16 @@ function LabelsPlaceholder() {
     <Card className="p-6">
       <h2 className="text-xl font-semibold mb-2">Etiquetas / Códigos</h2>
       <p className="text-sm text-muted-foreground mb-4">Gerar e armazenar códigos de barras (EAN13, Code128) e QR Codes para produtos em product_labels.</p>
-      <div className="text-xs text-muted-foreground">Próximo passo: escolher lib (ex: jsbarcode + qrcode) e permitir lote de impressão baseado no estoque.</div>
+  <div className="text-xs text-muted-foreground mb-2">Próximo passo: adicionar libs (jsbarcode / qrcode) e permitir geração em lote + impressão térmica.</div>
+  <div className="border rounded p-3 bg-muted/30 text-xs text-muted-foreground">
+    Exemplo futuro de API:
+    <pre className="whitespace-pre-wrap mt-2">{`generateLabel({
+  productId: '123',
+  type: 'EAN13',
+  code: '7891234567895',
+  format: 'svg'
+})`}</pre>
+  </div>
     </Card>
   );
 }
