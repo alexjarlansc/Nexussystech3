@@ -475,6 +475,25 @@ export default function QuoteBuilder() {
     } catch {
       // ignore parse
     }
+    // Preferir dados atuais do hook (company) sobre storage
+    if (company) {
+      companyObj = {
+        ...companyObj,
+        name: company.name || companyObj.name,
+        address: company.address || companyObj.address,
+        taxid: company.cnpj_cpf || companyObj.taxid || companyObj.cnpj_cpf,
+        phone: company.phone || companyObj.phone,
+        email: company.email || companyObj.email,
+        logoDataUrl: companyObj.logoDataUrl // preserva logo armazenada localmente se houver
+      };
+      companyName = companyObj.name || companyName;
+    }
+    // Fallback: se não houver taxid mas houver cnpj_cpf
+    if (!companyObj.taxid && companyObj.cnpj_cpf) companyObj.taxid = companyObj.cnpj_cpf;
+    // Garantir vendor preenchido (caso state ainda não atualizado) usando profile
+    const repName = quote.vendor?.name || profile?.first_name || '—';
+    const repPhone = quote.vendor?.phone || profile?.phone || '';
+    const repEmail = quote.vendor?.email || profile?.email || '';
 
     const escape = (s: string) => (s || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]!));
     const currency = (n:number)=> new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n);
@@ -521,7 +540,7 @@ export default function QuoteBuilder() {
         <span>Válido até ${escape(new Date(new Date(quote.createdAt).getTime()+quote.validityDays*86400000).toLocaleDateString('pt-BR'))}</span>
       </div>
       <div style="margin-top:10px;">
-        <div><strong>Representante:</strong> ${escape(quote.vendor?.name||'-')}${quote.vendor?.phone?' • '+escape(quote.vendor.phone):''}${quote.vendor?.email?' • '+escape(quote.vendor.email):''}</div>
+  <div><strong>Representante:</strong> ${escape(repName)}${repPhone?' • '+escape(repPhone):''}${repEmail?' • '+escape(repEmail):''}</div>
         <div><strong>Cliente:</strong> ${escape(quote.clientSnapshot.name)}${quote.clientSnapshot.taxid?' • '+escape(quote.clientSnapshot.taxid):''}</div>
         <div class="muted small">${[quote.clientSnapshot.phone, quote.clientSnapshot.email, quote.clientSnapshot.address].filter(Boolean).map(escape).join(' • ')}</div>
       </div>
