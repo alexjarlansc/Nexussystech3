@@ -527,10 +527,9 @@ export default function QuoteBuilder() {
     }
     // Caso tenhamos logo_url vindo do backend e ainda não haja DataUrl salva
     // Tentar usar logo_url vinda do backend (campo não mapeado em CompanyInfo local)
-    // @ts-expect-error acesso dinâmico possivelmente não tipado
-    if (!companyObj.logoDataUrl && company && (company as unknown as { logo_url?: string }).logo_url) {
-      // @ts-expect-error campo dinâmico
-      companyObj.logoDataUrl = (company as unknown as { logo_url?: string }).logo_url;
+    if (!companyObj.logoDataUrl && company) {
+      const backendLogo = (company as unknown as { logo_url?: string }).logo_url;
+      if (backendLogo) companyObj.logoDataUrl = backendLogo;
     }
     // Fallback: se não houver taxid mas houver cnpj_cpf
     if (!companyObj.taxid && companyObj.cnpj_cpf) companyObj.taxid = companyObj.cnpj_cpf;
@@ -614,9 +613,18 @@ export default function QuoteBuilder() {
         <span>Validade: ${escape(new Date(new Date(quote.createdAt).getTime()+quote.validityDays*86400000).toLocaleDateString('pt-BR'))}</span>
       </div>
       <div class="info-grid">
-        <div class="info-box"><span class="label">Representante:</span> ${escape(repName)}${repPhone?` • ${escape(repPhone)}`:''}${repEmail?` • ${escape(repEmail)}`:''}</div>
-        <div class="info-box"><span class="label">Cliente:</span> ${escape(quote.clientSnapshot.name)}${quote.clientSnapshot.taxid?` • ${escape(quote.clientSnapshot.taxid)}`:''}${quote.clientSnapshot.phone?` • ${escape(quote.clientSnapshot.phone)}`:''}${quote.clientSnapshot.email?` • ${escape(quote.clientSnapshot.email)}`:''}</div>
-        ${quote.clientSnapshot.address?`<div class="small muted" style="margin-top:-4px;">${escape(quote.clientSnapshot.address)}</div>`:''}
+        <div class="info-box">
+          <div><span class="label">Representante:</span> ${escape(repName)}</div>
+          ${repPhone?`<div class="small muted">Telefone: ${escape(repPhone)}</div>`:''}
+          ${repEmail?`<div class="small muted">Email: ${escape(repEmail)}</div>`:''}
+        </div>
+        <div class="info-box">
+          <div><span class="label">Cliente:</span> ${escape(quote.clientSnapshot.name)}</div>
+          ${quote.clientSnapshot.taxid?`<div class="small muted">CNPJ/CPF: ${escape(quote.clientSnapshot.taxid)}</div>`:''}
+          ${quote.clientSnapshot.phone?`<div class="small muted">Telefone: ${escape(quote.clientSnapshot.phone)}</div>`:''}
+          ${quote.clientSnapshot.email?`<div class="small muted">Email: ${escape(quote.clientSnapshot.email)}</div>`:''}
+          ${quote.clientSnapshot.address?`<div class="small muted">Endereço: ${escape(quote.clientSnapshot.address)}</div>`:''}
+        </div>
       </div>
       <h2>Produtos / Serviços</h2>
       <table class="avoid-break">
@@ -1533,17 +1541,19 @@ function ReceiptView({ quote }: { quote: Quote }) {
       </div>
 
       {/* Dados Comerciais */}
-      <div className="mt-3 grid gap-1">
-        <div><span className="font-semibold">Representante:</span> {quote.vendor?.name || '-'}{quote.vendor?.phone && `  •  ${quote.vendor.phone}`}{quote.vendor?.email && `  •  ${quote.vendor.email}`}</div>
+      <div className="mt-3 grid gap-2">
         <div>
-          <span className="font-semibold">Cliente:</span> {quote.clientSnapshot.name}
-          {quote.clientSnapshot.taxid && `  •  ${quote.clientSnapshot.taxid}`}
+          <div><span className="font-semibold">Representante:</span> {quote.vendor?.name || '-'}</div>
+          {quote.vendor?.phone && <div className="text-xs text-muted-foreground">Telefone: {quote.vendor.phone}</div>}
+          {quote.vendor?.email && <div className="text-xs text-muted-foreground">Email: {quote.vendor.email}</div>}
         </div>
-        {(quote.clientSnapshot.phone || quote.clientSnapshot.email || quote.clientSnapshot.address) && (
-          <div className="text-muted-foreground">
-            {[quote.clientSnapshot.phone, quote.clientSnapshot.email, quote.clientSnapshot.address].filter(Boolean).join(' • ')}
-          </div>
-        )}
+        <div>
+          <div><span className="font-semibold">Cliente:</span> {quote.clientSnapshot.name}</div>
+          {quote.clientSnapshot.taxid && <div className="text-xs text-muted-foreground">CNPJ/CPF: {quote.clientSnapshot.taxid}</div>}
+          {quote.clientSnapshot.phone && <div className="text-xs text-muted-foreground">Telefone: {quote.clientSnapshot.phone}</div>}
+          {quote.clientSnapshot.email && <div className="text-xs text-muted-foreground">Email: {quote.clientSnapshot.email}</div>}
+          {quote.clientSnapshot.address && <div className="text-xs text-muted-foreground">Endereço: {quote.clientSnapshot.address}</div>}
+        </div>
       </div>
 
       {/* Produtos */}
