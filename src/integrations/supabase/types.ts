@@ -277,6 +277,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      next_quote_number: {
+        Args: { p_type: string }
+        Returns: string
+      }
     }
     Enums: {
       user_role: "user" | "admin"

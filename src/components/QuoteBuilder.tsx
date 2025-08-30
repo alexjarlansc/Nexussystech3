@@ -21,23 +21,13 @@ function currencyBRL(n: number) {
 
 // Geração de número global (consulta banco) evitando duplicidade entre usuários.
 async function generateNextNumber(type: QuoteType): Promise<string> {
-  const prefix = type === 'PEDIDO' ? 'PED' : 'ORC';
-  // Busca último número existente desse tipo
-  const { data, error } = await supabase
-    .from('quotes')
-    .select('number')
-    .ilike('number', `${prefix}-%`)
-    .order('created_at', { ascending: false })
-    .limit(1);
-  let nextSeq = 1;
-  if (!error && data && data.length > 0) {
-    const last = data[0].number; // formato PREFIX-000123
-    const match = /-(\d+)$/.exec(last);
-    if (match) {
-      nextSeq = parseInt(match[1], 10) + 1;
-    }
+  const { data, error } = await supabase.rpc('next_quote_number', { p_type: type });
+  if (error || !data) {
+    // fallback simples
+    const prefix = type === 'PEDIDO' ? 'PED' : 'ORC';
+    return `${prefix}-FALLBACK-${Date.now().toString().slice(-6)}`;
   }
-  return `${prefix}-${String(nextSeq).padStart(6, '0')}`;
+  return data as string;
 }
 
 export default function QuoteBuilder() {
@@ -805,57 +795,67 @@ export default function QuoteBuilder() {
                   </SelectContent>
                 </Select>
                 <Label>Condições de pagamento</Label>
-                <div className="space-y-2 border rounded-md p-3 bg-muted/20">
-                  {paymentSchedule.length === 0 && (
-                    <div className="text-xs text-muted-foreground">Nenhuma condição adicionada.</div>
-                  )}
-                  {paymentSchedule.map((p) => {
-                    const labelKind = p.kind === 'entrada' ? 'Entrada' : p.kind === 'saldo' ? 'Saldo' : 'Parcela';
-                    const valTxt = p.valueType === 'percent' ? `${p.value}%` : currencyBRL(p.value);
-                    return (
-                      <div key={p.id} className="flex items-center justify-between gap-2 text-xs bg-white rounded border p-2">
-                        <div className="flex flex-col">
-                          <span className="font-medium">{labelKind}</span>
-                          <span className="text-muted-foreground">{valTxt} • {p.dueDays} dia(s)</span>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
-                            // editar simples via prompt (rápido). Poderia ser modal futuro
-                            const nv = prompt('Valor (use % para percentual, ex 30% ou 500,00):', p.valueType === 'percent' ? `${p.value}%` : `${p.value}`);
-                            if (nv === null) return;
-                            let valueType: PaymentScheduleItem['valueType'] = 'fixed';
-                            let valueClean = nv.trim();
-                            if (valueClean.endsWith('%')) { valueType = 'percent'; valueClean = valueClean.slice(0,-1); }
-                            const num = parseFloat(valueClean.replace(',', '.'));
-                            if (isNaN(num) || num <= 0) { toast.error('Valor inválido'); return; }
-                            const days = prompt('Dias após emissão:', String(p.dueDays));
-                            if (days === null) return;
-                            const dnum = parseInt(days,10);
-                            if (isNaN(dnum) || dnum < 0) { toast.error('Dias inválido'); return; }
-                            setPaymentSchedule(arr => arr.map(it => it.id === p.id ? { ...it, valueType, value: num, dueDays: dnum } : it));
-                          }}>✎</Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPaymentSchedule(arr => arr.filter(it => it.id !== p.id))}>✕</Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => {
-                      const kind = prompt('Tipo (entrada, parcela, saldo):','parcela');
-                      if (!kind || !['entrada','parcela','saldo'].includes(kind)) { toast.error('Tipo inválido'); return; }
-                      const valueRaw = prompt('Valor (ex: 30% ou 500,00):','30%');
-                      if (valueRaw === null) return;
-                      const valueType: PaymentScheduleItem['valueType'] = valueRaw.trim().endsWith('%') ? 'percent' : 'fixed';
-                      const parsed = valueRaw.trim().replace('%','').replace(',','.');
-                      const num = parseFloat(parsed);
-                      if (isNaN(num) || num <= 0) { toast.error('Valor inválido'); return; }
-                      const daysRaw = prompt('Dias após emissão (0 para imediato):','30');
-                      if (daysRaw === null) return; const dnum = parseInt(daysRaw,10); if (isNaN(dnum)|| dnum<0) { toast.error('Dias inválido'); return; }
-                      setPaymentSchedule(arr => [...arr, { id: crypto.randomUUID(), kind: kind as 'entrada'|'parcela'|'saldo', valueType, value: num, dueDays: dnum }]);
-                    }}>Adicionar</Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => { setPaymentSchedule([]); setPaymentTerms(''); }}>Limpar</Button>
+                <div className="space-y-3 border rounded-md p-3 bg-muted/10">
+                  {/* Form inline */}
+                  <div className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-4">
+                      <Label className="text-[10px] uppercase">Tipo</Label>
+                      <select id="pg-kind" className="w-full border rounded px-2 py-1 text-xs">
+                        <option value="entrada">Entrada</option>
+                        <option value="parcela">Parcela</option>
+                        <option value="saldo">Saldo</option>
+                      </select>
+                    </div>
+                    <div className="col-span-3">
+                      <Label className="text-[10px] uppercase">Valor</Label>
+                      <input id="pg-value" className="w-full border rounded px-2 py-1 text-xs" placeholder="30% ou 500" />
+                    </div>
+                    <div className="col-span-3">
+                      <Label className="text-[10px] uppercase">Dias</Label>
+                      <input id="pg-days" type="number" className="w-full border rounded px-2 py-1 text-xs" defaultValue={30} />
+                    </div>
+                    <div className="col-span-2 flex gap-1">
+                      <Button type="button" size="sm" className="w-full" onClick={() => {
+                        const kindSel = (document.getElementById('pg-kind') as HTMLSelectElement).value as PaymentScheduleItem['kind'];
+                        const valueRaw = (document.getElementById('pg-value') as HTMLInputElement).value.trim();
+                        const daysVal = parseInt((document.getElementById('pg-days') as HTMLInputElement).value, 10);
+                        if (!valueRaw) { toast.error('Informe valor'); return; }
+                        const valueType: PaymentScheduleItem['valueType'] = valueRaw.endsWith('%') ? 'percent' : 'fixed';
+                        const num = parseFloat(valueRaw.replace('%','').replace(',','.'));
+                        if (isNaN(num) || num <= 0) { toast.error('Valor inválido'); return; }
+                        if (isNaN(daysVal) || daysVal < 0) { toast.error('Dias inválido'); return; }
+                        setPaymentSchedule(arr => [...arr, { id: crypto.randomUUID(), kind: kindSel, valueType, value: num, dueDays: daysVal }]);
+                        (document.getElementById('pg-value') as HTMLInputElement).value='';
+                      }}>Add</Button>
+                      <Button type="button" size="sm" variant="outline" onClick={() => { setPaymentSchedule([]); }}>Clear</Button>
+                    </div>
                   </div>
-                  <div className="text-[10px] text-muted-foreground">Os itens são salvos e exibidos no PDF. Edição futura pode ter UI mais rica.</div>
+                  {paymentSchedule.length > 0 && (
+                    <div className="space-y-2">
+                      {paymentSchedule.map((p, idx) => {
+                        const labelKind = p.kind === 'entrada' ? 'Entrada' : p.kind === 'saldo' ? 'Saldo' : `Parcela ${idx+1}`;
+                        const valTxt = p.valueType === 'percent' ? `${p.value}%` : currencyBRL(p.value);
+                        return (
+                          <div key={p.id} className="flex items-center justify-between gap-2 bg-white rounded border px-2 py-1 text-xs">
+                            <div>
+                              <span className="font-medium">{labelKind}</span>{' '}
+                              <span className="text-muted-foreground">{valTxt} • {p.dueDays} dia(s)</span>
+                            </div>
+                            <div className="flex gap-1">
+                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPaymentSchedule(arr => arr.filter(it => it.id !== p.id))}>✕</Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {/* Validação soma percentuais */}
+                      {(() => {
+                        const percTotal = paymentSchedule.filter(p => p.valueType==='percent').reduce((s,p)=>s+p.value,0);
+                        if (percTotal > 100.0001) return <div className="text-[10px] text-red-600">Percentuais somam {percTotal.toFixed(2)}% &gt; 100%</div>;
+                        return <div className="text-[10px] text-muted-foreground">Percentuais somam {percTotal.toFixed(2)}%</div>;
+                      })()}
+                    </div>
+                  )}
+                  <div className="text-[10px] text-muted-foreground">Configure parcelas estruturadas. Valores % aplicam sobre o total.</div>
                 </div>
               </div>
               <div className="space-y-1 md:space-y-2">
