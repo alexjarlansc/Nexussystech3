@@ -556,21 +556,25 @@ export default function QuoteBuilder() {
 
     const escape = (s: string) => (s || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]!));
     const currency = (n:number)=> new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n);
-    let paymentLines: string[] = [];
+  // paymentEntries calculado abaixo
+    interface PaymentEntry { label:string; detail:string; amount:number }
+    let paymentEntries: PaymentEntry[] = [];
     if (quote.paymentTerms) {
       try {
         const parsed = JSON.parse(quote.paymentTerms);
         if (parsed && parsed.version === 1 && Array.isArray(parsed.items)) {
-          paymentLines = parsed.items.map((it: {kind:string; valueType:string; value:number; dueDays:number}, idx: number) => {
-            const kindLabel = it.kind === 'entrada' ? 'Entrada' : it.kind === 'saldo' ? 'Saldo' : `Parcela ${idx+1}`;
-            const val = it.valueType === 'percent' ? `${it.value}%` : currencyBRL(Number(it.value));
-            return `${kindLabel}: ${val} em ${it.dueDays} dia(s)`;
+          paymentEntries = parsed.items.map((it: {kind:string; valueType:string; value:number; dueDays:number}, idx:number) => {
+            const label = it.kind === 'entrada' ? 'Entrada' : it.kind === 'saldo' ? 'Saldo' : `Parcela ${idx+1}`;
+            const amount = it.valueType === 'percent' ? (quote.total * (it.value/100)) : Number(it.value);
+            const valTxt = it.valueType === 'percent' ? `${it.value}%` : currencyBRL(Number(it.value));
+            const detail = `${valTxt} em ${it.dueDays} dia(s)`;
+            return { label, detail, amount };
           });
         } else {
-          paymentLines = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+          paymentEntries = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean).map((t,i)=>({label:`Parcela ${i+1}`, detail:t, amount:0}));
         }
       } catch {
-        paymentLines = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+        paymentEntries = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean).map((t,i)=>({label:`Parcela ${i+1}`, detail:t, amount:0}));
       }
     }
 
@@ -668,10 +672,10 @@ export default function QuoteBuilder() {
         ${discountCalc>0.009?`<div class="totals-row"><span>Desconto</span><span>- ${currency(discountCalc)}</span></div>`:''}
         <div class="totals-row highlight"><span>Total</span><span>${currency(quote.total)}</span></div>
       </div>
-      ${paymentLines.length?`<h3 style="margin-top:22px;">Condições de Pagamento</h3>
+      ${paymentEntries.length?`<h3 style="margin-top:22px;">Condições de Pagamento</h3>
       <table class="payments-table">
-        <thead><tr><th style="width:18%">Parcela</th><th>Detalhes</th></tr></thead>
-        <tbody>${paymentLines.map((l,i)=>`<tr><td style="font-weight:600;">${i+1}</td><td>${escape(l)}</td></tr>`).join('')}</tbody>
+        <thead><tr><th style="width:20%">Parcela</th><th>Detalhes</th><th style="width:18%">Valor (R$)</th></tr></thead>
+        <tbody>${paymentEntries.map(p=>`<tr><td style="font-weight:600;">${escape(p.label)}</td><td>${escape(p.detail)}</td><td>${currency(p.amount)}</td></tr>`).join('')}</tbody>
       </table>`:''}
       ${quote.notes?`<h3 style="margin-top:22px;">Observações</h3><div class="notes">${escape(quote.notes)}</div>`:''}
       <div class="signatures">
@@ -1529,22 +1533,24 @@ function ReceiptView({ quote }: { quote: Quote }) {
   const issueDate = new Date(quote.createdAt).toLocaleDateString('pt-BR');
   const validade = new Date(new Date(quote.createdAt).getTime() + quote.validityDays * 86400000).toLocaleDateString('pt-BR');
 
-  // Processar condições de pagamento em linhas
-  let paymentLines: string[] = [];
+  interface PaymentEntry { label:string; detail:string; amount:number }
+  let paymentEntries: PaymentEntry[] = [];
   if (quote.paymentTerms) {
     try {
       const parsed = JSON.parse(quote.paymentTerms);
       if (parsed && parsed.version === 1 && Array.isArray(parsed.items)) {
-        paymentLines = parsed.items.map((it: {kind:string; valueType:string; value:number; dueDays:number}, idx: number) => {
-          const kindLabel = it.kind === 'entrada' ? 'Entrada' : it.kind === 'saldo' ? 'Saldo' : `Parcela ${idx+1}`;
-          const val = it.valueType === 'percent' ? `${it.value}%` : currencyBRL(Number(it.value));
-          return `${kindLabel}: ${val} em ${it.dueDays} dia(s)`;
+        paymentEntries = parsed.items.map((it: {kind:string; valueType:string; value:number; dueDays:number}, idx:number) => {
+          const label = it.kind === 'entrada' ? 'Entrada' : it.kind === 'saldo' ? 'Saldo' : `Parcela ${idx+1}`;
+          const amount = it.valueType === 'percent' ? (quote.total * (it.value/100)) : Number(it.value);
+          const valTxt = it.valueType === 'percent' ? `${it.value}%` : currencyBRL(Number(it.value));
+          const detail = `${valTxt} em ${it.dueDays} dia(s)`;
+          return { label, detail, amount };
         });
       } else {
-        paymentLines = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+        paymentEntries = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean).map((t,i)=>({label:`Parcela ${i+1}`, detail:t, amount:0}));
       }
     } catch {
-      paymentLines = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+      paymentEntries = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean).map((t,i)=>({label:`Parcela ${i+1}`, detail:t, amount:0}));
     }
   }
 
@@ -1620,21 +1626,23 @@ function ReceiptView({ quote }: { quote: Quote }) {
       </div>
 
       {/* Condições de pagamento */}
-      {(paymentLines.length > 0) && (
+      {(paymentEntries.length > 0) && (
         <div className="mt-4">
           <h3 className="font-semibold mb-1">Condições de pagamento:</h3>
           <table className="w-full text-xs border border-gray-300">
             <thead className="bg-muted/60">
               <tr className="border-b border-gray-300">
-                <th className="text-left p-1 font-medium">Descrição</th>
+                <th className="text-left p-1 font-medium">Parcela</th>
                 <th className="text-left p-1 font-medium">Detalhes</th>
+                <th className="text-left p-1 font-medium">Valor</th>
               </tr>
             </thead>
             <tbody>
-              {paymentLines.map((l, idx) => (
+              {paymentEntries.map((p, idx) => (
                 <tr key={idx} className="border-t border-gray-200">
-                  <td className="p-1 align-top">Parcela {idx + 1}</td>
-                  <td className="p-1 whitespace-pre-wrap">{l}</td>
+                  <td className="p-1 align-top">{p.label}</td>
+                  <td className="p-1 whitespace-pre-wrap">{p.detail}</td>
+                  <td className="p-1 whitespace-pre-wrap">{p.amount ? currencyBRL(p.amount) : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -1643,7 +1651,7 @@ function ReceiptView({ quote }: { quote: Quote }) {
       )}
 
       {/* Observações / Notas */}
-      {(quote.notes || paymentLines.length === 0) && (
+  {(quote.notes || paymentEntries.length === 0) && (
         <div className="mt-4">
           <h3 className="font-semibold mb-1">Observações:</h3>
           <div className="text-xs whitespace-pre-wrap leading-snug">
