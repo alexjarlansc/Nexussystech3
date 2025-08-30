@@ -64,3 +64,41 @@ export interface Quote {
   subtotal: number;
   total: number;
 }
+
+// PDV / Venda Finalizada
+export interface SalePaymentLine {
+  id: string;
+  method: string;
+  amount: number;
+}
+
+export interface SaleItemSnapshot {
+  id?: string; // opcional se derivado do produto
+  productId?: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  discount?: number;
+  total: number; // (quantity*unitPrice - discount)
+}
+
+export interface Sale {
+  id: string;
+  sale_number: string;
+  quote_id?: string | null;
+  client_snapshot: Client;
+  vendor?: Vendor;
+  operator_id?: string;
+  items: SaleItemSnapshot[];
+  payments: SalePaymentLine[];
+  payment_plan?: string | null; // JSON string reutilizando condições
+  subtotal: number;
+  discount: number;
+  freight: number;
+  total: number;
+  status: string; // FINALIZADA, CANCELADA
+  payment_status: string; // PAGO, PARCIAL, PENDENTE
+  company_id?: string;
+  created_by?: string;
+  created_at: string;
+}
