@@ -171,7 +171,13 @@ export default function PDV() {
     const blockedStatuses = ['rascunho','digitacao','digitação','edicao','edição','aberto','em edição','em edicao'];
     if (rawType !== 'PEDIDO' || blockedStatuses.includes(rawStatus) || (!allowStatuses.includes(rawStatus) && rawStatus !== '')) {
       console.warn('PDV: Pedido bloqueado para carregamento', { number: full, status: data.status, type: data.type });
-      toast.error('Pedido ainda em digitação/edição. Conclua e aprove antes de usar no PDV.');
+      let vendorName = '';
+      try {
+        const v = data.vendor as unknown as { name?: string } | null;
+        vendorName = v?.name ? v.name.trim() : '';
+      } catch { /* ignore */ }
+      const consult = vendorName ? ` Consulte o vendedor: ${vendorName}.` : '';
+      toast.error('Pedido ainda em digitação/edição. Conclua e aprove antes de usar no PDV.' + consult);
       return;
     }
     // map fields
