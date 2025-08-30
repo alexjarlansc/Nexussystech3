@@ -1,5 +1,5 @@
 export type QuoteType = 'ORCAMENTO' | 'PEDIDO';
-export type PaymentMethod = 'Pix' | 'Cartão Débito' | 'Cartão de Crédito' | 'Boleto';
+export type PaymentMethod = 'Pix' | 'Cartão Débito' | 'Cartão de Crédito' | 'Boleto' | 'Cupom Fiscal';
 export type QuoteStatus = 'Rascunho' | 'Enviado' | 'Aprovado' | 'Cancelado' | 'Pago';
 
 export interface CompanyInfo {

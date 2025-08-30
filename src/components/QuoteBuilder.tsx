@@ -854,7 +854,7 @@ export default function QuoteBuilder() {
                 <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}>
                   <SelectTrigger><SelectValue placeholder="Método" /></SelectTrigger>
                   <SelectContent>
-                    {(['Pix','Cartão Débito','Cartão de Crédito','Boleto'] as PaymentMethod[]).map((m) => (
+                    {(['Pix','Cartão Débito','Cartão de Crédito','Boleto','Cupom Fiscal'] as PaymentMethod[]).map((m) => (
                       <SelectItem key={m} value={m}>{m}</SelectItem>
                     ))}
                   </SelectContent>
