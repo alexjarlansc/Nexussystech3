@@ -21,10 +21,10 @@ function currencyBRL(n: number) {
 
 function nextNumber(type: QuoteType, used: Set<string>): string {
   // Sequência separada para orçamento e pedido
-  let key = StorageKeys.orcCounter;
+  let key: string = StorageKeys.orcCounter;
   let prefix = 'ORC';
   if (type === 'PEDIDO') {
-    key = 'pedCounter'; // Defina StorageKeys.pedCounter se não existir
+    key = StorageKeys.pedCounter;
     prefix = 'PED';
   }
   let idx = parseInt(getString(key, '0') || '0', 10);
@@ -412,7 +412,8 @@ export default function QuoteBuilder() {
       loadProducts();
   } catch (error: unknown) {
       console.error('Erro ao cadastrar produto:', error);
-      toast.error('Erro ao cadastrar produto: ' + (error?.message || JSON.stringify(error)));
+      const msg = (error && typeof error === 'object' && 'message' in error) ? (error as {message:string}).message : JSON.stringify(error);
+      toast.error('Erro ao cadastrar produto: ' + msg);
     }
   };
 

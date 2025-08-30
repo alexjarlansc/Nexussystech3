@@ -122,6 +122,108 @@ export type Database = {
         }
         Relationships: []
       }
+      clients: {
+        Row: {
+          id: string
+          name: string
+          taxid: string | null // usando lowercase padronizado
+          taxId: string | null // coluna alternativa
+          phone: string | null
+          email: string | null
+          address: string | null
+          company_id: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          taxid?: string | null
+          taxId?: string | null
+          phone?: string | null
+          email?: string | null
+          address?: string | null
+          company_id?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          taxid?: string | null
+          taxId?: string | null
+          phone?: string | null
+          email?: string | null
+          address?: string | null
+          company_id?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      quotes: {
+        Row: {
+          id: string
+          number: string
+          type: string
+          created_at: string
+          validity_days: number
+          vendor: Json
+          client_id: string | null
+          client_snapshot: Json
+          items: Json
+          freight: number | null
+          payment_method: string | null
+          payment_terms: string | null
+          notes: string | null
+          status: string | null
+          subtotal: number | null
+          total: number | null
+          company_id: string | null
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          number: string
+          type: string
+          created_at?: string
+          validity_days: number
+          vendor: Json
+          client_id?: string | null
+          client_snapshot: Json
+          items: Json
+          freight?: number | null
+          payment_method?: string | null
+          payment_terms?: string | null
+          notes?: string | null
+          status?: string | null
+          subtotal?: number | null
+          total?: number | null
+          company_id?: string | null
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          number?: string
+          type?: string
+          created_at?: string
+          validity_days?: number
+          vendor?: Json
+          client_id?: string | null
+          client_snapshot?: Json
+          items?: Json
+          freight?: number | null
+          payment_method?: string | null
+          payment_terms?: string | null
+          notes?: string | null
+          status?: string | null
+          subtotal?: number | null
+          total?: number | null
+          company_id?: string | null
+          created_by?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           company_id: string
