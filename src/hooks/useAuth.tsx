@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/sonner';
@@ -24,6 +24,10 @@ interface Company {
   logo_url?: string;
 }
 
+type BasicResult = { error: { message: string } | null };
+interface InviteCodeResult { code?: string; error: { message: string } | null }
+interface CodesResult { data: Array<unknown>; error: { message: string } | null }
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -31,7 +35,7 @@ interface AuthContextType {
   company: Company | null;
   loading: boolean;
   error: string | null;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<BasicResult>;
   signUp: (email: string, password: string, userData: {
     firstName: string;
     companyName: string;
@@ -41,12 +45,12 @@ interface AuthContextType {
     address?: string;
     role?: 'user' | 'admin';
     inviteCode?: string;
-  }) => Promise<{ error: any }>;
+  }) => Promise<BasicResult>;
   signOut: () => Promise<void>;
-  updateProfile: (data: Partial<Profile>) => Promise<{ error: any }>;
-  updateCompany: (data: Partial<Company>) => Promise<{ error: any }>;
-  generateInviteCode: (role: 'user' | 'admin' | 'pdv') => Promise<{ code?: string; error: any }>;
-  getInviteCodes: () => Promise<{ data: any[]; error: any }>;
+  updateProfile: (data: Partial<Profile>) => Promise<BasicResult>;
+  updateCompany: (data: Partial<Company>) => Promise<BasicResult>;
+  generateInviteCode: (role: 'user' | 'admin' | 'pdv') => Promise<InviteCodeResult>;
+  getInviteCodes: () => Promise<CodesResult>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -58,6 +62,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  const loadUserData = useCallback(async (userId: string, retryCount = 0) => {
+    try {
+      console.log(`📊 Carregando dados do usuário: ${userId}`);
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (profileError) {
+        console.error('❌ Erro ao carregar perfil:', profileError);
+        if (retryCount < 2 && profileError.code !== 'PGRST116') {
+          console.log(`🔄 Tentativa ${retryCount + 1} de carregar perfil...`);
+          setTimeout(() => loadUserData(userId, retryCount + 1), 1000);
+          return;
+        }
+        setError('Erro ao carregar dados do usuário');
+        setLoading(false);
+        return;
+      }
+      if (!profileData) {
+        console.warn('⚠️ Perfil não encontrado para o usuário');
+        setError('Perfil não encontrado. Entre em contato com o administrador.');
+        setLoading(false);
+        return;
+      }
+      setProfile(profileData);
+      console.log('✅ Perfil carregado:', profileData.role);
+      if (profileData?.company_id) {
+        const { data: companyData, error: companyError } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('id', profileData.company_id)
+          .maybeSingle();
+        if (companyError) {
+          console.error('❌ Erro ao carregar empresa:', companyError);
+          setError('Erro ao carregar dados da empresa');
+        } else if (companyData) {
+          setCompany(companyData);
+          console.log('✅ Empresa carregada:', companyData.name);
+        }
+        if (profileData.role === 'pdv') {
+          if (window.location.pathname !== '/pdv') navigate('/pdv', { replace: true });
+        } else if (window.location.pathname === '/auth') {
+          navigate('/', { replace: true });
+        }
+      }
+    } catch (error) {
+      console.error('❌ Erro em loadUserData:', error);
+      setError('Erro inesperado ao carregar dados');
+    } finally {
+      setLoading(false);
+    }
+  }, [navigate]);
 
   useEffect(() => {
     console.log('🔐 Inicializando autenticação...');
@@ -108,67 +167,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [loadUserData]);
 
-  const loadUserData = async (userId: string, retryCount = 0) => {
-    try {
-      console.log(`📊 Carregando dados do usuário: ${userId}`);
-      
-      // Load profile with maybeSingle to handle missing profiles gracefully
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (profileError) {
-        console.error('❌ Erro ao carregar perfil:', profileError);
-        
-        // Retry mechanism for transient errors
-        if (retryCount < 2 && profileError.code !== 'PGRST116') {
-          console.log(`🔄 Tentativa ${retryCount + 1} de carregar perfil...`);
-          setTimeout(() => loadUserData(userId, retryCount + 1), 1000);
-          return;
-        }
-        
-        setError('Erro ao carregar dados do usuário');
-        setLoading(false);
-        return;
-      }
-
-      if (!profileData) {
-        console.warn('⚠️ Perfil não encontrado para o usuário');
-        setError('Perfil não encontrado. Entre em contato com o administrador.');
-        setLoading(false);
-        return;
-      }
-
-      setProfile(profileData);
-      console.log('✅ Perfil carregado:', profileData.role);
-
-      // Load company
-      if (profileData?.company_id) {
-        const { data: companyData, error: companyError } = await supabase
-          .from('companies')
-          .select('*')
-          .eq('id', profileData.company_id)
-          .maybeSingle();
-
-        if (companyError) {
-          console.error('❌ Erro ao carregar empresa:', companyError);
-          setError('Erro ao carregar dados da empresa');
-        } else if (companyData) {
-          setCompany(companyData);
-          console.log('✅ Empresa carregada:', companyData.name);
-        }
-      }
-    } catch (error) {
-      console.error('❌ Erro em loadUserData:', error);
-      setError('Erro inesperado ao carregar dados');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // loadUserData redefinido acima
 
   const cleanupAuthState = () => {
     console.log('🧹 Limpando estado de autenticação...');
@@ -467,6 +468,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+// Nota: arquivo exporta provider + hook; fast refresh warning pode ser ignorado neste contexto
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
