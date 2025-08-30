@@ -72,6 +72,7 @@ export default function PDV() {
   const [movementAmount, setMovementAmount] = useState('');
   const [movementDesc, setMovementDesc] = useState('');
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  // Modo simplificado: não há mais verificação manual nem adição de parcelas
 
   const subtotal = useMemo(() => items.reduce((s,i)=> s + i.unitPrice * i.quantity,0), [items]);
   const totalDiscount = useMemo(()=> items.reduce((s,i)=> s + (i.discount||0),0) + extraDiscount, [items, extraDiscount]);
@@ -150,13 +151,7 @@ export default function PDV() {
     setItems(prev => prev.map(i=> i.id===id ? { ...i, discount: value } : i));
   }
 
-  function addPayment() {
-    const value = parseFloat(paymentAmount.replace(',','.'));
-    if (isNaN(value) || value <= 0) { toast.error('Valor inválido'); return; }
-    setPayments(prev=> [...prev, { id: crypto.randomUUID(), method: paymentMethod, amount: value, description: 'Manual' }]);
-    setPaymentAmount('');
-    if (value >= remaining) setPaymentDialog(false);
-  }
+  function addPayment() { /* desativado */ toast.error('Ajuste de pagamento desativado. Use condições do Pedido.'); }
 
   function normalizeOrder(num: string){
     if(!num) return '';
@@ -258,8 +253,8 @@ export default function PDV() {
       const totalPedido = (q.total || 0);
       if (totalPedido > 0) schedulePayments.push({ id: crypto.randomUUID(), method: mapped, amount: totalPedido, description: 'Único', planned: true });
     }
-    setPayments(schedulePayments);
-    toast.success('Pedido carregado');
+  setPayments(schedulePayments);
+  toast.success('Pedido carregado');
   }
 
   function onProductSearchChange(val: string) {
@@ -292,8 +287,8 @@ export default function PDV() {
 
   async function finalizeSale() {
     if (items.length === 0) { toast.error('Sem itens'); return; }
-    if (remaining > 0) { toast.error('Pagamento incompleto'); return; }
-    if (!cashSession && payments.some(p => p.method === 'Dinheiro')) {
+    // Agora permite finalizar sem receber entrada; status será calculado
+    if (!cashSession && payments.some(p => p.method === 'Dinheiro' && !p.planned)) {
       toast.error('Abra o caixa para receber em dinheiro');
       return;
     }
@@ -311,9 +306,9 @@ export default function PDV() {
         subtotal: subtotal,
         discount: totalDiscount,
         freight: freight,
-        total: netTotal + freight,
-        status: 'FINALIZADA',
-        payment_status: remaining === 0 ? 'PAGO' : 'PARCIAL',
+  total: referenceTotal,
+  status: 'FINALIZADA',
+  payment_status: remaining <= 0.009 ? 'PAGO' : 'PARCIAL',
         company_id: profile?.company_id,
         created_by: user?.id,
       };
@@ -343,6 +338,8 @@ export default function PDV() {
       toast.error('Erro ao finalizar venda');
     }
   }
+
+  // Fluxo de verificação removido
 
   async function handleOpenCash() {
     try {
@@ -535,11 +532,11 @@ export default function PDV() {
                   <span>Conexão: {isOnline? 'Online':'Offline'}</span>
                 </div>
                 <div className="flex gap-2">
-                  {!cashSession && <Button variant="outline" size="sm" onClick={()=> setOpenCashDialog(true)}>Abrir Caixa</Button>}
-                  {cashSession && <Button variant="outline" size="sm" onClick={()=> setOpenCloseDialog(true)}>Fechar Caixa</Button>}
-                  {cashSession && <Button variant="outline" size="sm" onClick={()=> setMovementDialog({type:'SANGRIA'})}>Sangria</Button>}
-                  {cashSession && <Button variant="outline" size="sm" onClick={()=> setMovementDialog({type:'SUPRIMENTO'})}>Suprimento</Button>}
-                  <Button size="lg" disabled={referenceTotal===0 || remaining>0} onClick={finalizeSale} className="bg-slate-800 hover:bg-slate-700">(F3) Finalizar Venda</Button>
+                  {!cashSession && <Button variant="outline" size="sm" onClick={()=> { setOpenCashDialog(true); }}>Abrir Caixa</Button>}
+                  {cashSession && <Button variant="outline" size="sm" onClick={()=> { setOpenCloseDialog(true); }}>Fechar Caixa</Button>}
+                  {cashSession && <Button variant="outline" size="sm" onClick={()=> { setMovementDialog({type:'SANGRIA'}); }}>Sangria</Button>}
+                  {cashSession && <Button variant="outline" size="sm" onClick={()=> { setMovementDialog({type:'SUPRIMENTO'}); }}>Suprimento</Button>}
+                  <Button size="lg" disabled={referenceTotal===0 || items.length===0} onClick={finalizeSale} className="bg-slate-800 hover:bg-slate-700">(F3) Finalizar Venda</Button>
                 </div>
               </div>
               {parsedSchedule.length>0 && (
