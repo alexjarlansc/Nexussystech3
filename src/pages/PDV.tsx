@@ -70,6 +70,7 @@ export default function PDV() {
   const paid = payments.reduce((s,p)=> s + p.amount,0);
   const remaining = Math.max(0, netTotal - paid);
   const changeValue = paid > (netTotal + freight) ? (paid - (netTotal + freight)) : 0;
+  const fmt = (n:number) => n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 
   // Carrega produtos e sessão de caixa aberta
   useEffect(() => {
@@ -356,7 +357,7 @@ export default function PDV() {
                 <div className="absolute top-full left-0 z-20 w-72 max-h-56 overflow-auto bg-white border shadow text-xs">
                   {products.filter(p=> p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.id.includes(productSearch)).slice(0,25).map(p=> (
                     <button key={p.id} type="button" className="w-full text-left px-2 py-1 hover:bg-slate-100 flex justify-between" onClick={()=> { setCurrentProduct({id:p.id,name:p.name}); setUnitPrice(p.price); setProductSearch(p.name); setShowSuggestions(false); }}>
-                      <span className="truncate pr-2">{p.name}</span><span className="text-muted-foreground">{p.price.toFixed(2)}</span>
+                      <span className="truncate pr-2">{p.name}</span><span className="text-muted-foreground">{fmt(p.price)}</span>
                     </button>
                   ))}
                   {products.length===0 && <div className="px-2 py-1 text-muted-foreground">Sem produtos</div>}
@@ -401,9 +402,9 @@ export default function PDV() {
                       <td className="p-1">{idx+1}</td>
                       <td className="p-1 truncate max-w-[240px]" title={it.name}>{it.name}</td>
                       <td className="p-1 text-right">{it.quantity}</td>
-                      <td className="p-1 text-right">{it.unitPrice.toFixed(2)}</td>
-                      <td className="p-1 text-right">{(it.discount||0).toFixed(2)}</td>
-                      <td className="p-1 text-right">{(lineSubtotal - (it.discount||0)).toFixed(2)}</td>
+                      <td className="p-1 text-right">{fmt(it.unitPrice)}</td>
+                      <td className="p-1 text-right">{fmt(it.discount||0)}</td>
+                      <td className="p-1 text-right">{fmt(lineSubtotal - (it.discount||0))}</td>
                       <td className="p-1 text-center">
                         <button onClick={()=> removeItem(it.id)} className="text-red-600 hover:underline">X</button>
                       </td>
@@ -435,11 +436,11 @@ export default function PDV() {
               </div>
               <div className="col-span-1">
                 <div className="font-medium text-[11px] uppercase tracking-wide">Descontos</div>
-                <div className="text-xl font-bold">{totalDiscount.toFixed(2)}</div>
+                <div className="text-xl font-bold">{fmt(totalDiscount)}</div>
               </div>
               <div className="col-span-1">
                 <div className="font-medium text-[11px] uppercase tracking-wide">Total Líquido</div>
-                <div className="text-xl font-bold">{(netTotal + freight).toFixed(2)}</div>
+                <div className="text-xl font-bold">{fmt(netTotal + freight)}</div>
               </div>
               <div className="col-span-3 flex justify-between items-center mt-4">
                 <div className="flex flex-col items-start gap-0.5 text-[10px] text-muted-foreground">
@@ -484,7 +485,7 @@ export default function PDV() {
                 <tbody>
                   {payments.map(p=> <tr key={p.id}>
                     <td className="p-1">{p.method}</td>
-                    <td className="p-1 text-right">{p.amount.toFixed(2)}</td>
+                    <td className="p-1 text-right">{fmt(p.amount)}</td>
                     <td className="p-1 text-center"><button onClick={()=> setPayments(prev=> prev.filter(x=> x.id!==p.id))} className="text-red-600 text-[10px]">rem</button></td>
                   </tr>)}
                   {payments.length===0 && <tr><td colSpan={3} className="p-2 text-center text-muted-foreground">Nenhum pagamento</td></tr>}
@@ -492,10 +493,10 @@ export default function PDV() {
               </table>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="flex justify-between"><span>Total</span><span>{(netTotal + freight).toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>Pago</span><span>{paid.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>Restante</span><span>{remaining.toFixed(2)}</span></div>
-              <div className="flex justify-between col-span-2 font-semibold"><span>Troco</span><span>{changeValue.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Total</span><span>{fmt(netTotal + freight)}</span></div>
+              <div className="flex justify-between"><span>Pago</span><span>{fmt(paid)}</span></div>
+              <div className="flex justify-between"><span>Restante</span><span>{fmt(remaining)}</span></div>
+              <div className="flex justify-between col-span-2 font-semibold"><span>Troco</span><span>{fmt(changeValue)}</span></div>
             </div>
           </div>
         </DialogContent>
