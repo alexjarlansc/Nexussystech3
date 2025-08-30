@@ -372,7 +372,7 @@ export default function PDV() {
             </div>
             <div>
               <label className="text-xs font-medium">Valor Unitário:</label>
-              <Input type="number" value={unitPrice} onChange={e=> setUnitPrice(parseFloat(e.target.value)||0)} className="h-7" />
+              <Input type="text" value={fmt(unitPrice)} disabled className="h-7 bg-slate-100 text-right font-medium" />
             </div>
           </div>
           <div className="pt-1">
