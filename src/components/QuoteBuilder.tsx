@@ -462,6 +462,103 @@ export default function QuoteBuilder() {
     }
   };
 
+  // Impressão independente: abre nova janela somente com o orçamento
+  function openQuotePdf(quote: Quote) {
+    const issueDate = new Date(quote.createdAt).toLocaleDateString('pt-BR');
+    const validade = new Date(new Date(quote.createdAt).getTime() + quote.validityDays * 86400000).toLocaleDateString('pt-BR');
+    const companyStored = localStorage.getItem(StorageKeys.company);
+    let companyName = 'Empresa';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let companyObj: any = {};
+    try {
+      if (companyStored) { companyObj = JSON.parse(companyStored); companyName = companyObj.name || companyName; }
+    } catch {
+      // ignore parse
+    }
+
+    const escape = (s: string) => (s || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]!));
+    const currency = (n:number)=> new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n);
+    const paymentLines = (quote.paymentTerms || '').split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8" />
+      <title>${escape(quote.type==='ORCAMENTO'?'Orçamento':'Pedido')} ${escape(quote.number)}</title>
+      <style>
+        @page { size: A4; margin: 14mm 14mm 16mm; }
+        body { font-family: system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif; font-size:12px; line-height:1.35; color:#111; }
+        h1,h2,h3 { margin:0; }
+        .header { display:flex; justify-content:space-between; gap:24px; padding-bottom:8px; border-bottom:1px solid #ccc; }
+        .logo { max-height:70px; max-width:160px; object-fit:contain; }
+        .meta { margin-top:10px; padding-bottom:6px; border-bottom:1px solid #ccc; font-weight:600; display:flex; flex-wrap:wrap; gap:24px; }
+        .section-title { font-weight:600; margin:20px 0 6px; }
+        .product { display:flex; gap:16px; border-bottom:1px solid #e3e3e3; padding:14px 0; page-break-inside:avoid; }
+        .product:last-of-type { border-bottom:none; }
+        .product img { width:120px; height:120px; object-fit:cover; border:1px solid #ddd; border-radius:4px; }
+        .desc { white-space:pre-wrap; font-size:11px; margin-top:4px; }
+        .subtotal-row { font-weight:600; margin-top:8px; }
+        table { border-collapse:collapse; width:100%; }
+        th,td { border:1px solid #c6c6c6; padding:4px 6px; text-align:left; font-size:11px; }
+        th { background:#f1f5f9; }
+        .totals { margin-top:16px; max-width:280px; }
+        .totals div { display:flex; justify-content:space-between; }
+        .signatures { margin-top:60px; display:grid; grid-template-columns:1fr 1fr; gap:48px; }
+        .sig { text-align:center; }
+        .sig-line { width:220px; border-top:1px dashed #666; height:0; margin:0 auto 4px; }
+        .muted { color:#555; }
+        .small { font-size:10px; }
+        .notes { font-size:11px; white-space:pre-wrap; }
+      </style></head><body>
+      <div class="header">
+        <div>
+          <h1 style="font-size:20px;">${escape(companyObj.name || companyName)}</h1>
+          ${companyObj.address ? `<div>${escape(companyObj.address)}</div>`:''}
+          <div class="muted small">${[companyObj.taxid && 'CNPJ/CPF: '+escape(companyObj.taxid), companyObj.phone, companyObj.email].filter(Boolean).map(escape).join(' · ')}</div>
+        </div>
+        ${companyObj.logoDataUrl ? `<img class="logo" src="${companyObj.logoDataUrl}" />`:''}
+      </div>
+      <div class="meta">
+        <span>${escape(quote.type==='ORCAMENTO'?'Orçamento':'Pedido')} Nº ${escape(quote.number)}</span>
+        <span>Criado em ${escape(issueDate)}</span>
+        <span>Válido até ${escape(new Date(new Date(quote.createdAt).getTime()+quote.validityDays*86400000).toLocaleDateString('pt-BR'))}</span>
+      </div>
+      <div style="margin-top:10px;">
+        <div><strong>Representante:</strong> ${escape(quote.vendor?.name||'-')}${quote.vendor?.phone?' • '+escape(quote.vendor.phone):''}${quote.vendor?.email?' • '+escape(quote.vendor.email):''}</div>
+        <div><strong>Cliente:</strong> ${escape(quote.clientSnapshot.name)}${quote.clientSnapshot.taxid?' • '+escape(quote.clientSnapshot.taxid):''}</div>
+        <div class="muted small">${[quote.clientSnapshot.phone, quote.clientSnapshot.email, quote.clientSnapshot.address].filter(Boolean).map(escape).join(' • ')}</div>
+      </div>
+      <h2 class="section-title">Produtos</h2>
+      ${quote.items.map(it=>`<div class="product">
+        ${it.imageDataUrl?`<img src="${it.imageDataUrl}" />`:''}
+        <div>
+          <div style="font-weight:600; text-transform:uppercase; font-size:13px;">${escape(it.name)}</div>
+          <div class="muted small">Preço unitário: ${currency(it.unitPrice)} • Quantidade: ${it.quantity}</div>
+          ${(it.description||it.options)?`<div class="desc">${escape((it.description||'') + (it.options? '\n'+it.options:''))}</div>`:''}
+          <div class="subtotal-row">Subtotal: ${currency(it.subtotal)}</div>
+        </div>
+      </div>`).join('')}
+      <div class="totals">
+        <div><span>Subtotal:</span><span>${currency(quote.subtotal)}</span></div>
+        <div><span>Frete:</span><span>${currency(quote.freight)}</span></div>
+        <div style="font-weight:700; font-size:14px; margin-top:4px;"><span>Total:</span><span>${currency(quote.total)}</span></div>
+      </div>
+      ${paymentLines.length?`<h3 class="section-title" style="margin-top:18px;">Condições de pagamento</h3>
+        <table><thead><tr><th>Parcela</th><th>Descrição</th></tr></thead><tbody>
+        ${paymentLines.map((l,i)=>`<tr><td>${i+1}</td><td>${escape(l)}</td></tr>`).join('')}
+        </tbody></table>`:''}
+      ${quote.notes?`<h3 class="section-title" style="margin-top:18px;">Observações</h3><div class="notes">${escape(quote.notes)}</div>`:''}
+      <div class="signatures">
+        <div class="sig"><div class="sig-line"></div><div class="small muted">Assinatura do Vendedor</div><div class="small" style="margin-top:4px;">${escape(quote.vendor?.name||'')}</div></div>
+        <div class="sig"><div class="sig-line"></div><div class="small muted">Assinatura do Cliente</div><div class="small" style="margin-top:4px;">${escape(quote.clientSnapshot?.name||'')}</div></div>
+      </div>
+      <script>window.onload=()=>{setTimeout(()=>window.print(),100);};</script>
+      </body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('Popup bloqueado. Libere popups para gerar o PDF.'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
   return (
     <main className="container mx-auto px-1 sm:px-2 md:px-4">
       <section aria-labelledby="editor" className="grid grid-cols-1 lg:grid-cols-3 gap-2 md:gap-4 lg:gap-6">
@@ -1047,7 +1144,7 @@ export default function QuoteBuilder() {
             </>;
           })()}
           <DialogFooter>
-            <Button className="no-print" onClick={() => window.print()}>Exportar PDF</Button>
+            <Button className="no-print" onClick={() => openQuotePdf(quote)}>Gerar PDF</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
