@@ -525,6 +525,13 @@ export default function QuoteBuilder() {
       };
       companyName = companyObj.name || companyName;
     }
+    // Caso tenhamos logo_url vindo do backend e ainda não haja DataUrl salva
+    // Tentar usar logo_url vinda do backend (campo não mapeado em CompanyInfo local)
+    // @ts-expect-error acesso dinâmico possivelmente não tipado
+    if (!companyObj.logoDataUrl && company && (company as unknown as { logo_url?: string }).logo_url) {
+      // @ts-expect-error campo dinâmico
+      companyObj.logoDataUrl = (company as unknown as { logo_url?: string }).logo_url;
+    }
     // Fallback: se não houver taxid mas houver cnpj_cpf
     if (!companyObj.taxid && companyObj.cnpj_cpf) companyObj.taxid = companyObj.cnpj_cpf;
     // Garantir vendor preenchido (caso state ainda não atualizado) usando profile
@@ -552,86 +559,101 @@ export default function QuoteBuilder() {
       }
     }
 
+    const discountCalc = (quote.subtotal + quote.freight) - quote.total; // desconto implícito
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8" />
       <title>${escape(quote.type==='ORCAMENTO'?'Orçamento':'Pedido')} ${escape(quote.number)}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
       <style>
-        @page { size: A4; margin: 14mm 14mm 16mm; }
-        body { font-family: system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif; font-size:12px; line-height:1.35; color:#111; }
-        h1,h2,h3 { margin:0; }
-        .header { display:flex; justify-content:space-between; gap:24px; padding-bottom:8px; border-bottom:1px solid #ccc; }
-        .logo { max-height:70px; max-width:160px; object-fit:contain; }
-        .meta { margin-top:10px; padding-bottom:6px; border-bottom:1px solid #ccc; font-weight:600; display:flex; flex-wrap:wrap; gap:24px; }
-        .section-title { font-weight:600; margin:20px 0 6px; }
-        .product { display:flex; gap:16px; border-bottom:1px solid #e3e3e3; padding:14px 0; page-break-inside:avoid; }
-        .product:last-of-type { border-bottom:none; }
-        .product img { width:120px; height:120px; object-fit:cover; border:1px solid #ddd; border-radius:4px; }
-        .desc { white-space:pre-wrap; font-size:11px; margin-top:4px; }
-        .subtotal-row { font-weight:600; margin-top:8px; }
-        table { border-collapse:collapse; width:100%; }
-        th,td { border:1px solid #c6c6c6; padding:4px 6px; text-align:left; font-size:11px; }
-        th { background:#f1f5f9; }
-        .totals { margin-top:16px; max-width:280px; }
-        .totals div { display:flex; justify-content:space-between; }
-        .signatures { margin-top:60px; display:grid; grid-template-columns:1fr 1fr; gap:48px; }
-        .sig { text-align:center; }
-        .sig-line { width:220px; border-top:1px dashed #666; height:0; margin:0 auto 4px; }
+        @page { size:A4; margin:14mm 14mm 16mm; }
+        :root { --brand:#195e63; --brand-alt:#3e838c; --border:#d4d8dd; --bg-alt:#f6f9fa; }
+        * { box-sizing:border-box; }
+        body { font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif; font-size:11.3px; line-height:1.45; color:#111; -webkit-print-color-adjust:exact; }
+        h1,h2,h3 { font-family:'Poppins','Inter',sans-serif; font-weight:600; margin:0; line-height:1.2; }
+        h1 { font-size:20px; letter-spacing:.5px; }
+        h2 { font-size:14px; text-transform:uppercase; letter-spacing:.5px; color:var(--brand); margin-top:22px; margin-bottom:6px; }
+        h3 { font-size:12px; text-transform:uppercase; letter-spacing:.4px; color:var(--brand); margin:18px 0 4px; }
         .muted { color:#555; }
         .small { font-size:10px; }
-        .notes { font-size:11px; white-space:pre-wrap; }
+        .header { display:flex; justify-content:space-between; gap:24px; padding-bottom:10px; border-bottom:1px solid var(--border); }
+        .company-block { display:flex; flex-direction:column; gap:4px; }
+        .logo { max-height:72px; max-width:170px; object-fit:contain; }
+        .meta { margin-top:10px; display:flex; flex-wrap:wrap; gap:22px; padding:6px 0 8px; border-bottom:1px solid var(--border); font-weight:600; font-size:11px; }
+        .info-grid { margin-top:10px; display:grid; gap:8px; }
+        .info-box { padding-bottom:6px; border-bottom:1px solid var(--border); }
+        .label { font-weight:600; }
+        table { border-collapse:collapse; width:100%; table-layout:fixed; }
+        th,td { border:1px solid var(--border); padding:6px 6px 5px; text-align:left; vertical-align:top; }
+        th { background:var(--bg-alt); font-weight:600; font-size:10.5px; letter-spacing:.3px; }
+        td { font-size:10.8px; }
+        .col-img { width:78px; }
+        .product-name { font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
+        .desc { white-space:pre-wrap; font-size:10px; margin-top:3px; line-height:1.35; }
+        .totals { margin-top:18px; max-width:320px; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+        .totals-row { display:flex; justify-content:space-between; padding:6px 10px; font-size:11px; border-bottom:1px solid var(--border); background:#fff; }
+        .totals-row.highlight { background:linear-gradient(135deg,var(--brand),var(--brand-alt)); color:#fff; font-weight:600; font-size:13px; letter-spacing:.4px; }
+        .totals-row:last-child { border-bottom:none; }
+        .signatures { margin-top:60px; display:grid; grid-template-columns:1fr 1fr; gap:60px; }
+        .sig { text-align:center; }
+        .sig-line { width:230px; border-top:1px dashed #666; height:0; margin:0 auto 6px; }
+        .notes { margin-top:18px; white-space:pre-wrap; font-size:10.6px; line-height:1.4; border:1px solid var(--border); background:#fff; padding:10px 12px; border-radius:4px; }
+        .payments-table { margin-top:14px; }
+        .avoid-break { page-break-inside:avoid; }
+        img { page-break-inside:avoid; }
       </style></head><body>
       <div class="header">
-        <div>
-          <h1 style="font-size:20px;">${escape(companyObj.name || companyName)}</h1>
-          ${companyObj.address ? `<div>${escape(companyObj.address)}</div>`:''}
+        <div class="company-block">
+          <h1>${escape(companyObj.name || companyName)}</h1>
+          ${companyObj.address ? `<div class="small">${escape(companyObj.address)}</div>`:''}
           <div class="muted small">${[companyObj.taxid && 'CNPJ/CPF: '+escape(companyObj.taxid), companyObj.phone, companyObj.email].filter(Boolean).map(escape).join(' · ')}</div>
         </div>
         ${companyObj.logoDataUrl ? `<img class="logo" src="${companyObj.logoDataUrl}" />`:''}
       </div>
       <div class="meta">
         <span>${escape(quote.type==='ORCAMENTO'?'Orçamento':'Pedido')} Nº ${escape(quote.number)}</span>
-        <span>Criado em ${escape(issueDate)}</span>
-        <span>Válido até ${escape(new Date(new Date(quote.createdAt).getTime()+quote.validityDays*86400000).toLocaleDateString('pt-BR'))}</span>
+        <span>Emissão: ${escape(issueDate)}</span>
+        <span>Validade: ${escape(new Date(new Date(quote.createdAt).getTime()+quote.validityDays*86400000).toLocaleDateString('pt-BR'))}</span>
       </div>
-      <div style="margin-top:10px;">
-        <div style="padding-bottom:6px; border-bottom:1px solid #ccc;">
-          <div><strong>Representante:</strong> ${escape(repName)}</div>
-          ${repPhone?`<div class="small"><span style="font-weight:600;">Telefone:</span> ${escape(repPhone)}</div>`:''}
-          ${repEmail?`<div class="small"><span style="font-weight:600;">Email:</span> ${escape(repEmail)}</div>`:''}
-        </div>
-        <div style="height:10px"></div>
-        <div style="padding-bottom:6px; border-bottom:1px solid #ccc;">
-          <div><strong>Cliente:</strong> ${escape(quote.clientSnapshot.name)}</div>
-          ${quote.clientSnapshot.taxid?`<div class="small"><span style="font-weight:600;">CNPJ/CPF:</span> ${escape(quote.clientSnapshot.taxid)}</div>`:''}
-          ${quote.clientSnapshot.phone?`<div class="small"><span style="font-weight:600;">Telefone:</span> ${escape(quote.clientSnapshot.phone)}</div>`:''}
-          ${quote.clientSnapshot.email?`<div class="small"><span style="font-weight:600;">Email:</span> ${escape(quote.clientSnapshot.email)}</div>`:''}
-          ${quote.clientSnapshot.address?`<div class="small"><span style="font-weight:600;">Endereço:</span> ${escape(quote.clientSnapshot.address)}</div>`:''}
-        </div>
+      <div class="info-grid">
+        <div class="info-box"><span class="label">Representante:</span> ${escape(repName)}${repPhone?` • ${escape(repPhone)}`:''}${repEmail?` • ${escape(repEmail)}`:''}</div>
+        <div class="info-box"><span class="label">Cliente:</span> ${escape(quote.clientSnapshot.name)}${quote.clientSnapshot.taxid?` • ${escape(quote.clientSnapshot.taxid)}`:''}${quote.clientSnapshot.phone?` • ${escape(quote.clientSnapshot.phone)}`:''}${quote.clientSnapshot.email?` • ${escape(quote.clientSnapshot.email)}`:''}</div>
+        ${quote.clientSnapshot.address?`<div class="small muted" style="margin-top:-4px;">${escape(quote.clientSnapshot.address)}</div>`:''}
       </div>
-      <h2 class="section-title">Produtos</h2>
-      ${quote.items.map(it=>`<div class="product">
-        ${it.imageDataUrl?`<img src="${it.imageDataUrl}" />`:''}
-        <div>
-          <div style="font-weight:600; text-transform:uppercase; font-size:13px;">${escape(it.name)}</div>
-          <div class="muted small">Preço unitário: ${currency(it.unitPrice)} • Quantidade: ${it.quantity}</div>
-          ${(it.description||it.options)?`<div class="desc">${escape((it.description||'') + (it.options? '\n'+it.options:''))}</div>`:''}
-          <div class="subtotal-row">Subtotal: ${currency(it.subtotal)}</div>
-        </div>
-      </div>`).join('')}
+      <h2>Produtos / Serviços</h2>
+      <table class="avoid-break">
+        <thead><tr>
+          <th class="col-img">Imagem</th>
+          <th style="width:42%">Descrição</th>
+            <th style="width:10%">Qtd</th>
+            <th style="width:16%">Unitário</th>
+            <th style="width:16%">Subtotal</th>
+        </tr></thead>
+        <tbody>
+          ${quote.items.map(it=>`<tr class="avoid-break">
+            <td class="col-img" style="text-align:center; vertical-align:middle;">${it.imageDataUrl?`<img src="${it.imageDataUrl}" alt="${escape(it.name)}" style="width:64px;height:64px;object-fit:cover;border:1px solid var(--border);border-radius:4px;" />`:'—'}</td>
+            <td><div class="product-name">${escape(it.name)}</div>${(it.description||it.options)?`<div class="desc">${escape((it.description||'')+(it.options?"\n"+it.options:''))}</div>`:''}</td>
+            <td>${it.quantity}</td>
+            <td>${currency(it.unitPrice)}</td>
+            <td>${currency(it.subtotal)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
       <div class="totals">
-        <div><span>Subtotal:</span><span>${currency(quote.subtotal)}</span></div>
-        <div><span>Frete:</span><span>${currency(quote.freight)}</span></div>
-        <div style="font-weight:700; font-size:14px; margin-top:4px;"><span>Total:</span><span>${currency(quote.total)}</span></div>
+        <div class="totals-row"><span>Subtotal</span><span>${currency(quote.subtotal)}</span></div>
+        <div class="totals-row"><span>Frete</span><span>${currency(quote.freight)}</span></div>
+        ${discountCalc>0.009?`<div class="totals-row"><span>Desconto</span><span>- ${currency(discountCalc)}</span></div>`:''}
+        <div class="totals-row highlight"><span>Total</span><span>${currency(quote.total)}</span></div>
       </div>
-      ${paymentLines.length?`<h3 class="section-title" style="margin-top:18px;">Condições de pagamento</h3>
-        <table><thead><tr><th>Parcela</th><th>Descrição</th></tr></thead><tbody>
-        ${paymentLines.map((l,i)=>`<tr><td>${i+1}</td><td>${escape(l)}</td></tr>`).join('')}
-        </tbody></table>`:''}
-      ${quote.notes?`<h3 class="section-title" style="margin-top:18px;">Observações</h3><div class="notes">${escape(quote.notes)}</div>`:''}
+      ${paymentLines.length?`<h3 style="margin-top:22px;">Condições de Pagamento</h3>
+      <table class="payments-table">
+        <thead><tr><th style="width:18%">Parcela</th><th>Detalhes</th></tr></thead>
+        <tbody>${paymentLines.map((l,i)=>`<tr><td style="font-weight:600;">${i+1}</td><td>${escape(l)}</td></tr>`).join('')}</tbody>
+      </table>`:''}
+      ${quote.notes?`<h3 style="margin-top:22px;">Observações</h3><div class="notes">${escape(quote.notes)}</div>`:''}
       <div class="signatures">
         <div class="sig"><div class="sig-line"></div><div class="small muted">Assinatura do Vendedor</div><div class="small" style="margin-top:4px;">${escape(quote.vendor?.name||'')}</div></div>
         <div class="sig"><div class="sig-line"></div><div class="small muted">Assinatura do Cliente</div><div class="small" style="margin-top:4px;">${escape(quote.clientSnapshot?.name||'')}</div></div>
       </div>
-      <script>window.onload=()=>{setTimeout(()=>window.print(),100);};</script>
+      <script>window.onload=()=>{setTimeout(()=>window.print(),120);};</script>
       </body></html>`;
 
     const w = window.open('', '_blank');
