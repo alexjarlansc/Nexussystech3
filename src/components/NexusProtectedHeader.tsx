@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/sonner";
 import { LogOut, Settings, User, Building2, Key, Copy } from "lucide-react";
+import { Link } from 'react-router-dom';
 import { useAuth } from "@/hooks/useAuth";
 import { StorageKeys, setJSON } from '@/utils/storage';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,7 +21,7 @@ export function NexusProtectedHeader() {
   interface InviteCode {
     id: string;
     code: string;
-    role: 'user' | 'admin';
+    role: 'user' | 'admin' | 'pdv';
     created_at?: string;
     expires_at: string;
     used_by?: string | null;
@@ -103,7 +104,7 @@ export function NexusProtectedHeader() {
     }
   };
 
-  const handleGenerateInvite = async (role: 'user' | 'admin') => {
+  const handleGenerateInvite = async (role: 'user' | 'admin' | 'pdv') => {
     const { code, error } = await generateInviteCode(role);
 
     if (error) {
@@ -157,7 +158,7 @@ export function NexusProtectedHeader() {
                   variant={profile?.role === 'admin' ? 'default' : 'secondary'}
                   className="text-[10px] sm:text-xs px-1.5 py-0.5"
                 >
-                  {profile?.role === 'admin' ? 'Administrador' : 'Usuário'}
+                  {profile?.role === 'admin' ? 'Administrador' : profile?.role === 'pdv' ? 'PDV' : 'Usuário'}
                 </Badge>
               </div>
 
@@ -191,6 +192,9 @@ export function NexusProtectedHeader() {
               >
                 <Settings className="h-4 w-4" />
               </Button>
+              {profile?.role === 'pdv' && (
+                <Link to="/pdv" className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted">PDV</Link>
+              )}
               {profile?.role === 'admin' && (
                 <Button
                   variant="ghost"
@@ -401,6 +405,13 @@ export function NexusProtectedHeader() {
                 >
                   Gerar Código Admin
                 </Button>
+                <Button
+                  onClick={() => handleGenerateInvite('pdv')}
+                  className="flex-1"
+                  variant="secondary"
+                >
+                  Gerar Código PDV
+                </Button>
               </div>
 
               <div className="max-h-[60vh] overflow-auto space-y-2">
@@ -417,8 +428,8 @@ export function NexusProtectedHeader() {
                           <code className="bg-muted px-2 py-1 rounded text-sm font-mono">
                             {invite.code}
                           </code>
-                          <Badge variant={invite.role === 'admin' ? 'default' : 'secondary'}>
-                            {invite.role === 'admin' ? 'Admin' : 'Usuário'}
+                          <Badge variant={invite.role === 'admin' ? 'default' : invite.role === 'pdv' ? 'outline' : 'secondary'}>
+                            {invite.role === 'admin' ? 'Admin' : invite.role === 'pdv' ? 'PDV' : 'Usuário'}
                           </Badge>
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">

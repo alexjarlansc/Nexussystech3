@@ -8,7 +8,7 @@ interface Profile {
   id: string;
   user_id: string;
   company_id: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'pdv';
   first_name?: string;
   phone?: string;
   email?: string;
@@ -45,7 +45,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   updateProfile: (data: Partial<Profile>) => Promise<{ error: any }>;
   updateCompany: (data: Partial<Company>) => Promise<{ error: any }>;
-  generateInviteCode: (role: 'user' | 'admin') => Promise<{ code?: string; error: any }>;
+  generateInviteCode: (role: 'user' | 'admin' | 'pdv') => Promise<{ code?: string; error: any }>;
   getInviteCodes: () => Promise<{ data: any[]; error: any }>;
 }
 
@@ -240,7 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     phone?: string;
     companyEmail?: string;
     address?: string;
-    role?: 'user' | 'admin';
+    role?: 'user' | 'admin' | 'pdv';
     inviteCode?: string;
   }) => {
     try {
@@ -294,7 +294,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // Create profile
-        const { error: profileError } = await supabase
+    const { error: profileError } = await supabase
           .from('profiles')
           .insert({
             user_id: data.user.id,
@@ -302,7 +302,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             first_name: userData.firstName,
             phone: userData.phone,
             email: data.user.email,
-            role: userData.role || 'user',
+      role: userData.role || 'user',
           });
 
         if (profileError) {

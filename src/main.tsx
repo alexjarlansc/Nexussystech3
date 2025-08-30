@@ -9,6 +9,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import PDV from "./pages/PDV";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,11 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/" element={
                 <ProtectedRoute>
                   <Index />
+                </ProtectedRoute>
+              } />
+              <Route path="/pdv" element={
+                <ProtectedRoute>
+                  <PDV />
                 </ProtectedRoute>
               } />
               <Route path="*" element={<NotFound />} />

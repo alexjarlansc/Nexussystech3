@@ -5,9 +5,10 @@ import { useAuth } from '@/hooks/useAuth';
 interface ProtectedRouteProps {
   children: ReactNode;
   requireAdmin?: boolean;
+  allowedRoles?: Array<'user' | 'admin' | 'pdv'>;
 }
 
-export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, requireAdmin = false, allowedRoles }: ProtectedRouteProps) {
   const { user, profile, loading } = useAuth();
 
   if (loading) {
@@ -28,6 +29,17 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
         <div className="text-center">
           <h2 className="text-2xl font-bold text-destructive mb-2">Acesso Negado</h2>
           <p className="text-muted-foreground">Você não tem permissão para acessar esta página.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (allowedRoles && profile?.role && !allowedRoles.includes(profile.role)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-destructive mb-2">Acesso Negado</h2>
+          <p className="text-muted-foreground">Seu perfil não possui acesso.</p>
         </div>
       </div>
     );
