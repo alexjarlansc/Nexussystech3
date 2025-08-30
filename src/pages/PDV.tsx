@@ -21,7 +21,7 @@ interface PDVItem {
   discount?: number; // valor absoluto
 }
 
-type PaymentLine = { id: string; method: string; amount: number };
+type PaymentLine = { id: string; method: string; amount: number; description?: string; dueDays?: number; planned?: boolean };
 
 interface CashSession {
   id: string;
@@ -40,9 +40,17 @@ export default function PDV() {
   const [freight, setFreight] = useState<number>(0);
   const [products, setProducts] = useState<Array<{id:string; name:string; price:number}>>([]);
   const [paymentPlan, setPaymentPlan] = useState<string | null>(null);
-  const [clientDisplay, setClientDisplay] = useState<string>("1 - CONSUMIDOR FINAL");
+  // clientDisplay agora armazena somente o nome; detalhes formatados renderizados abaixo
+  const [clientDisplay, setClientDisplay] = useState<string>("CONSUMIDOR FINAL");
+  const [clientTaxId, setClientTaxId] = useState<string>("");
+  const [clientPhone, setClientPhone] = useState<string>("");
+  const [clientEmail, setClientEmail] = useState<string>("");
   const [address, setAddress] = useState<string>("");
   const [vendor, setVendor] = useState<string>(profile?.first_name || "");
+  const [showVendorDialog, setShowVendorDialog] = useState(false);
+  const [vendorSearch, setVendorSearch] = useState("");
+  const [vendors, setVendors] = useState<Array<{id:string; name:string; role:string}>>([]);
+  const [loadingVendors, setLoadingVendors] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const [quantity, setQuantity] = useState<number>(1);
   const [unitPrice, setUnitPrice] = useState<number>(0);
@@ -50,6 +58,8 @@ export default function PDV() {
   const [currentProduct, setCurrentProduct] = useState<{ id: string; name: string } | null>(null);
   const [items, setItems] = useState<PDVItem[]>([]);
   const [payments, setPayments] = useState<PaymentLine[]>([]);
+  // Desconto extra (global) aplicado no orçamento que não está distribuído por item
+  const [extraDiscount, setExtraDiscount] = useState<number>(0);
   const [paymentDialog, setPaymentDialog] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -64,13 +74,45 @@ export default function PDV() {
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   const subtotal = useMemo(() => items.reduce((s,i)=> s + i.unitPrice * i.quantity,0), [items]);
-  const totalDiscount = useMemo(()=> items.reduce((s,i)=> s + (i.discount||0),0), [items]);
+  const totalDiscount = useMemo(()=> items.reduce((s,i)=> s + (i.discount||0),0) + extraDiscount, [items, extraDiscount]);
   const grossTotal = subtotal;
   const netTotal = grossTotal - totalDiscount;
-  const paid = payments.reduce((s,p)=> s + p.amount,0);
-  const remaining = Math.max(0, netTotal - paid);
-  const changeValue = paid > (netTotal + freight) ? (paid - (netTotal + freight)) : 0;
+  // Apenas pagamentos efetivos (não planejados) contam como pagos
+  const paid = payments.filter(p=> !p.planned).reduce((s,p)=> s + p.amount,0);
+  const referenceTotal = linkedQuote ? (linkedQuote.total || (netTotal + freight)) : (netTotal + freight);
+  const remaining = Math.max(0, referenceTotal - paid);
+  const changeValue = paid > referenceTotal ? (paid - referenceTotal) : 0;
   const fmt = (n:number) => n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+
+  // Parse das condições/parcelas (paymentPlan JSON vindo do Pedido)
+  interface ParsedScheduleLine { id:string; label:string; amount:number; dueDays:number; }
+  const parsedSchedule = useMemo<ParsedScheduleLine[]>(() => {
+    if (!paymentPlan) return [];
+    try {
+      const obj = JSON.parse(paymentPlan);
+      if (!obj || !Array.isArray(obj.items)) return [];
+      const totalBase = linkedQuote?.total || (netTotal + freight);
+      const lines: ParsedScheduleLine[] = [];
+      let allocated = 0;
+      for (const it of obj.items) {
+        if (!it || !it.id) continue;
+        if (it.kind === 'saldo') {
+          const saldo = Math.max(0, totalBase - allocated);
+          lines.push({ id: it.id, label: 'Saldo', amount: saldo, dueDays: it.dueDays || 0 });
+          allocated += saldo;
+          continue;
+        }
+        let amount = 0;
+        if (it.valueType === 'percent') amount = totalBase * (it.value/100);
+        else amount = it.value;
+        amount = Math.max(0, amount);
+        allocated += amount;
+        const label = it.kind === 'entrada' ? 'Entrada' : `Parcela`;
+        lines.push({ id: it.id, label, amount, dueDays: it.dueDays || 0 });
+      }
+      return lines;
+    } catch { return []; }
+  }, [paymentPlan, linkedQuote, netTotal, freight]);
 
   // Carrega produtos e sessão de caixa aberta
   useEffect(() => {
@@ -96,24 +138,8 @@ export default function PDV() {
   }, []);
 
   function addItem() {
-    if (!currentProduct && !productSearch.trim()) {
-      toast.error('Informe o produto');
-      return;
-    }
-    if (quantity <= 0) {
-      toast.error('Quantidade inválida');
-      return;
-    }
-    setItems(prev => [...prev, {
-      id: currentProduct?.id || crypto.randomUUID(),
-      name: currentProduct?.name || productSearch.trim(),
-      quantity,
-      unitPrice,
-    }]);
-    setProductSearch('');
-    setCurrentProduct(null);
-    setQuantity(1);
-    setUnitPrice(0);
+  // Bloqueado conforme solicitação: itens somente via Pedido (orcamento convertido)
+  toast.error('Inclusão manual de itens bloqueada. Carregue pelo número do Pedido.');
   }
 
   function removeItem(id: string) {
@@ -127,14 +153,21 @@ export default function PDV() {
   function addPayment() {
     const value = parseFloat(paymentAmount.replace(',','.'));
     if (isNaN(value) || value <= 0) { toast.error('Valor inválido'); return; }
-    setPayments(prev=> [...prev, { id: crypto.randomUUID(), method: paymentMethod, amount: value }]);
+    setPayments(prev=> [...prev, { id: crypto.randomUUID(), method: paymentMethod, amount: value, description: 'Manual' }]);
     setPaymentAmount('');
     if (value >= remaining) setPaymentDialog(false);
   }
 
+  function normalizeOrder(num: string){
+    if(!num) return '';
+    const cleaned = num.toUpperCase().replace(/^PED-/, '');
+    return `PED-${cleaned}`;
+  }
+
   async function loadQuoteByNumber(num: string) {
     if (!num) return;
-    const { data, error } = await supabase.from('quotes').select('*').eq('number', num).maybeSingle();
+    const full = normalizeOrder(num);
+    const { data, error } = await supabase.from('quotes').select('*').eq('number', full).maybeSingle();
     if (error || !data) { toast.error('Pedido não encontrado'); return; }
     // map fields
     const q = {
@@ -156,18 +189,76 @@ export default function PDV() {
       type: data.type,
     } as unknown as Quote;
     setLinkedQuote(q);
-    setClientDisplay(q.clientSnapshot.name);
-    setAddress(q.clientSnapshot.address || '');
+  // Preenche todos os campos de cliente conforme solicitado
+  setClientDisplay(q.clientSnapshot.name || '');
+  setClientTaxId(q.clientSnapshot.taxid || '');
+  setClientPhone(q.clientSnapshot.phone || '');
+  setClientEmail(q.clientSnapshot.email || '');
+  setAddress(q.clientSnapshot.address || '');
     setVendor(q.vendor?.name || vendor);
     setFreight(q.freight || 0);
-    setItems(q.items.map(it => ({
-      id: it.productId || crypto.randomUUID(),
-      name: it.name,
-      quantity: it.quantity,
-      unitPrice: it.unitPrice,
-      discount: 0,
-    })));
+  const mappedItems = q.items.map(it => {
+      const expectedSubtotal = it.unitPrice * it.quantity;
+      const realSubtotal = (it as { subtotal?: number }).subtotal ?? expectedSubtotal; // QuoteItemSnapshot tem campo subtotal
+      const discountValue = Math.max(0, expectedSubtotal - realSubtotal);
+      return {
+        id: it.productId || crypto.randomUUID(),
+        name: it.name,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        discount: discountValue > 0.009 ? discountValue : 0,
+      } as PDVItem;
+  });
+  setItems(mappedItems);
+  // Desconto global do orçamento (diferença entre subtotal + frete e total final)
+  const globalDiscount = (q.subtotal + q.freight) - q.total;
+  setExtraDiscount(globalDiscount > 0.009 ? globalDiscount : 0);
     setPaymentPlan(q.paymentTerms || null);
+    // Limpa pagamentos existentes e define método igual ao do Pedido
+    const mapMethod = (m?: string): string => {
+      if (!m) return 'Dinheiro';
+      const t = m.toLowerCase();
+      if (t.includes('crédit')) return 'Cartão Crédito';
+      if (t.includes('débit')) return 'Cartão Débito';
+      if (t.includes('pix')) return 'Pix';
+      if (t.includes('boleto')) return 'Boleto';
+      if (t.includes('voucher')) return 'Voucher';
+      if (t.includes('din')) return 'Dinheiro';
+      return 'Dinheiro';
+    };
+    const mapped = mapMethod(data.payment_method as string | undefined);
+    setPaymentMethod(mapped);
+  const schedulePayments: PaymentLine[] = [];
+    try {
+      if (q.paymentTerms) {
+        type SItem = { id:string; kind:'entrada'|'parcela'|'saldo'; valueType:'percent'|'fixed'; value:number; dueDays?:number };
+        const obj = JSON.parse(q.paymentTerms);
+        const arr: SItem[] = obj?.items || [];
+        if (Array.isArray(arr) && arr.length>0) {
+          const totalBase = q.total || 0;
+          let allocated = 0;
+          let seq = 1;
+          for (const it of arr) {
+            let amount = 0;
+            if (it.kind === 'saldo') amount = Math.max(0, totalBase - allocated);
+            else if (it.valueType === 'percent') amount = totalBase * (it.value/100);
+            else amount = it.value;
+            amount = Math.max(0, amount);
+            allocated += amount;
+            let label: string;
+            if (it.kind === 'entrada') label = 'Entrada';
+            else if (it.kind === 'saldo') label = 'Saldo';
+            else { label = `Parcela ${seq}`; seq++; }
+            schedulePayments.push({ id: crypto.randomUUID(), method: mapped, amount, description: label, dueDays: it.dueDays || 0, planned: true });
+          }
+        }
+      }
+    } catch {/* ignore */}
+    if (schedulePayments.length === 0) {
+      const totalPedido = (q.total || 0);
+      if (totalPedido > 0) schedulePayments.push({ id: crypto.randomUUID(), method: mapped, amount: totalPedido, description: 'Único', planned: true });
+    }
+    setPayments(schedulePayments);
     toast.success('Pedido carregado');
   }
 
@@ -177,16 +268,27 @@ export default function PDV() {
   }
 
   function handleBarcodeEnter(code: string) {
-    const prod = products.find(p => p.id === code || p.id.endsWith(code));
-    if (prod) {
-      setCurrentProduct({ id: prod.id, name: prod.name });
-      setUnitPrice(prod.price);
-      setQuantity(1);
-      addItem();
-    } else {
-      toast.error('Código não encontrado');
+  // Bloqueado: não permitir adicionar via código de barras
+  toast.error('Leitura de código bloqueada. Use o número do Pedido.');
+  }
+
+  async function openVendorPicker() {
+    setShowVendorDialog(true);
+    if (vendors.length === 0) {
+      setLoadingVendors(true);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, first_name, role, company_id')
+          .eq('company_id', profile?.company_id || '');
+        if (!error && data) {
+          setVendors(data.map(p => ({ id: p.id, name: p.first_name || 'Sem nome', role: p.role })));
+        }
+      } catch {/* ignore */} finally { setLoadingVendors(false); }
     }
   }
+
+  const filteredVendors = vendors.filter(v => v.name.toLowerCase().includes(vendorSearch.toLowerCase()) || v.role.toLowerCase().includes(vendorSearch.toLowerCase()));
 
   async function finalizeSale() {
     if (items.length === 0) { toast.error('Sem itens'); return; }
@@ -200,7 +302,7 @@ export default function PDV() {
       const payload = {
         sale_number: saleNumber,
         quote_id: linkedQuote?.id || null,
-        client_snapshot: linkedQuote?.clientSnapshot || { name: clientDisplay, id: 'consumidor-final', taxid: '' },
+        client_snapshot: linkedQuote?.clientSnapshot || { name: clientDisplay, id: 'consumidor-final', taxid: clientTaxId, phone: clientPhone, email: clientEmail, address },
         vendor: linkedQuote?.vendor || { name: vendor, phone: '', email: '' },
         operator_id: user?.id,
         items: items.map(i => ({ ...i, total: i.quantity * i.unitPrice - (i.discount || 0) })),
@@ -235,7 +337,7 @@ export default function PDV() {
         total: payload.total,
         payments: payload.payments.map(p=> ({ method: p.method, amount: p.amount }))
       });
-      setItems([]); setPayments([]); setLinkedQuote(null); setOrderNumber('');
+  setItems([]); setPayments([]); setLinkedQuote(null); setOrderNumber(''); setExtraDiscount(0);
     } catch (e) {
       console.error(e);
       toast.error('Erro ao finalizar venda');
@@ -326,59 +428,45 @@ export default function PDV() {
           <div>
             <label className="text-xs font-medium">Pedido:</label>
             <div className="flex items-center gap-1">
-              <Input value={orderNumber} placeholder="Número" onChange={e=> setOrderNumber(e.target.value.toUpperCase())} onKeyDown={e=> { if(e.key==='Enter'){ loadQuoteByNumber(orderNumber); }}} className="h-7 text-right" />
+              <div className="flex h-7 w-full">
+                <span className="inline-flex items-center px-2 border border-r-0 rounded-l text-[11px] bg-slate-100 font-semibold">PED-</span>
+                <Input value={orderNumber} placeholder="000123" onChange={e=> setOrderNumber(e.target.value.replace(/[^0-9]/g,''))} onKeyDown={e=> { if(e.key==='Enter'){ loadQuoteByNumber(orderNumber); }}} className="h-7 text-right rounded-l-none" />
+              </div>
               <Button variant="outline" size="icon" className="h-7 w-7 text-xs" onClick={()=> loadQuoteByNumber(orderNumber)}>🔍</Button>
             </div>
           </div>
           <div>
             <label className="text-xs font-medium">Cliente:</label>
             <div className="flex items-center gap-1">
-              <Input value={clientDisplay} onChange={e=> setClientDisplay(e.target.value)} className="h-7" />
-              <Button variant="outline" size="icon" className="h-7 w-7 text-xs">🔍</Button>
+              <Input value={clientDisplay} disabled className="h-7 font-semibold" />
+              <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled>🔍</Button>
+            </div>
+            {/* Bloco informativo com todos os dados do cliente */}
+            <div className="mt-1 text-[11px] leading-tight border rounded p-2 bg-slate-50">
+              <div><span className="font-semibold">Cliente:</span> {clientDisplay || '-'} </div>
+              {clientTaxId && <div>CNPJ/CPF: {clientTaxId}</div>}
+              {clientPhone && <div>Telefone: {clientPhone}</div>}
+              {clientEmail && <div>Email: {clientEmail}</div>}
+              {address && <div className="truncate" title={address}>Endereço: {address}</div>}
+              {(!clientTaxId && !clientPhone && !clientEmail && !address) && <div className="text-muted-foreground">Dados adicionais não informados</div>}
             </div>
           </div>
           <div>
             <label className="text-xs font-medium">Endereço:</label>
-            <textarea value={address} onChange={e=> setAddress(e.target.value)} className="w-full h-16 text-xs border rounded p-1 resize-none" />
+            <textarea value={address} disabled className="w-full h-16 text-xs border rounded p-1 resize-none bg-muted/30" />
           </div>
           <div>
             <label className="text-xs font-medium">Vendedor:</label>
             <div className="flex items-center gap-1">
-              <Input value={vendor} onChange={e=> setVendor(e.target.value)} className="h-7" />
-              <Button variant="outline" size="icon" className="h-7 w-7 text-xs">🔍</Button>
+              <Input value={vendor} disabled={!!linkedQuote} onChange={e=> setVendor(e.target.value)} className="h-7" title={linkedQuote? 'Vendedor definido pelo Pedido' : 'Editar vendedor'} />
+              <Button type="button" onClick={openVendorPicker} variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={!!linkedQuote} title={linkedQuote? 'Vendedor não pode ser alterado' : 'Pesquisar vendedores'}>🔍</Button>
             </div>
           </div>
-          <div>
-            <label className="text-xs font-medium">Produto / Serviço:</label>
-            <div className="flex items-center gap-1 relative">
-              <Input value={productSearch} onChange={e=> onProductSearchChange(e.target.value)} onKeyDown={e=> { if(e.key==='Enter'){ const code = productSearch.trim(); if(/^[0-9]{5,}$/.test(code)) { handleBarcodeEnter(code); } else { addItem(); } }}} className="h-7" />
-              <Button variant="outline" size="icon" className="h-7 w-7 text-xs" onClick={()=> addItem() }>➕</Button>
-              {showSuggestions && (
-                <div className="absolute top-full left-0 z-20 w-72 max-h-56 overflow-auto bg-white border shadow text-xs">
-                  {products.filter(p=> p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.id.includes(productSearch)).slice(0,25).map(p=> (
-                    <button key={p.id} type="button" className="w-full text-left px-2 py-1 hover:bg-slate-100 flex justify-between" onClick={()=> { setCurrentProduct({id:p.id,name:p.name}); setUnitPrice(p.price); setProductSearch(p.name); setShowSuggestions(false); }}>
-                      <span className="truncate pr-2">{p.name}</span><span className="text-muted-foreground">{fmt(p.price)}</span>
-                    </button>
-                  ))}
-                  {products.length===0 && <div className="px-2 py-1 text-muted-foreground">Sem produtos</div>}
-                </div>
-              )}
-            </div>
+          <div className="p-2 border rounded bg-slate-50 text-[11px] leading-snug">
+            <div className="font-semibold text-slate-700">Itens somente via Pedido</div>
+            <div className="text-slate-600">Informe o número do Pedido acima e pressione a lupa ou ENTER. A inclusão manual de produtos está desativada.</div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs font-medium">(F2) Quantidade:</label>
-              <Input type="number" value={quantity} onChange={e=> setQuantity(parseFloat(e.target.value)||1)} className="h-7" />
-            </div>
-            <div>
-              <label className="text-xs font-medium">Valor Unitário:</label>
-              <Input type="text" value={fmt(unitPrice)} disabled className="h-7 bg-slate-100 text-right font-medium" />
-            </div>
-          </div>
-          <div className="pt-1">
-            <Button className="w-full h-8" onClick={addItem}>Lançar</Button>
-          </div>
-        </div>
+        </div>{/* fim coluna esquerda */}
         {/* Centro - Tabela */}
         <div className="flex-1 bg-white p-3 flex flex-col">
           <div className="flex-1 overflow-auto border rounded">
@@ -437,10 +525,11 @@ export default function PDV() {
               <div className="col-span-1">
                 <div className="font-medium text-[11px] uppercase tracking-wide">Descontos</div>
                 <div className="text-xl font-bold">{fmt(totalDiscount)}</div>
+                {extraDiscount>0 && <div className="text-[10px] text-red-700 mt-0.5">Global: {fmt(extraDiscount)}</div>}
               </div>
               <div className="col-span-1">
                 <div className="font-medium text-[11px] uppercase tracking-wide">Total Líquido</div>
-                <div className="text-xl font-bold">{fmt(netTotal + freight)}</div>
+                <div className="text-xl font-bold">{fmt(referenceTotal)}</div>
               </div>
               <div className="col-span-3 flex justify-between items-center mt-4">
                 <div className="flex flex-col items-start gap-0.5 text-[10px] text-muted-foreground">
@@ -453,9 +542,26 @@ export default function PDV() {
                   {cashSession && <Button variant="outline" size="sm" onClick={()=> setOpenCloseDialog(true)}>Fechar Caixa</Button>}
                   {cashSession && <Button variant="outline" size="sm" onClick={()=> setMovementDialog({type:'SANGRIA'})}>Sangria</Button>}
                   {cashSession && <Button variant="outline" size="sm" onClick={()=> setMovementDialog({type:'SUPRIMENTO'})}>Suprimento</Button>}
-                  <Button size="lg" disabled={netTotal===0 || remaining>0} onClick={finalizeSale} className="bg-slate-800 hover:bg-slate-700">(F3) Finalizar Venda</Button>
+                  <Button size="lg" disabled={referenceTotal===0 || remaining>0} onClick={finalizeSale} className="bg-slate-800 hover:bg-slate-700">(F3) Finalizar Venda</Button>
                 </div>
               </div>
+              {parsedSchedule.length>0 && (
+                <div className="col-span-3 mt-2">
+                  <div className="font-medium text-[11px] uppercase tracking-wide">Condições</div>
+                  <div className="mt-1 max-h-28 overflow-auto pr-1 space-y-0.5 text-[11px] leading-tight">
+                    {parsedSchedule.map((l,idx)=> (
+                      <div key={l.id} className="flex justify-between gap-2">
+                        <span className="truncate">{idx+1}. {l.label}{l.dueDays?` D+${l.dueDays}`:''}</span>
+                        <span className="font-medium">{fmt(l.amount)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-0.5 border-t border-slate-300/40 font-semibold">
+                      <span>Total Cond.</span>
+                      <span>{fmt(parsedSchedule.reduce((s,l)=> s + l.amount,0))}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -467,6 +573,7 @@ export default function PDV() {
             <DialogTitle>Pagamentos</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
+            {/* As parcelas planejadas aparecem como linhas "planejadas" abaixo */}
             <div className="flex gap-2">
               <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                 <SelectTrigger className="w-40 h-8"><SelectValue /></SelectTrigger>
@@ -483,20 +590,34 @@ export default function PDV() {
                   <tr><th className="p-1 text-left">Forma</th><th className="p-1 text-right">Valor</th><th></th></tr>
                 </thead>
                 <tbody>
-                  {payments.map(p=> <tr key={p.id}>
-                    <td className="p-1">{p.method}</td>
-                    <td className="p-1 text-right">{fmt(p.amount)}</td>
-                    <td className="p-1 text-center"><button onClick={()=> setPayments(prev=> prev.filter(x=> x.id!==p.id))} className="text-red-600 text-[10px]">rem</button></td>
+                  {payments.map(p=> <tr key={p.id} className={p.planned? 'opacity-90':''}>
+                    <td className="p-1 align-top">
+                      <div className="flex flex-col">
+                        <span>{p.method}</span>
+                        {p.description && <span className="text-[10px] text-muted-foreground">{p.description}{p.dueDays?` (${p.dueDays}d)`:''}{p.planned? ' • planejado':''}</span>}
+                      </div>
+                    </td>
+                    <td className="p-1 text-right align-top">{fmt(p.amount)}</td>
+                    <td className="p-1 text-center align-top">
+                      {!p.planned && (
+                        <button
+                          onClick={()=> setPayments(prev=> prev.filter(x=> x.id!==p.id))}
+                          className="text-red-600 text-xs font-bold hover:scale-110 transition"
+                          aria-label="Remover"
+                          title="Remover"
+                        >✕</button>
+                      )}
+                    </td>
                   </tr>)}
                   {payments.length===0 && <tr><td colSpan={3} className="p-2 text-center text-muted-foreground">Nenhum pagamento</td></tr>}
                 </tbody>
               </table>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="flex justify-between"><span>Total</span><span>{fmt(netTotal + freight)}</span></div>
+            <div className="space-y-1 text-xs border-t pt-2">
+              <div className="flex justify-between"><span>Total</span><span>{fmt(referenceTotal)}</span></div>
               <div className="flex justify-between"><span>Pago</span><span>{fmt(paid)}</span></div>
               <div className="flex justify-between"><span>Restante</span><span>{fmt(remaining)}</span></div>
-              <div className="flex justify-between col-span-2 font-semibold"><span>Troco</span><span>{fmt(changeValue)}</span></div>
+              <div className="flex justify-between font-semibold"><span>Troco</span><span>{fmt(changeValue)}</span></div>
             </div>
           </div>
         </DialogContent>
@@ -544,6 +665,31 @@ export default function PDV() {
               <Input value={movementDesc} onChange={e=> setMovementDesc(e.target.value)} />
             </div>
             <Button onClick={handleMovementSave}>Registrar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Selecionar Vendedor */}
+      <Dialog open={showVendorDialog} onOpenChange={setShowVendorDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Selecionar Vendedor</DialogTitle></DialogHeader>
+          <div className="space-y-3 text-sm">
+            <Input placeholder="Pesquisar..." value={vendorSearch} onChange={e=> setVendorSearch(e.target.value)} />
+            <div className="border rounded max-h-72 overflow-auto divide-y">
+              {loadingVendors && <div className="p-3 text-xs text-muted-foreground">Carregando...</div>}
+              {!loadingVendors && filteredVendors.map(v => (
+                <button key={v.id} type="button" className="w-full text-left px-3 py-2 hover:bg-slate-100 flex justify-between items-center" onClick={()=> { setVendor(v.name); setShowVendorDialog(false); }}>
+                  <span className="truncate font-medium">{v.name}</span>
+                  <span className="text-[10px] uppercase text-muted-foreground">{v.role}</span>
+                </button>
+              ))}
+              {!loadingVendors && filteredVendors.length === 0 && (
+                <div className="p-3 text-xs text-muted-foreground">Nenhum vendedor</div>
+              )}
+            </div>
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={()=> setShowVendorDialog(false)}>Fechar</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
