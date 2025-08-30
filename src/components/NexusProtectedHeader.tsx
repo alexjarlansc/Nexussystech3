@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -9,13 +9,22 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/sonner";
 import { LogOut, Settings, User, Building2, Key, Copy } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { StorageKeys, setJSON } from '@/utils/storage';
 
 export function NexusProtectedHeader() {
   const { user, profile, company, signOut, updateProfile, updateCompany, generateInviteCode, getInviteCodes } = useAuth();
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
   const [openInvites, setOpenInvites] = useState(false);
-  const [inviteCodes, setInviteCodes] = useState<any[]>([]);
+  interface InviteCode {
+    id: string;
+    code: string;
+    role: 'user' | 'admin';
+    created_at?: string;
+    expires_at: string;
+    used_by?: string | null;
+  }
+  const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
 
   // Profile form
   const [firstName, setFirstName] = useState(profile?.first_name || '');
@@ -28,6 +37,19 @@ export function NexusProtectedHeader() {
   const [companyPhone, setCompanyPhone] = useState(company?.phone || '');
   const [companyEmail, setCompanyEmail] = useState(company?.email || '');
   const [address, setAddress] = useState(company?.address || '');
+  // Logo (apenas local / dataURL)
+  const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>(undefined);
+
+  // Carregar logo persistida no localStorage ao abrir modal (ou inicialização)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(StorageKeys.company);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.logoDataUrl) setLogoDataUrl(parsed.logoDataUrl);
+      }
+    } catch {/* ignore */}
+  }, []);
 
   const handleUpdateProfile = async () => {
     const { error } = await updateProfile({
@@ -56,6 +78,24 @@ export function NexusProtectedHeader() {
     if (error) {
       toast.error('Erro ao atualizar empresa');
     } else {
+      // Persistir também localmente inclusive logo para PDF / pré-visualização
+      try {
+        const raw = localStorage.getItem(StorageKeys.company);
+        const existing = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+        const prevLogo = typeof existing === 'object' && existing && 'logoDataUrl' in (existing as Record<string, unknown>)
+          ? (existing as Record<string, unknown>).logoDataUrl as string | undefined
+          : undefined;
+        setJSON(StorageKeys.company, {
+          ...existing,
+          name: companyName,
+          address,
+          taxid: cnpjCpf,
+          phone: companyPhone,
+          email: companyEmail,
+          cnpj_cpf: cnpjCpf, // compatibilidade
+          logoDataUrl: logoDataUrl || prevLogo
+        });
+      } catch {/* ignore */}
       toast.success('Empresa atualizada com sucesso');
       setOpenCompany(false);
     }
@@ -284,6 +324,36 @@ export function NexusProtectedHeader() {
                 Salvar
               </Button>
             </div>
+            <div className="pt-2 border-t">
+              <Label className="block mb-1">Logo</Label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 1024 * 400) { // ~400KB limite
+                    toast.error('Imagem muito grande (máx 400KB)');
+                    return;
+                  }
+                  const reader = new FileReader();
+                  reader.onload = () => setLogoDataUrl(reader.result as string);
+                  reader.readAsDataURL(file);
+                }}
+                className="text-sm"
+              />
+              {logoDataUrl && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img src={logoDataUrl} alt="Logo" className="h-16 w-32 object-contain border rounded bg-white" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setLogoDataUrl(undefined)}
+                  >Remover</Button>
+                </div>
+              )}
+              <p className="text-[10px] text-muted-foreground mt-1">Formatos: PNG/JPG. Usada no PDF e pré-visualização do orçamento.</p>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -346,7 +416,7 @@ export function NexusProtectedHeader() {
                         size="sm"
                         variant="ghost"
                         onClick={() => copyToClipboard(invite.code)}
-                        disabled={invite.used_by || new Date(invite.expires_at) < new Date()}
+                        disabled={!!invite.used_by || new Date(invite.expires_at) < new Date()}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>

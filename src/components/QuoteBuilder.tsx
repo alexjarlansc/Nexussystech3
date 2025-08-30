@@ -540,15 +540,19 @@ export default function QuoteBuilder() {
         <span>Válido até ${escape(new Date(new Date(quote.createdAt).getTime()+quote.validityDays*86400000).toLocaleDateString('pt-BR'))}</span>
       </div>
       <div style="margin-top:10px;">
-  <div><strong>Representante:</strong> ${escape(repName)}</div>
-  ${repPhone?`<div class="small"><span style="font-weight:600;">Telefone:</span> ${escape(repPhone)}</div>`:''}
-  ${repEmail?`<div class="small"><span style="font-weight:600;">Email:</span> ${escape(repEmail)}</div>`:''}
-        <div style="height:6px"></div>
-  <div><strong>Cliente:</strong> ${escape(quote.clientSnapshot.name)}</div>
-  ${quote.clientSnapshot.taxid?`<div class="small"><span style="font-weight:600;">CNPJ/CPF:</span> ${escape(quote.clientSnapshot.taxid)}</div>`:''}
-  ${quote.clientSnapshot.phone?`<div class="small"><span style="font-weight:600;">Telefone:</span> ${escape(quote.clientSnapshot.phone)}</div>`:''}
-  ${quote.clientSnapshot.email?`<div class="small"><span style="font-weight:600;">Email:</span> ${escape(quote.clientSnapshot.email)}</div>`:''}
-  ${quote.clientSnapshot.address?`<div class="small"><span style="font-weight:600;">Endereço:</span> ${escape(quote.clientSnapshot.address)}</div>`:''}
+        <div style="padding-bottom:6px; border-bottom:1px solid #ccc;">
+          <div><strong>Representante:</strong> ${escape(repName)}</div>
+          ${repPhone?`<div class="small"><span style="font-weight:600;">Telefone:</span> ${escape(repPhone)}</div>`:''}
+          ${repEmail?`<div class="small"><span style="font-weight:600;">Email:</span> ${escape(repEmail)}</div>`:''}
+        </div>
+        <div style="height:10px"></div>
+        <div style="padding-bottom:6px; border-bottom:1px solid #ccc;">
+          <div><strong>Cliente:</strong> ${escape(quote.clientSnapshot.name)}</div>
+          ${quote.clientSnapshot.taxid?`<div class="small"><span style="font-weight:600;">CNPJ/CPF:</span> ${escape(quote.clientSnapshot.taxid)}</div>`:''}
+          ${quote.clientSnapshot.phone?`<div class="small"><span style="font-weight:600;">Telefone:</span> ${escape(quote.clientSnapshot.phone)}</div>`:''}
+          ${quote.clientSnapshot.email?`<div class="small"><span style="font-weight:600;">Email:</span> ${escape(quote.clientSnapshot.email)}</div>`:''}
+          ${quote.clientSnapshot.address?`<div class="small"><span style="font-weight:600;">Endereço:</span> ${escape(quote.clientSnapshot.address)}</div>`:''}
+        </div>
       </div>
       <h2 class="section-title">Produtos</h2>
       ${quote.items.map(it=>`<div class="product">
