@@ -1,9 +1,12 @@
 import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Package, Users, Truck, Boxes, Settings2, Tags } from 'lucide-react';
+import { ErpSuppliers } from '@/components/erp/ErpSuppliers';
+import { ErpCarriers } from '@/components/erp/ErpCarriers';
+import { ErpClients } from '@/components/erp/ErpClients';
+import { Card } from '@/components/ui/card';
 
 type SectionKey = 'dashboard' | 'clients' | 'suppliers' | 'carriers' | 'products' | 'stock' | 'labels';
 
@@ -36,12 +39,12 @@ export default function Erp() {
           <ScrollArea className="h-full">
             <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
               {section === 'dashboard' && <ErpDashboard />}
-              {section === 'clients' && <SectionPlaceholder title="Clientes" description="Cadastro completo de clientes (usar tabela existente)." />}
-              {section === 'suppliers' && <SectionPlaceholder title="Fornecedores" description="Cadastro de fornecedores com documentos fiscais e contatos." />}
-              {section === 'carriers' && <SectionPlaceholder title="Transportadoras" description="Cadastro de transportadoras com RNTRC e tipos de veículos." />}
-              {section === 'products' && <SectionPlaceholder title="Produtos" description="Catálogo completo com tributação, variações e preços." />}
-              {section === 'stock' && <SectionPlaceholder title="Estoque" description="Movimentações de entrada/saída e posição atual." />}
-              {section === 'labels' && <SectionPlaceholder title="Etiquetas / Códigos" description="Geração de códigos de barras e QR Codes para produtos." />}
+              {section === 'clients' && <ErpClients />}
+              {section === 'suppliers' && <ErpSuppliers />}
+              {section === 'carriers' && <ErpCarriers />}
+              {section === 'products' && <SectionPlaceholder title="Produtos" description="(Futuro) gerenciamento avançado + tributação (tabela product_tax)." />}
+              {section === 'stock' && <StockPlaceholder />}
+              {section === 'labels' && <LabelsPlaceholder />}
             </div>
           </ScrollArea>
         </main>
@@ -78,5 +81,29 @@ function ErpDashboard() {
       <Card className="p-4"><h3 className="font-semibold mb-1">Alertas de Estoque</h3><p className="text-xs text-muted-foreground">Itens abaixo do mínimo serão exibidos aqui.</p></Card>
       <Card className="p-4"><h3 className="font-semibold mb-1">Pendências Fiscais</h3><p className="text-xs text-muted-foreground">Notas a emitir / divergências tributárias.</p></Card>
     </div>
+  );
+}
+
+function StockPlaceholder() {
+  return (
+    <Card className="p-6">
+      <h2 className="text-xl font-semibold mb-2">Estoque</h2>
+      <p className="text-sm text-muted-foreground mb-4">Movimentações (inventory_movements) e posição atual (view product_stock). Implementar: filtros por produto, data, tipo; lançamento rápido de entrada/saída; ajuste com motivo.</p>
+      <ul className="list-disc pl-5 text-xs space-y-1 text-muted-foreground">
+        <li>Entrada: registra quantidade e custo unitário</li>
+        <li>Saída: originada por venda/pedido (automatizar posteriormente)</li>
+        <li>Ajuste: positivo/negativo com motivo (inventário, perda, quebra)</li>
+      </ul>
+    </Card>
+  );
+}
+
+function LabelsPlaceholder() {
+  return (
+    <Card className="p-6">
+      <h2 className="text-xl font-semibold mb-2">Etiquetas / Códigos</h2>
+      <p className="text-sm text-muted-foreground mb-4">Gerar e armazenar códigos de barras (EAN13, Code128) e QR Codes para produtos em product_labels.</p>
+      <div className="text-xs text-muted-foreground">Próximo passo: escolher lib (ex: jsbarcode + qrcode) e permitir lote de impressão baseado no estoque.</div>
+    </Card>
   );
 }

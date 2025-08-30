@@ -35,6 +35,75 @@ export interface Product {
   price: number;
 }
 
+// ===== ERP NOVOS TIPOS =====
+export interface Supplier {
+  id: string;
+  name: string;
+  taxid?: string;
+  state_registration?: string;
+  municipal_registration?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  contact_name?: string;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface Carrier {
+  id: string;
+  name: string;
+  taxid?: string;
+  state_registration?: string;
+  rntrc?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  contact_name?: string;
+  vehicle_types?: string;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface ProductTax {
+  product_id: string;
+  ncm?: string; cest?: string; cfop?: string; origem?: string;
+  icms_cst?: string; icms_aliq?: number; icms_mva?: number;
+  pis_cst?: string; pis_aliq?: number;
+  cofins_cst?: string; cofins_aliq?: number;
+  ipi_cst?: string; ipi_aliq?: number; fcp_aliq?: number;
+  updated_at?: string;
+}
+
+export interface InventoryMovement {
+  id: string;
+  product_id: string;
+  type: 'ENTRADA' | 'SAIDA' | 'AJUSTE';
+  quantity: number;
+  unit_cost?: number;
+  reference?: string;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface ProductLabel {
+  id: string;
+  product_id: string;
+  label_type: string; // EAN13, CODE128, QRCODE
+  code_value: string;
+  format?: string;
+  extra?: Record<string, unknown>;
+  created_at?: string;
+}
+
+export interface ProductStockRow { product_id: string; stock: number }
+
 export interface QuoteItemSnapshot {
   productId?: string; // referência opcional
   name: string;
