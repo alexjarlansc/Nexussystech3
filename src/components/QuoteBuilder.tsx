@@ -106,6 +106,8 @@ export default function QuoteBuilder() {
     fetchClients();
   }, []);
   const [products, setProducts] = useState<Product[]>([]);
+  // Filtro de busca no modal de gerenciamento de produtos
+  const [productSearch, setProductSearch] = useState('');
   const [quotes, setQuotes] = useState<Quote[]>([]);
 
   const [clientId, setClientId] = useState<string>('');
@@ -1035,76 +1037,10 @@ export default function QuoteBuilder() {
               </div>
             </div>
 
-            {/* Discount Section */}
-            <div className="mt-4 grid grid-cols-12 gap-2 md:gap-4 items-center">
-              <div className="col-span-12 md:col-span-4">
-                <Label>Desconto (%):</Label>
-                {profile?.role === 'admin' ? (
-                  <div className="mt-2 flex flex-col gap-2">
-                    <div className="flex gap-2 items-center">
-                      <Input
-                        type="number"
-                        min={6}
-                        max={100}
-                        step="1"
-                        placeholder="% para liberar"
-                        style={{ width: 120 }}
-                        id="admin-discount-token-value"
-                      />
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          const val = (document.getElementById('admin-discount-token-value') as HTMLInputElement)?.value;
-                          const perc = parseInt(val || '');
-                          if (!perc || perc <= 5 || perc > 100) {
-                            toast.error('Informe um percentual acima de 5 e até 100');
-                            return;
-                          }
-                          setGeneratedToken(`DESC${perc}`);
-                        }}
-                      >Gerar Token</Button>
-                    </div>
-                    {generatedToken && (
-                      <div className="flex items-center gap-2">
-                        <Input readOnly value={generatedToken} style={{ width: 100 }} />
-                        <Button type="button" onClick={() => {navigator.clipboard.writeText(generatedToken); toast.success('Token copiado!')}}>Copiar</Button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="mt-2 flex flex-col gap-2">
-                    <div className="flex gap-2 items-center">
-                      <Input
-                        type="text"
-                        value={discountToken}
-                        onChange={e => setDiscountToken(e.target.value.toUpperCase())}
-                        placeholder="Token do administrador"
-                        style={{ width: 120 }}
-                        id="user-discount-token-value"
-                      />
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          if (!discountToken) {
-                            toast.error('Digite o token para aplicar');
-                            return;
-                          }
-                          if (!isTokenValid(discountToken)) {
-                            toast.error('Token inválido, expirado ou já utilizado. Solicite um novo ao administrador.');
-                            return;
-                          }
-                          setMaxDiscount(parseInt(discountToken.replace('DESC', '')));
-                          toast.success('Token aplicado! Agora você pode usar o desconto liberado.');
-                        }}
-                      >Aplicar Token</Button>
-                    </div>
-                    {discountToken && !isTokenValid(discountToken) && (
-                      <span className="text-xs text-red-600">Token inválido, expirado ou já utilizado. Solicite um novo ao administrador.</span>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="col-span-12 md:col-span-8 flex flex-col gap-2">
+            {/* Discount Section (compact) */}
+            <div className="mt-4 space-y-2">
+              <Label className="text-sm font-medium">Desconto (%)</Label>
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   type="number"
                   value={discountAmount}
@@ -1112,35 +1048,75 @@ export default function QuoteBuilder() {
                   onFocus={e => e.target.select()}
                   onChange={e => {
                     const val = e.target.value.replace(/[^0-9.,-]/g, '');
-                    if (parseFloat(val || '0') > maxDiscount) {
-                      toast.error(`Desconto máximo permitido: ${maxDiscount}%`);
-                      return;
-                    }
+                    if (parseFloat(val || '0') > maxDiscount) { toast.error(`Máx: ${maxDiscount}%`); return; }
                     setDiscountAmount(val);
                   }}
-                  className="flex-1"
+                  className="w-24"
                   min="0"
                   max={maxDiscount}
                   step="any"
                 />
-                {parseFloat(discountAmount || '0') > 5 && profile?.role !== 'admin' && (
-                  <div className="flex flex-col gap-1 mt-2">
+                {profile?.role === 'admin' ? (
+                  <>
                     <Input
-                      type="text"
-                      value={discountToken}
-                      onChange={e => setDiscountToken(e.target.value.toUpperCase())}
-                      placeholder="Token do administrador"
-                      className="flex-1 border-red-500"
+                      type="number"
+                      min={6}
+                      max={100}
+                      step="1"
+                      placeholder="% para liber"
+                      className="w-28"
+                      id="admin-discount-token-value"
                     />
-                    {discountToken && !isTokenValid(discountToken) && (
-                      <span className="text-xs text-red-600">Token inválido, expirado ou já utilizado. Solicite um novo ao administrador.</span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        const val = (document.getElementById('admin-discount-token-value') as HTMLInputElement)?.value;
+                        const perc = parseInt(val || '');
+                        if (!perc || perc <= 5 || perc > 100) { toast.error('Informe % >5 e <=100'); return; }
+                        setGeneratedToken(`DESC${perc}`);
+                      }}
+                    >Gerar Token</Button>
+                    {generatedToken && (
+                      <div className="flex items-center gap-1">
+                        <Input readOnly value={generatedToken} className="w-24 text-center text-xs" />
+                        <Button size="sm" type="button" onClick={() => {navigator.clipboard.writeText(generatedToken); toast.success('Copiado');}}>Copiar</Button>
+                      </div>
                     )}
-                    {!discountToken && (
-                      <span className="text-xs text-red-600">Token obrigatório para desconto acima de 5%</span>
+                  </>
+                ) : (
+                  <>
+                    {parseFloat(discountAmount || '0') > 5 && (
+                      <>
+                        <Input
+                          type="text"
+                          value={discountToken}
+                          onChange={e => setDiscountToken(e.target.value.toUpperCase())}
+                          placeholder="Token"
+                          className={"w-32 " + (discountToken && !isTokenValid(discountToken) ? 'border-red-500' : '')}
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => {
+                            if (!discountToken) { toast.error('Digite token'); return; }
+                            if (!isTokenValid(discountToken)) { toast.error('Token inválido/expirado'); return; }
+                            setMaxDiscount(parseInt(discountToken.replace('DESC','')));
+                            toast.success('Token aplicado');
+                          }}
+                        >Aplicar</Button>
+                      </>
                     )}
-                  </div>
+                  </>
                 )}
+                <span className="text-[11px] text-muted-foreground">Máx atual: {maxDiscount}%</span>
               </div>
+              {discountToken && !isTokenValid(discountToken) && (
+                <div className="text-[11px] text-red-600">Token inválido, expirado ou já usado.</div>
+              )}
+              {parseFloat(discountAmount || '0') > 5 && !discountToken && profile?.role !== 'admin' && (
+                <div className="text-[11px] text-red-600">Token obrigatório para desconto &gt; 5%</div>
+              )}
             </div>
 
             <div className="mt-4 flex flex-col md:flex-row flex-wrap items-center justify-between gap-2 md:gap-4">
@@ -1392,15 +1368,19 @@ export default function QuoteBuilder() {
       {/* Manage Products Modal */}
       <Dialog open={openManageProducts} onOpenChange={setOpenManageProducts}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>Gerenciar Produtos Cadastrados</DialogTitle></DialogHeader>
-          <div className="max-h-[50vh] overflow-auto space-y-2">
+          <DialogHeader><DialogTitle>Gerenciar Produtos</DialogTitle></DialogHeader>
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <Input
+              placeholder="Filtrar por nome..."
+              value={productSearch}
+              onChange={e=> setProductSearch(e.target.value)}
+              className="h-8 text-sm"
+            />
             {profile?.role === 'admin' && (
-              <div className="mb-4 p-3 bg-accent/50 rounded-lg">
-                <p className="text-sm text-muted-foreground">
-                  <strong>Administrador:</strong> Você pode editar, criar novos produtos e excluir produtos existentes.
-                </p>
-              </div>
+              <Button size="sm" onClick={()=>{ setOpenProduct(true); }}>Novo Produto</Button>
             )}
+          </div>
+          <div className="max-h-[55vh] overflow-auto divide-y rounded-md border">
             
             {products.length === 0 && (
               <div className="text-sm text-muted-foreground text-center py-8">
@@ -1414,50 +1394,32 @@ export default function QuoteBuilder() {
                 )}
               </div>
             )}
-            {products.map((p) => (
-              <div key={p.id} className="flex items-center justify-between border rounded-md p-3">
-                <div className="flex items-center gap-3">
-                  {p.imageDataUrl ? (
-                    <img src={p.imageDataUrl} alt={p.name} className="h-12 w-12 rounded object-cover border" />
-                  ) : (
-                    <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-xs">IMG</div>
+            {products
+              .filter(p=> p.name.toLowerCase().includes(productSearch.toLowerCase()))
+              .map(p => (
+              <div key={p.id} className="flex items-start gap-3 p-3 hover:bg-accent/30">
+                {p.imageDataUrl ? (
+                  <img src={p.imageDataUrl} alt={p.name} className="h-10 w-10 rounded object-cover border" />
+                ) : (
+                  <div className="h-10 w-10 rounded border bg-accent/60 grid place-items-center text-[10px]">IMG</div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm truncate max-w-[240px]" title={p.name}>{p.name}</span>
+                    <span className="text-xs text-muted-foreground">{currencyBRL(p.price)}</span>
+                  </div>
+                  {p.description && (
+                    <div className="text-[11px] text-muted-foreground line-clamp-2 leading-snug mt-0.5" title={p.description}>{p.description}</div>
                   )}
-                  <div>
-                    <div className="font-medium">{p.name}</div>
-                    <div className="text-xs text-muted-foreground">{currencyBRL(p.price)}</div>
-                    {p.description && (
-                      <div className="text-xs text-muted-foreground max-w-xs truncate">{p.description}</div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <Button size="sm" variant="outline" onClick={()=> setOpenEditProduct(p)}>Editar</Button>
+                    {profile?.role === 'admin' && (
+                      <Button size="sm" variant="secondary" onClick={()=> { setOpenProduct(true); }}>Duplicar</Button>
+                    )}
+                    {profile?.role === 'admin' && (
+                      <Button size="sm" variant="destructive" onClick={()=> deleteProduct(p.id)}>Excluir</Button>
                     )}
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setOpenEditProduct(p)}>Editar</Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => {
-                      if (profile?.role !== 'admin') {
-                        toast.error('Apenas administradores podem cadastrar produtos');
-                        return;
-                      }
-                      setOpenProduct(true);
-                    }}
-                  >
-                    Novo
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="destructive" 
-                    onClick={() => {
-                      if (profile?.role !== 'admin') {
-                        toast.error('Apenas administradores podem excluir produtos');
-                        return;
-                      }
-                      deleteProduct(p.id);
-                    }}
-                  >
-                    Excluir
-                  </Button>
                 </div>
               </div>
             ))}

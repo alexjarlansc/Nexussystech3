@@ -71,6 +71,14 @@ export default function PDV() {
   const [movementDialog, setMovementDialog] = useState<null | { type: 'SANGRIA' | 'SUPRIMENTO' }>(null);
   const [movementAmount, setMovementAmount] = useState('');
   const [movementDesc, setMovementDesc] = useState('');
+  // NF-e
+  // Tipos NF-e simplificados
+  interface NFeItem { nItem:number; descricao:string; quantidade:number; vUnit:number; vDesc:number; vTotal:number; cfop:string; cst:string; ncm:string; unidade:string; aliqIcms:number; aliqIpi:number; aliqPis:number; aliqCofins:number; vIcms:number; vIpi:number; vPis:number; vCofins:number; }
+  interface NFeParty { nome:string; cnpj?:string; doc?:string; }
+  type RegimeTributario = 'NORMAL' | 'SIMPLES';
+  interface NFeDraft { numero:string; naturezaOperacao:string; serie:string; modelo:string; dataEmissao:string; regime:RegimeTributario; emitente:NFeParty; destinatario:NFeParty & { endereco?:string; municipio?:string; uf?:string; cep?:string }; itens:NFeItem[]; totais:{ vProdutos:number; vFrete:number; vNF:number; vIcms:number; vIpi:number; vPis:number; vCofins:number }; }
+  const [openNfeDialog, setOpenNfeDialog] = useState(false);
+  const [nfeDraft, setNfeDraft] = useState<NFeDraft | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
   // Modo simplificado: não há mais verificação manual nem adição de parcelas
 
@@ -153,6 +161,179 @@ export default function PDV() {
 
   function addPayment() { /* desativado */ toast.error('Ajuste de pagamento desativado. Use condições do Pedido.'); }
 
+  function buildNfeDraft(){
+    if(!linkedQuote){ toast.error('Carregue um Pedido primeiro'); return; }
+    if(items.length===0){ toast.error('Sem itens para NF-e'); return; }
+    const now = new Date();
+    const num = 'NFe' + now.toISOString().replace(/[-:TZ.]/g,'').slice(0,14);
+    const emit: NFeParty = {
+      nome: profile?.first_name || 'Emitente',
+      // TODO: Recuperar CNPJ real da empresa (ex: tabela companies). Placeholder usado.
+      cnpj: '00000000000000',
+    };
+    const dest = {
+      nome: linkedQuote.clientSnapshot.name,
+      doc: linkedQuote.clientSnapshot.taxid || 'ISENTO'
+    };
+    const itens: NFeItem[] = items.map((i,idx)=> {
+      const vTotal = (i.unitPrice*i.quantity) - (i.discount||0);
+      const aliqIcms = 18; const aliqIpi = 0; const aliqPis = 1.65; const aliqCofins = 7.6;
+      const base = vTotal; // simplificação
+      const vIcms = +(base * aliqIcms/100).toFixed(2);
+      const vIpi = +(base * aliqIpi/100).toFixed(2);
+      const vPis = +(base * aliqPis/100).toFixed(2);
+      const vCofins = +(base * aliqCofins/100).toFixed(2);
+      return {
+        nItem: idx+1,
+        descricao: i.name,
+        quantidade: i.quantity,
+        vUnit: i.unitPrice,
+        vDesc: i.discount||0,
+        vTotal,
+        cfop: '5102',
+        cst: '00',
+        ncm: '00000000',
+        unidade: 'UN',
+        aliqIcms, aliqIpi, aliqPis, aliqCofins,
+        vIcms, vIpi, vPis, vCofins
+      };
+    });
+  const totalProdutos = itens.reduce((s,it)=> s + it.vTotal,0);
+  const totIcms = itens.reduce((s,it)=> s + it.vIcms,0);
+  const totIpi = itens.reduce((s,it)=> s + it.vIpi,0);
+  const totPis = itens.reduce((s,it)=> s + it.vPis,0);
+  const totCofins = itens.reduce((s,it)=> s + it.vCofins,0);
+    const freightV = freight || 0;
+    const draft: NFeDraft = {
+      numero: num,
+      naturezaOperacao: 'VENDA',
+      serie: '1',
+      modelo: '55',
+      dataEmissao: now.toISOString(),
+      regime: 'NORMAL',
+      emitente: emit,
+      destinatario: dest,
+      itens,
+      totais: {
+        vProdutos: totalProdutos,
+        vFrete: freightV,
+        vNF: totalProdutos + freightV, // sem impostos destacados
+        vIcms: totIcms,
+        vIpi: totIpi,
+        vPis: totPis,
+        vCofins: totCofins
+      }
+    };
+    setNfeDraft(draft);
+    setOpenNfeDialog(true);
+  }
+
+  function updateNfeField(path: string, value: unknown){
+    setNfeDraft(prev => {
+      if(!prev) return prev;
+      const clone: NFeDraft = { ...prev };
+      const parts = path.split('.');
+      type AnyRec = Record<string, unknown>;
+      let ref: AnyRec = clone as unknown as AnyRec;
+      for(let i=0;i<parts.length-1;i++){
+        const p = parts[i];
+        const current = ref[p];
+        if(typeof current !== 'object' || current === null){
+          ref[p] = {};
+        }
+        ref = ref[p] as AnyRec;
+      }
+      ref[parts[parts.length-1]] = value;
+      return { ...clone };
+    });
+  }
+
+  function recomputeTotals(d: NFeDraft){
+    const vProdutos = d.itens.reduce((s,i)=> s + i.vTotal,0);
+    const vIcms = d.itens.reduce((s,i)=> s + i.vIcms,0);
+    const vIpi = d.itens.reduce((s,i)=> s + i.vIpi,0);
+    const vPis = d.itens.reduce((s,i)=> s + i.vPis,0);
+    const vCofins = d.itens.reduce((s,i)=> s + i.vCofins,0);
+    d.totais.vProdutos = +vProdutos.toFixed(2);
+    d.totais.vIcms = +vIcms.toFixed(2);
+    d.totais.vIpi = +vIpi.toFixed(2);
+    d.totais.vPis = +vPis.toFixed(2);
+    d.totais.vCofins = +vCofins.toFixed(2);
+    d.totais.vNF = +(d.totais.vProdutos + d.totais.vFrete).toFixed(2); // simplificação
+  }
+
+  function updateItemField(nItem:number, field:keyof NFeItem, value:string){
+    setNfeDraft(prev => {
+      if(!prev) return prev;
+      const clone: NFeDraft = { ...prev, itens: prev.itens.map(i=> ({...i})) };
+      const item = clone.itens.find(i=> i.nItem===nItem);
+      if(item){
+        if(field === 'aliqIcms') item.aliqIcms = parseFloat(value)||0;
+        else if(field === 'aliqIpi') item.aliqIpi = parseFloat(value)||0;
+        else if(field === 'aliqPis') item.aliqPis = parseFloat(value)||0;
+        else if(field === 'aliqCofins') item.aliqCofins = parseFloat(value)||0;
+        else if(field === 'quantidade') item.quantidade = parseFloat(value)||0;
+        else if(field === 'vUnit') item.vUnit = parseFloat(value)||0;
+        else if(field === 'vDesc') item.vDesc = parseFloat(value)||0;
+        else if(field === 'ncm') item.ncm = value;
+        else if(field === 'cfop') item.cfop = value;
+        else if(field === 'cst') item.cst = value;
+        else if(field === 'descricao') item.descricao = value;
+        // campos calculados ou não editados ignorados
+        // recalcula valores
+        item.vTotal = +(item.quantidade * item.vUnit - item.vDesc).toFixed(2);
+        const base = item.vTotal;
+        item.vIcms = +(base * item.aliqIcms/100).toFixed(2);
+        item.vIpi = +(base * item.aliqIpi/100).toFixed(2);
+        item.vPis = +(base * item.aliqPis/100).toFixed(2);
+        item.vCofins = +(base * item.aliqCofins/100).toFixed(2);
+        recomputeTotals(clone);
+      }
+      return clone;
+    });
+  }
+
+  function exportNfe(){
+    if(!nfeDraft){ toast.error('Nada para exportar'); return; }
+    const blob = new Blob([JSON.stringify(nfeDraft,null,2)], { type:'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nfeDraft.numero + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function exportNfeXml(){
+    if(!nfeDraft){ toast.error('Nada para exportar'); return; }
+    const esc = (v:string)=> (v||'').replace(/[<&>]/g,ch=> ({'<':'&lt;','>':'&gt;','&':'&amp;'}[ch]!));
+    const d = nfeDraft;
+    const xmlParts: string[] = [];
+    xmlParts.push('<?xml version="1.0" encoding="UTF-8"?>');
+    xmlParts.push('<NFe>');
+    xmlParts.push(`<infNFe versao="4.00" Id="UNSIGNED">`);
+    xmlParts.push(`<ide><natOp>${esc(d.naturezaOperacao)}</natOp><mod>${d.modelo}</mod><serie>${d.serie}</serie><nNF>${esc(d.numero)}</nNF><dhEmi>${d.dataEmissao}</dhEmi><tpNF>1</tpNF><tpAmb>2</tpAmb></ide>`);
+    xmlParts.push(`<emit><xNome>${esc(d.emitente.nome)}</xNome><CNPJ>${d.emitente.cnpj||''}</CNPJ></emit>`);
+    xmlParts.push(`<dest><xNome>${esc(d.destinatario.nome)}</xNome>${d.destinatario.doc?`<CPF>${esc(d.destinatario.doc)}</CPF>`:''}</dest>`);
+    d.itens.forEach(it => {
+      xmlParts.push(`<det nItem="${it.nItem}"><prod><cProd>${it.nItem}</cProd><xProd>${esc(it.descricao)}</xProd><NCM>${it.ncm}</NCM><CFOP>${it.cfop}</CFOP><uCom>${it.unidade}</uCom><qCom>${it.quantidade.toFixed(2)}</qCom><vUnCom>${it.vUnit.toFixed(2)}</vUnCom><vProd>${it.vTotal.toFixed(2)}</vProd></prod>`);
+      if(d.regime==='SIMPLES'){
+        xmlParts.push(`<imposto><ICMS><ICMSSN102><orig>0</orig><CSOSN>${it.cst}</CSOSN></ICMSSN102></ICMS></imposto>`);
+      } else {
+        xmlParts.push(`<imposto><ICMS><ICMS00><orig>0</orig><CST>${it.cst}</CST><pICMS>${it.aliqIcms.toFixed(2)}</pICMS><vICMS>${it.vIcms.toFixed(2)}</vICMS></ICMS00></ICMS></imposto>`);
+      }
+      xmlParts.push('</det>');
+    });
+    xmlParts.push(`<total><ICMSTot><vProd>${d.totais.vProdutos.toFixed(2)}</vProd><vFrete>${d.totais.vFrete.toFixed(2)}</vFrete><vICMS>${d.totais.vIcms.toFixed(2)}</vICMS></ICMSTot></total>`);
+    xmlParts.push('</infNFe></NFe>');
+    const xml = xmlParts.join('');
+    const blob = new Blob([xml], { type:'application/xml' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = d.numero + '.xml';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   function normalizeOrder(num: string){
     if(!num) return '';
     const cleaned = num.toUpperCase().replace(/^PED-/, '');
@@ -168,17 +349,12 @@ export default function PDV() {
     const rawStatus = (data.status || '').toString().trim().toLowerCase();
     const rawType = (data.type || '').toString().trim().toUpperCase();
     // Aceitar variações masculinas/femininas e diferentes sufixos
-    const allowPatterns = [
-      /^aprov/,      // aprovado, aprovada
-      /^liber/,      // liberado, liberada
-      /^fech/,       // fechado, fechada
-      /^confirm/,    // confirmado, confirmada
-      /^pedido$/,    // exatamente 'pedido'
-      /^finaliz/,    // finalizado, finalizada
-    ];
     const blockedStatuses = ['rascunho','digitacao','digitação','edicao','edição','aberto','em edição','em edicao'];
-    const isAllowed = allowPatterns.some(r => r.test(rawStatus));
-    if (rawType !== 'PEDIDO' || blockedStatuses.includes(rawStatus) || (!isAllowed && rawStatus !== '')) {
+    const shouldBlock = (
+      rawType !== 'PEDIDO' ||
+      blockedStatuses.includes(rawStatus)
+    );
+    if (shouldBlock) {
       console.warn('PDV: Pedido bloqueado para carregamento', { number: full, status: data.status, type: data.type });
       let vendorName = '';
       try {
@@ -531,8 +707,8 @@ export default function PDV() {
           <div className="flex gap-2 mt-2">
             <div className="flex flex-col gap-1">
               <Button variant="outline" size="sm" onClick={()=> setPaymentDialog(true)}>Pagamento</Button>
-              <Button variant="outline" size="sm" disabled>Alterar</Button>
               <Button variant="outline" size="sm" disabled>Excluir</Button>
+              <Button variant="outline" size="sm" onClick={buildNfeDraft}>Gerar NFe</Button>
               <Button variant="outline" size="sm" disabled>Copiar</Button>
               <Button variant="outline" size="sm" disabled>Desc.</Button>
               <Button variant="outline" size="sm" disabled>Produto</Button>
@@ -643,6 +819,128 @@ export default function PDV() {
               <div className="flex justify-between font-semibold"><span>Troco</span><span>{fmt(changeValue)}</span></div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* NF-e Draft Dialog */}
+      <Dialog open={openNfeDialog} onOpenChange={setOpenNfeDialog}>
+        <DialogContent className="sm:max-w-[1200px] w-full max-h-[92vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Gerar NF-e (Rascunho)</DialogTitle></DialogHeader>
+          {!nfeDraft && <div className="text-sm text-muted-foreground">Sem dados.</div>}
+          {nfeDraft && (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Número</label>
+                  <Input value={nfeDraft.numero} onChange={e=> updateNfeField('numero', e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Natureza</label>
+                  <Input value={nfeDraft.naturezaOperacao} onChange={e=> updateNfeField('naturezaOperacao', e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Série</label>
+                  <Input value={nfeDraft.serie} onChange={e=> updateNfeField('serie', e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Modelo</label>
+                  <Input value={nfeDraft.modelo} onChange={e=> updateNfeField('modelo', e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Regime</label>
+                  <select value={nfeDraft.regime} onChange={e=> {
+                    const val = e.target.value as RegimeTributario;
+                    updateNfeField('regime', val);
+                    // ajustar códigos padrão
+                    setNfeDraft(prev => {
+                      if(!prev) return prev;
+                      const clone: NFeDraft = { ...prev, itens: prev.itens.map(i=> ({...i, cst: val==='SIMPLES' ? (i.cst.length===2? '102': i.cst): (i.cst.length===3? '00': i.cst) })) };
+                      return clone;
+                    });
+                  }} className="h-8 text-sm border rounded w-full bg-white px-2">
+                    <option value="NORMAL">Normal</option>
+                    <option value="SIMPLES">Simples</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Emitente</label>
+                  <Input value={nfeDraft.emitente.nome} onChange={e=> updateNfeField('emitente.nome', e.target.value)} className="h-8 text-sm" />
+                  <Input value={nfeDraft.emitente.cnpj} onChange={e=> updateNfeField('emitente.cnpj', e.target.value)} className="h-8 text-sm mt-1" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Destinatário</label>
+                  <Input value={nfeDraft.destinatario.nome} onChange={e=> updateNfeField('destinatario.nome', e.target.value)} className="h-8 text-sm" />
+                  <Input value={nfeDraft.destinatario.doc} onChange={e=> updateNfeField('destinatario.doc', e.target.value)} placeholder="CPF/CNPJ" className="h-8 text-sm mt-1" />
+                  <Input value={nfeDraft.destinatario.endereco||''} onChange={e=> updateNfeField('destinatario.endereco', e.target.value)} placeholder="Endereço" className="h-8 text-sm mt-1" />
+                  <div className="grid grid-cols-3 gap-1 mt-1">
+                    <Input value={nfeDraft.destinatario.municipio||''} onChange={e=> updateNfeField('destinatario.municipio', e.target.value)} placeholder="Município" className="h-8 text-xs" />
+                    <Input value={nfeDraft.destinatario.uf||''} onChange={e=> updateNfeField('destinatario.uf', e.target.value)} placeholder="UF" className="h-8 text-xs" />
+                    <Input value={nfeDraft.destinatario.cep||''} onChange={e=> updateNfeField('destinatario.cep', e.target.value)} placeholder="CEP" className="h-8 text-xs" />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="font-medium text-[11px] uppercase mb-1">Itens (campos fiscais editáveis)</div>
+                <table className="w-full text-[11px] border min-w-[900px] overflow-x-auto">
+                  <thead className="bg-slate-200">
+                    <tr>
+                      <th className="p-1 text-left">#</th>
+                      <th className="p-1 text-left">Descrição</th>
+                      <th className="p-1 text-left">NCM</th>
+                      <th className="p-1 text-left">CFOP</th>
+                      <th className="p-1 text-left">CST</th>
+                      <th className="p-1 text-right">Qtd</th>
+                      <th className="p-1 text-right">V.Unit</th>
+                      <th className="p-1 text-right">Desc</th>
+                      <th className="p-1 text-right">Aliq ICMS</th>
+                      <th className="p-1 text-right">ICMS</th>
+                      <th className="p-1 text-right">PIS</th>
+                      <th className="p-1 text-right">COFINS</th>
+                      <th className="p-1 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nfeDraft.itens.map((it)=> (
+                      <tr key={it.nItem} className="odd:bg-white even:bg-slate-50 align-top">
+                        <td className="p-1 align-middle text-center text-[11px] font-medium">{it.nItem}</td>
+                        <td className="p-1 truncate max-w-[320px]" title={it.descricao}>{it.descricao}</td>
+                        <td className="p-1 w-24"><Input value={it.ncm} onChange={e=> updateItemField(it.nItem,'ncm', e.target.value)} className="h-7 px-1 text-[11px] font-mono tracking-tight" /></td>
+                        <td className="p-1 w-16"><Input value={it.cfop} onChange={e=> updateItemField(it.nItem,'cfop', e.target.value)} className="h-7 px-1 text-[11px] font-mono tracking-tight" /></td>
+                        <td className="p-1 w-14"><Input value={it.cst} onChange={e=> updateItemField(it.nItem,'cst', e.target.value)} className="h-7 px-1 text-[11px] font-mono tracking-tight" /></td>
+                        <td className="p-1 w-16"><Input value={it.quantidade.toString()} onChange={e=> updateItemField(it.nItem,'quantidade', e.target.value)} className="h-7 px-1 text-[11px] text-right font-mono tabular-nums" /></td>
+                        <td className="p-1 w-24"><Input value={it.vUnit.toString()} onChange={e=> updateItemField(it.nItem,'vUnit', e.target.value)} className="h-7 px-1 text-[11px] text-right font-mono tabular-nums" /></td>
+                        <td className="p-1 w-20"><Input value={it.vDesc.toString()} onChange={e=> updateItemField(it.nItem,'vDesc', e.target.value)} className="h-7 px-1 text-[11px] text-right font-mono tabular-nums" /></td>
+                        <td className="p-1 w-24"><Input value={it.aliqIcms.toString()} onChange={e=> updateItemField(it.nItem,'aliqIcms', e.target.value)} className="h-7 px-1 text-[11px] text-right font-mono tabular-nums" /></td>
+                        <td className="p-1 text-right whitespace-nowrap font-mono tabular-nums">{fmt(it.vIcms)}</td>
+                        <td className="p-1 text-right whitespace-nowrap font-mono tabular-nums">{fmt(it.vPis)}</td>
+                        <td className="p-1 text-right whitespace-nowrap font-mono tabular-nums">{fmt(it.vCofins)}</td>
+                        <td className="p-1 text-right font-medium font-mono tabular-nums">{fmt(it.vTotal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <div className="space-y-0.5">
+                  <div>Produtos: {fmt(nfeDraft.totais.vProdutos)}</div>
+                  <div>Frete: {fmt(nfeDraft.totais.vFrete)}</div>
+                  <div>ICMS: {fmt(nfeDraft.totais.vIcms)}</div>
+                  <div>PIS/COFINS: {fmt(nfeDraft.totais.vPis + nfeDraft.totais.vCofins)}</div>
+                  <div className="font-semibold">Total NF (simpl.): {fmt(nfeDraft.totais.vNF)}</div>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={()=> exportNfe()}>Exportar JSON</Button>
+                  <Button variant="outline" onClick={()=> exportNfeXml()}>Exportar XML</Button>
+                  <Button disabled title="Implementar envio SEFAZ futuramente">Transmitir</Button>
+                </div>
+              </div>
+              <div className="text-[10px] text-muted-foreground leading-snug">
+                Rascunho simplificado. Próximos: validação NCM/CFOP, CSOSN/CST corretos, ST, DIFAL, XML completo (protNFe, assinatura), contingência (EPEC/FS-DA) e transmissão SEFAZ. Alíquotas e bases meramente ilustrativas.
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
