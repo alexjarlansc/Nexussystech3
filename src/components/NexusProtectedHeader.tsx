@@ -118,7 +118,14 @@ export function NexusProtectedHeader() {
   const loadInviteCodes = async () => {
     const { data, error } = await getInviteCodes();
     if (!error) {
-      setInviteCodes(data);
+      // garantir estrutura com narrowing evitando any
+      const arr = Array.isArray(data) ? data : [];
+      const safe: InviteCode[] = arr.filter((d: unknown): d is InviteCode => {
+        if (typeof d !== 'object' || d === null) return false;
+        const o = d as Record<string, unknown>;
+        return typeof o.id === 'string' && typeof o.code === 'string' && typeof o.role === 'string' && typeof o.expires_at === 'string';
+      });
+      setInviteCodes(safe);
     }
   };
 
