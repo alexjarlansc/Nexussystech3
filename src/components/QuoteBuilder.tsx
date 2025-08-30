@@ -713,6 +713,73 @@ export default function QuoteBuilder() {
     w.document.close();
   }
 
+  // Cupom Fiscal Simplificado (layout 80mm) - não substitui emissão fiscal oficial
+  function openCupomFiscal(quote: Quote) {
+    const issueDate = new Date(quote.createdAt).toLocaleDateString('pt-BR');
+    // Dados empresa
+    const companyStored = localStorage.getItem(StorageKeys.company);
+    interface CompanyLoose { name?:string; taxid?:string; cnpj_cpf?:string; address?:string; logoDataUrl?:string; logo_url?:string }
+    let companyObj: CompanyLoose = {};
+    try { if (companyStored) companyObj = JSON.parse(companyStored) as CompanyLoose; } catch {/* ignore parse */}
+    if (company) {
+      companyObj = { ...companyObj, name: company.name || companyObj.name, taxid: company.cnpj_cpf || companyObj.taxid || companyObj.cnpj_cpf, address: company.address || companyObj.address };
+      const backendLogo = (company as unknown as {logo_url?:string}).logo_url;
+      if (!companyObj.logoDataUrl && backendLogo) companyObj.logoDataUrl = backendLogo;
+    }
+    const escape = (s:string)=> (s||'').replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]!));
+    const currency = (n:number)=> new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n);
+    // Calcular desconto implícito (subtotal + frete - total)
+    const discountCalc = (quote.subtotal + quote.freight) - quote.total;
+    const html = `<!DOCTYPE html><html><head><meta charset='utf-8' />
+      <title>Cupom Fiscal - ${escape(quote.number)}</title>
+      <style>
+        @page { size:80mm auto; margin:4mm; }
+        body { font-family: 'Courier New', monospace; font-size:11px; line-height:1.25; }
+        h1 { font-size:13px; text-align:center; margin:0 0 4px; }
+        .center { text-align:center; }
+        .line { border-top:1px dashed #000; margin:4px 0; }
+        table { width:100%; border-collapse:collapse; }
+        th,td { text-align:left; padding:2px 0; }
+        th { font-size:10px; }
+        .totals td { padding:2px 0; }
+        .qr { width:120px; height:120px; margin:6px auto 0; background:#eee; display:flex;align-items:center;justify-content:center; font-size:10px; }
+        .small { font-size:10px; }
+        .right { text-align:right; }
+        .mono { font-family:'Courier New',monospace; }
+      </style></head><body>
+        <h1>${escape(companyObj.name || 'Empresa')}</h1>
+        <div class='center small'>CNPJ/CPF: ${escape(companyObj.taxid||'-')}</div>
+        ${companyObj.address?`<div class='center small'>${escape(companyObj.address)}</div>`:''}
+        <div class='line'></div>
+        <div class='small'><strong>${quote.type==='ORCAMENTO'?'ORÇAMENTO':'PEDIDO'}:</strong> ${escape(quote.number)}</div>
+        <div class='small'>Data: ${escape(issueDate)}</div>
+        <div class='line'></div>
+        <table>
+          <thead><tr><th style='width:4ch;'>Qtd</th><th>Item</th><th class='right' style='width:7ch;'>Vl Uni</th><th class='right' style='width:8ch;'>Total</th></tr></thead>
+          <tbody>
+            ${quote.items.map(it=>`<tr><td>${it.quantity}</td><td>${escape(it.name.substring(0,20).toUpperCase())}</td><td class='right'>${currency(it.unitPrice)}</td><td class='right'>${currency(it.subtotal)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+        <div class='line'></div>
+        <table class='totals'>
+          <tr><td>Subtotal</td><td class='right'>${currency(quote.subtotal)}</td></tr>
+          <tr><td>Frete</td><td class='right'>${currency(quote.freight)}</td></tr>
+          ${discountCalc>0.009?`<tr><td>Desconto</td><td class='right'>-${currency(discountCalc)}</td></tr>`:''}
+          <tr><td><strong>Total</strong></td><td class='right'><strong>${currency(quote.total)}</strong></td></tr>
+        </table>
+        <div class='line'></div>
+        <div class='small'>Cliente: ${escape(quote.clientSnapshot.name.substring(0,32))}</div>
+        ${quote.clientSnapshot.taxid?`<div class='small'>Doc: ${escape(quote.clientSnapshot.taxid)}</div>`:''}
+        <div class='line'></div>
+        <div class='small center'>Cupom fiscal simplificado (não substitui documento fiscal autorizado).</div>
+        <div class='qr'>QR CODE</div>
+        <script>window.onload=()=>setTimeout(()=>window.print(),80);</script>
+      </body></html>`;
+    const w = window.open('','_blank','width=480');
+    if(!w){ toast.error('Popup bloqueado. Libere popups.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  }
+
   return (
     <main className="container mx-auto px-1 sm:px-2 md:px-4">
       <section aria-labelledby="editor" className="grid grid-cols-1 lg:grid-cols-3 gap-2 md:gap-4 lg:gap-6">
@@ -1370,7 +1437,8 @@ export default function QuoteBuilder() {
               <div className="mt-2 space-y-2 overflow-y-auto max-h-[65vh] pr-2">
                 <ReceiptView quote={currentQuote} />
               </div>
-              <DialogFooter>
+              <DialogFooter className="flex gap-2">
+                <Button className="no-print" variant="secondary" onClick={() => openCupomFiscal(currentQuote)}>Gerar Cupom Fiscal</Button>
                 <Button className="no-print" onClick={() => openQuotePdf(currentQuote)}>Gerar PDF</Button>
               </DialogFooter>
             </>;
