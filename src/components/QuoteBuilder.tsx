@@ -141,6 +141,8 @@ export default function QuoteBuilder() {
   const [openSearchProduct, setOpenSearchProduct] = useState(false);
   const [openEditProduct, setOpenEditProduct] = useState<Product | null>(null);
   const [openReceipt, setOpenReceipt] = useState<string | null>(null);
+  // Controle de abertura de descrições detalhadas por produto
+  const [openDescriptions, setOpenDescriptions] = useState<Record<string, boolean>>({});
 
   // Discount state
   const [discountType, setDiscountType] = useState<'percentage' | 'value'>('percentage');
@@ -869,19 +871,15 @@ export default function QuoteBuilder() {
                 <h3 className="font-semibold">Itens</h3>
                 <div className="flex flex-col sm:flex-row gap-2 w-full">
                   <Button size="sm" variant="secondary" onClick={() => setOpenSearchProduct(true)}>Buscar Produto</Button>
-                  <Button 
-                    size="sm" 
-                    variant="secondary" 
-                    onClick={() => {
-                      if (profile?.role !== 'admin') {
-                        toast.error('Apenas administradores podem cadastrar produtos');
-                        return;
-                      }
-                      setOpenProduct(true);
-                    }}
-                  >
-                    Cadastrar Produto
-                  </Button>
+                  {profile?.role === 'admin' && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setOpenProduct(true)}
+                    >
+                      Cadastrar Produto
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" onClick={() => setOpenManageProducts(true)}>Gerenciar Produtos</Button>
                 </div>
               </div>
@@ -1365,10 +1363,10 @@ export default function QuoteBuilder() {
         </DialogContent>
       </Dialog>
 
-      {/* Manage Products Modal */}
+    {/* Manage / Info Products Modal */}
       <Dialog open={openManageProducts} onOpenChange={setOpenManageProducts}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>Gerenciar Produtos</DialogTitle></DialogHeader>
+  <DialogHeader><DialogTitle>Gerenciar Produtos</DialogTitle></DialogHeader>
           <div className="flex items-center justify-between mb-2 gap-2">
             <Input
               placeholder="Filtrar por nome..."
@@ -1409,16 +1407,28 @@ export default function QuoteBuilder() {
                     <span className="text-xs text-muted-foreground">{currencyBRL(p.price)}</span>
                   </div>
                   {p.description && (
-                    <div className="text-[11px] text-muted-foreground line-clamp-2 leading-snug mt-0.5" title={p.description}>{p.description}</div>
+                    <details
+                      className="mt-1"
+                      open={!!openDescriptions[p.id]}
+                      onToggle={(e) => {
+                        const el = e.currentTarget as HTMLDetailsElement;
+                        setOpenDescriptions(prev => ({ ...prev, [p.id]: el.open }));
+                      }}
+                    >
+                      <summary className="cursor-pointer text-[11px] text-primary hover:underline">
+                        {openDescriptions[p.id] ? 'Fechar descrição detalhada' : 'Ver descrição detalhada'}
+                      </summary>
+                      <div className="text-[11px] leading-snug whitespace-pre-wrap mt-1 border-l pl-2 border-muted-foreground/20">{p.description}</div>
+                    </details>
                   )}
                   <div className="mt-2 flex flex-wrap gap-1">
-                    <Button size="sm" variant="outline" onClick={()=> setOpenEditProduct(p)}>Editar</Button>
                     {profile?.role === 'admin' && (
                       <Button size="sm" variant="secondary" onClick={()=> { setOpenProduct(true); }}>Duplicar</Button>
                     )}
                     {profile?.role === 'admin' && (
                       <Button size="sm" variant="destructive" onClick={()=> deleteProduct(p.id)}>Excluir</Button>
                     )}
+                    {/* Botão 'Informações' removido conforme solicitação */}
                   </div>
                 </div>
               </div>
@@ -1444,19 +1454,7 @@ export default function QuoteBuilder() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Product Modal */}
-      {openEditProduct && (
-        <Dialog open={!!openEditProduct} onOpenChange={() => setOpenEditProduct(null)}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader><DialogTitle>Editar Produto</DialogTitle></DialogHeader>
-            <EditProductModal 
-              product={openEditProduct} 
-              onSave={editProduct}
-              onCancel={() => setOpenEditProduct(null)}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
+  {/* Edit Product Modal removido para usuários padrão */}
 
       {/* Receipt Modal */}
       <Dialog open={!!openReceipt} onOpenChange={() => setOpenReceipt(null)}>
