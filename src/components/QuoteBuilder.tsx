@@ -715,7 +715,9 @@ export default function QuoteBuilder() {
 
   // Cupom Fiscal Simplificado (layout 80mm) - não substitui emissão fiscal oficial
   function openCupomFiscal(quote: Quote) {
-    const issueDate = new Date(quote.createdAt).toLocaleDateString('pt-BR');
+    const createdAtDate = new Date(quote.createdAt);
+    const issueDate = createdAtDate.toLocaleDateString('pt-BR');
+    const issueTime = createdAtDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     // Dados empresa
     const companyStored = localStorage.getItem(StorageKeys.company);
     interface CompanyLoose { name?:string; taxid?:string; cnpj_cpf?:string; address?:string; logoDataUrl?:string; logo_url?:string }
@@ -739,25 +741,26 @@ export default function QuoteBuilder() {
         .center { text-align:center; }
         .line { border-top:1px dashed #000; margin:4px 0; }
         table { width:100%; border-collapse:collapse; }
-        th,td { text-align:left; padding:2px 0; }
+  th,td { text-align:left; padding:2px 0; }
         th { font-size:10px; }
         .totals td { padding:2px 0; }
         .qr { width:120px; height:120px; margin:6px auto 0; background:#eee; display:flex;align-items:center;justify-content:center; font-size:10px; }
         .small { font-size:10px; }
         .right { text-align:right; }
         .mono { font-family:'Courier New',monospace; }
+  td.item { white-space:normal; word-break:break-word; max-width:30ch; }
       </style></head><body>
         <h1>${escape(companyObj.name || 'Empresa')}</h1>
         <div class='center small'>CNPJ/CPF: ${escape(companyObj.taxid||'-')}</div>
         ${companyObj.address?`<div class='center small'>${escape(companyObj.address)}</div>`:''}
         <div class='line'></div>
         <div class='small'><strong>${quote.type==='ORCAMENTO'?'ORÇAMENTO':'PEDIDO'}:</strong> ${escape(quote.number)}</div>
-        <div class='small'>Data: ${escape(issueDate)}</div>
+  <div class='small'>Data/Hora: ${escape(issueDate)} ${escape(issueTime)}</div>
         <div class='line'></div>
         <table>
           <thead><tr><th style='width:4ch;'>Qtd</th><th>Item</th><th class='right' style='width:7ch;'>Vl Uni</th><th class='right' style='width:8ch;'>Total</th></tr></thead>
           <tbody>
-            ${quote.items.map(it=>`<tr><td>${it.quantity}</td><td>${escape(it.name.substring(0,20).toUpperCase())}</td><td class='right'>${currency(it.unitPrice)}</td><td class='right'>${currency(it.subtotal)}</td></tr>`).join('')}
+            ${quote.items.map(it=>`<tr><td>${it.quantity}</td><td class='item'>${escape(it.name.toUpperCase())}</td><td class='right'>${currency(it.unitPrice)}</td><td class='right'>${currency(it.subtotal)}</td></tr>`).join('')}
           </tbody>
         </table>
         <div class='line'></div>
