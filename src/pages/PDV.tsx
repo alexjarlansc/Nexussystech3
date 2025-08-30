@@ -71,6 +71,10 @@ export default function PDV() {
   const [movementDialog, setMovementDialog] = useState<null | { type: 'SANGRIA' | 'SUPRIMENTO' }>(null);
   const [movementAmount, setMovementAmount] = useState('');
   const [movementDesc, setMovementDesc] = useState('');
+  // Boletos
+  interface Boleto { id:string; numero:string; nossoNumero:string; vencimento:string; valor:number; linhaDigitavel:string; status:'PENDENTE'|'EMITIDO'; }
+  const [boletos, setBoletos] = useState<Boleto[]>([]);
+  const [openBoletoDialog, setOpenBoletoDialog] = useState(false);
   // NF-e
   // Tipos NF-e simplificados
   interface NFeItem { nItem:number; descricao:string; quantidade:number; vUnit:number; vDesc:number; vTotal:number; cfop:string; cst:string; ncm:string; unidade:string; aliqIcms:number; aliqIpi:number; aliqPis:number; aliqCofins:number; vIcms:number; vIpi:number; vPis:number; vCofins:number; }
@@ -160,6 +164,43 @@ export default function PDV() {
   }
 
   function addPayment() { /* desativado */ toast.error('Ajuste de pagamento desativado. Use condições do Pedido.'); }
+
+  function gerarBoletos(){
+    if(!linkedQuote){ toast.error('Carregue um Pedido primeiro'); return; }
+    const baseDate = linkedQuote.createdAt ? new Date(linkedQuote.createdAt) : new Date();
+    const list: Boleto[] = [];
+    const schedule = parsedSchedule; // já calculado
+    const totalBase = linkedQuote.total || referenceTotal;
+    const pad = (n:number,len:number)=> n.toString().padStart(len,'0');
+    const randDigits = (q:number)=> Array.from({length:q},()=> Math.floor(Math.random()*10)).join('');
+    if(schedule.length>0){
+      schedule.forEach((s,idx)=> {
+        const due = new Date(baseDate.getTime());
+        due.setDate(due.getDate() + (s.dueDays||0));
+        const valor = +(s.amount.toFixed(2));
+        const nossoNumero = pad(idx+1,8)+randDigits(4);
+        const linha = '0019'+randDigits(41); // placeholder 47 digitos
+        list.push({ id: crypto.randomUUID(), numero: `${linkedQuote.number}-${idx+1}`, nossoNumero, vencimento: due.toISOString().slice(0,10), valor, linhaDigitavel: linha.slice(0,47), status:'PENDENTE' });
+      });
+    } else {
+      const due = new Date(baseDate.getTime()); due.setDate(due.getDate()+5);
+      const nossoNumero = '00000001'+randDigits(4);
+      const linha = '0019'+randDigits(41);
+      list.push({ id: crypto.randomUUID(), numero: `${linkedQuote.number}-1`, nossoNumero, vencimento: due.toISOString().slice(0,10), valor: +(totalBase.toFixed(2)), linhaDigitavel: linha.slice(0,47), status:'PENDENTE' });
+    }
+    setBoletos(list);
+    setOpenBoletoDialog(true);
+  }
+
+  function exportBoletos(){
+    if(boletos.length===0){ toast.error('Nenhum boleto'); return; }
+    const blob = new Blob([JSON.stringify({ pedido: linkedQuote?.number, boletos },null,2)], { type:'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${linkedQuote?.number||'PED'}-boletos.json`; a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  function marcarEmitido(id:string){
+    setBoletos(prev=> prev.map(b=> b.id===id? {...b, status:'EMITIDO'}: b));
+  }
 
   function buildNfeDraft(){
     if(!linkedQuote){ toast.error('Carregue um Pedido primeiro'); return; }
@@ -707,7 +748,7 @@ export default function PDV() {
           <div className="flex gap-2 mt-2">
             <div className="flex flex-col gap-1">
               <Button variant="outline" size="sm" onClick={()=> setPaymentDialog(true)}>Pagamento</Button>
-              <Button variant="outline" size="sm" disabled>Excluir</Button>
+              <Button variant="outline" size="sm" onClick={gerarBoletos}>Gerar Boletos</Button>
               <Button variant="outline" size="sm" onClick={buildNfeDraft}>Gerar NFe</Button>
               <Button variant="outline" size="sm" disabled>Copiar</Button>
               <Button variant="outline" size="sm" disabled>Desc.</Button>
@@ -939,6 +980,58 @@ export default function PDV() {
               <div className="text-[10px] text-muted-foreground leading-snug">
                 Rascunho simplificado. Próximos: validação NCM/CFOP, CSOSN/CST corretos, ST, DIFAL, XML completo (protNFe, assinatura), contingência (EPEC/FS-DA) e transmissão SEFAZ. Alíquotas e bases meramente ilustrativas.
               </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Boletos Dialog */}
+      <Dialog open={openBoletoDialog} onOpenChange={setOpenBoletoDialog}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader><DialogTitle>Boletos do Pedido</DialogTitle></DialogHeader>
+          {boletos.length===0 && <div className="text-sm text-muted-foreground">Nenhum boleto gerado.</div>}
+          {boletos.length>0 && (
+            <div className="space-y-3 text-sm">
+              <div className="border rounded max-h-72 overflow-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-200">
+                    <tr>
+                      <th className="p-1 text-left">#</th>
+                      <th className="p-1 text-left">Nosso Nº</th>
+                      <th className="p-1 text-left">Vencimento</th>
+                      <th className="p-1 text-right">Valor</th>
+                      <th className="p-1 text-left">Linha Digitável</th>
+                      <th className="p-1 text-center">Status</th>
+                      <th className="p-1"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {boletos.map((b,idx)=> (
+                      <tr key={b.id} className="odd:bg-white even:bg-slate-50">
+                        <td className="p-1">{idx+1}</td>
+                        <td className="p-1 font-mono text-[11px]">{b.nossoNumero}</td>
+                        <td className="p-1">{new Date(b.vencimento).toLocaleDateString('pt-BR')}</td>
+                        <td className="p-1 text-right font-mono">{fmt(b.valor)}</td>
+                        <td className="p-1 font-mono text-[10px] break-all">{b.linhaDigitavel}</td>
+                        <td className="p-1 text-center text-[10px]">
+                          <span className={b.status==='EMITIDO' ? 'text-green-600 font-medium':'text-amber-600'}>{b.status}</span>
+                        </td>
+                        <td className="p-1 text-center">
+                          {b.status==='PENDENTE' && <button onClick={()=> marcarEmitido(b.id)} className="text-xs text-blue-600 hover:underline">Marcar Emitido</button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-between items-center">
+                <div className="text-[11px] text-muted-foreground">Total: {fmt(boletos.reduce((s,b)=> s + b.valor,0))}</div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={exportBoletos}>Exportar JSON</Button>
+                  <Button variant="outline" size="sm" disabled title="Integração bancária futura">Registrar Banco</Button>
+                </div>
+              </div>
+              <div className="text-[10px] text-muted-foreground leading-snug">Rascunho de boletos local (linha digitável fictícia). Próximos passos: integração com API bancária (ex: Gerencianet, Banco digital), validação de carteira, cálculo de multa/juros e geração de PDF.</div>
             </div>
           )}
         </DialogContent>
