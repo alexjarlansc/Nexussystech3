@@ -72,8 +72,11 @@ export default function PDV() {
   const [movementAmount, setMovementAmount] = useState('');
   const [movementDesc, setMovementDesc] = useState('');
   // Boletos
-  interface Boleto { id:string; numero:string; nossoNumero:string; vencimento:string; valor:number; linhaDigitavel:string; status:'PENDENTE'|'EMITIDO'; }
+  interface Boleto { id:string; numero:string; nossoNumero:string; vencimento:string; valor:number; linhaDigitavel:string; status:'PENDENTE'|'EMITIDO'; jurosPercent:number; multaPercent:number; instructions:string; }
   const [boletos, setBoletos] = useState<Boleto[]>([]);
+  const [boletoJuros, setBoletoJuros] = useState('1.00'); // % ao mês
+  const [boletoMulta, setBoletoMulta] = useState('2.00'); // % após vencimento
+  const [boletoInstr, setBoletoInstr] = useState('Após vencimento cobrar multa e juros. Não receber após 30 dias.');
   const [openBoletoDialog, setOpenBoletoDialog] = useState(false);
   // NF-e
   // Tipos NF-e simplificados
@@ -173,6 +176,8 @@ export default function PDV() {
     const totalBase = linkedQuote.total || referenceTotal;
     const pad = (n:number,len:number)=> n.toString().padStart(len,'0');
     const randDigits = (q:number)=> Array.from({length:q},()=> Math.floor(Math.random()*10)).join('');
+    const jp = parseFloat(boletoJuros.replace(',','.'))||0;
+    const mp = parseFloat(boletoMulta.replace(',','.'))||0;
     if(schedule.length>0){
       schedule.forEach((s,idx)=> {
         const due = new Date(baseDate.getTime());
@@ -180,13 +185,13 @@ export default function PDV() {
         const valor = +(s.amount.toFixed(2));
         const nossoNumero = pad(idx+1,8)+randDigits(4);
         const linha = '0019'+randDigits(41); // placeholder 47 digitos
-        list.push({ id: crypto.randomUUID(), numero: `${linkedQuote.number}-${idx+1}`, nossoNumero, vencimento: due.toISOString().slice(0,10), valor, linhaDigitavel: linha.slice(0,47), status:'PENDENTE' });
+        list.push({ id: crypto.randomUUID(), numero: `${linkedQuote.number}-${idx+1}`, nossoNumero, vencimento: due.toISOString().slice(0,10), valor, linhaDigitavel: linha.slice(0,47), status:'PENDENTE', jurosPercent: jp, multaPercent: mp, instructions: boletoInstr });
       });
     } else {
       const due = new Date(baseDate.getTime()); due.setDate(due.getDate()+5);
       const nossoNumero = '00000001'+randDigits(4);
       const linha = '0019'+randDigits(41);
-      list.push({ id: crypto.randomUUID(), numero: `${linkedQuote.number}-1`, nossoNumero, vencimento: due.toISOString().slice(0,10), valor: +(totalBase.toFixed(2)), linhaDigitavel: linha.slice(0,47), status:'PENDENTE' });
+      list.push({ id: crypto.randomUUID(), numero: `${linkedQuote.number}-1`, nossoNumero, vencimento: due.toISOString().slice(0,10), valor: +(totalBase.toFixed(2)), linhaDigitavel: linha.slice(0,47), status:'PENDENTE', jurosPercent: jp, multaPercent: mp, instructions: boletoInstr });
     }
     setBoletos(list);
     setOpenBoletoDialog(true);
@@ -200,6 +205,37 @@ export default function PDV() {
 
   function marcarEmitido(id:string){
     setBoletos(prev=> prev.map(b=> b.id===id? {...b, status:'EMITIDO'}: b));
+  }
+
+  function aplicarConfigBoletos(){
+    const jp = parseFloat(boletoJuros.replace(',','.'))||0;
+    const mp = parseFloat(boletoMulta.replace(',','.'))||0;
+    setBoletos(prev=> prev.map(b=> ({...b, jurosPercent: jp, multaPercent: mp, instructions: boletoInstr })));
+  }
+
+  function imprimirBoletos(){
+    if(boletos.length===0){ toast.error('Nenhum boleto'); return; }
+    const currency = (n:number)=> n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+    const today = new Date().toLocaleDateString('pt-BR');
+    const html = `<!DOCTYPE html><html><head><meta charset='utf-8'><title>Boletos ${linkedQuote?.number||''}</title><style>
+      body{font-family:Arial,Helvetica,sans-serif;margin:16px;} h1{font-size:18px;margin:0 0 12px;} .boleto{border:1px solid #000;padding:8px;margin-bottom:18px;}
+      .linha{font-size:11px;word-break:break-all;} table{width:100%;border-collapse:collapse;font-size:12px;} td{padding:2px 4px;} .top td{font-size:11px;} .small{font-size:10px;color:#555;}
+      .right{text-align:right;} .title{font-weight:600;font-size:12px;text-transform:uppercase;margin-top:8px;}
+    </style></head><body><h1>Boletos (Rascunho) - ${linkedQuote?.number||''}</h1>
+      ${boletos.map(b=>`<div class='boleto'>
+        <table class='top'><tr><td><strong>Nosso Nº:</strong> ${b.nossoNumero}</td><td><strong>Parcela:</strong> ${b.numero.split('-').pop()}</td><td><strong>Vencimento:</strong> ${new Date(b.vencimento).toLocaleDateString('pt-BR')}</td><td class='right'><strong>Valor:</strong> ${currency(b.valor)}</td></tr></table>
+        <div class='linha'><strong>Linha Digitável:</strong> ${b.linhaDigitavel}</div>
+        <div class='title'>Sacado</div>
+        <div class='small'>${linkedQuote?.clientSnapshot.name||''} • ${linkedQuote?.clientSnapshot.taxid||''}</div>
+        <div class='title'>Instruções</div>
+        <div class='small'>${b.instructions} | Juros: ${b.jurosPercent.toFixed(2)}% a.m. Multa: ${b.multaPercent.toFixed(2)}%</div>
+        <div class='small'>Emitido em ${today} - Status: ${b.status}</div>
+      </div>`).join('')}
+      <script>window.onload=()=>setTimeout(()=>window.print(),150);</script>
+    </body></html>`;
+    const w = window.open('', '_blank','width=900');
+    if(!w){ toast.error('Popup bloqueado'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
   }
 
   function buildNfeDraft(){
@@ -987,11 +1023,43 @@ export default function PDV() {
 
       {/* Boletos Dialog */}
       <Dialog open={openBoletoDialog} onOpenChange={setOpenBoletoDialog}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader><DialogTitle>Boletos do Pedido</DialogTitle></DialogHeader>
-          {boletos.length===0 && <div className="text-sm text-muted-foreground">Nenhum boleto gerado.</div>}
+          {boletos.length===0 && (
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground">Nenhum boleto gerado.</div>
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Juros % mês</label>
+                  <Input value={boletoJuros} onChange={e=> setBoletoJuros(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Multa %</label>
+                  <Input value={boletoMulta} onChange={e=> setBoletoMulta(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div className="col-span-3">
+                  <label className="text-[11px] font-medium uppercase">Instruções</label>
+                  <Input value={boletoInstr} onChange={e=> setBoletoInstr(e.target.value)} className="h-8 text-sm" />
+                </div>
+              </div>
+            </div>
+          )}
           {boletos.length>0 && (
-            <div className="space-y-3 text-sm">
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Juros % mês</label>
+                  <Input value={boletoJuros} onChange={e=> setBoletoJuros(e.target.value)} onBlur={aplicarConfigBoletos} className="h-8 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase">Multa %</label>
+                  <Input value={boletoMulta} onChange={e=> setBoletoMulta(e.target.value)} onBlur={aplicarConfigBoletos} className="h-8 text-sm" />
+                </div>
+                <div className="col-span-3">
+                  <label className="text-[11px] font-medium uppercase">Instruções</label>
+                  <Input value={boletoInstr} onChange={e=> setBoletoInstr(e.target.value)} onBlur={aplicarConfigBoletos} className="h-8 text-sm" />
+                </div>
+              </div>
               <div className="border rounded max-h-72 overflow-auto">
                 <table className="w-full text-xs">
                   <thead className="bg-slate-200">
@@ -1001,6 +1069,8 @@ export default function PDV() {
                       <th className="p-1 text-left">Vencimento</th>
                       <th className="p-1 text-right">Valor</th>
                       <th className="p-1 text-left">Linha Digitável</th>
+                      <th className="p-1 text-right">Juros%</th>
+                      <th className="p-1 text-right">Multa%</th>
                       <th className="p-1 text-center">Status</th>
                       <th className="p-1"></th>
                     </tr>
@@ -1013,6 +1083,8 @@ export default function PDV() {
                         <td className="p-1">{new Date(b.vencimento).toLocaleDateString('pt-BR')}</td>
                         <td className="p-1 text-right font-mono">{fmt(b.valor)}</td>
                         <td className="p-1 font-mono text-[10px] break-all">{b.linhaDigitavel}</td>
+                        <td className="p-1 text-right font-mono text-[11px]">{b.jurosPercent.toFixed(2)}</td>
+                        <td className="p-1 text-right font-mono text-[11px]">{b.multaPercent.toFixed(2)}</td>
                         <td className="p-1 text-center text-[10px]">
                           <span className={b.status==='EMITIDO' ? 'text-green-600 font-medium':'text-amber-600'}>{b.status}</span>
                         </td>
@@ -1028,6 +1100,7 @@ export default function PDV() {
                 <div className="text-[11px] text-muted-foreground">Total: {fmt(boletos.reduce((s,b)=> s + b.valor,0))}</div>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={exportBoletos}>Exportar JSON</Button>
+                  <Button variant="outline" size="sm" onClick={imprimirBoletos}>Imprimir</Button>
                   <Button variant="outline" size="sm" disabled title="Integração bancária futura">Registrar Banco</Button>
                 </div>
               </div>
