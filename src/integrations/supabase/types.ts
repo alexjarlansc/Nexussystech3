@@ -161,7 +161,7 @@ export type Database = {
         }
         Relationships: []
       }
-      quotes: {
+  quotes: {
         Row: {
           id: string
           number: string
@@ -224,7 +224,7 @@ export type Database = {
         }
         Relationships: []
       }
-      profiles: {
+  profiles: {
         Row: {
           company_id: string
           created_at: string
@@ -267,6 +267,138 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      },
+      sales: {
+        Row: {
+          id: string
+          sale_number: string
+          quote_id: string | null
+          client_snapshot: Json
+          vendor: Json | null
+          operator_id: string | null
+          items: Json
+          payments: Json | null
+          payment_plan: Json | null
+          subtotal: number
+          discount: number
+          freight: number
+          total: number
+          status: string
+          payment_status: string
+          company_id: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+            sale_number: string
+            quote_id?: string | null
+            client_snapshot: Json
+            vendor?: Json | null
+            operator_id?: string | null
+            items: Json
+            payments?: Json | null
+            payment_plan?: Json | null
+            subtotal?: number
+            discount?: number
+            freight?: number
+            total?: number
+            status?: string
+            payment_status?: string
+            company_id?: string | null
+            created_by?: string | null
+            created_at?: string
+        }
+        Update: {
+          id?: string
+          sale_number?: string
+          quote_id?: string | null
+          client_snapshot?: Json
+          vendor?: Json | null
+          operator_id?: string | null
+          items?: Json
+          payments?: Json | null
+          payment_plan?: Json | null
+          subtotal?: number
+          discount?: number
+          freight?: number
+          total?: number
+          status?: string
+          payment_status?: string
+          company_id?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      },
+      cash_register_sessions: {
+        Row: {
+          id: string
+          company_id: string | null
+          operator_id: string | null
+          opened_at: string
+          closed_at: string | null
+          opening_amount: number
+          closing_amount: number | null
+          status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id?: string | null
+          operator_id?: string | null
+          opened_at?: string
+          closed_at?: string | null
+          opening_amount: number
+          closing_amount?: number | null
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string | null
+          operator_id?: string | null
+          opened_at?: string
+          closed_at?: string | null
+          opening_amount?: number
+          closing_amount?: number | null
+          status?: string
+          created_at?: string
+        }
+        Relationships: []
+      },
+      cash_register_movements: {
+        Row: {
+          id: string
+          session_id: string
+          type: string
+          amount: number
+          description: string | null
+          sale_id: string | null
+          operator_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          session_id: string
+          type: string
+          amount: number
+          description?: string | null
+          sale_id?: string | null
+          operator_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          session_id?: string
+          type?: string
+          amount?: number
+          description?: string | null
+          sale_id?: string | null
+          operator_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
@@ -280,10 +412,14 @@ export type Database = {
       next_quote_number: {
         Args: { p_type: string }
         Returns: string
+      },
+      next_sale_number: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
     }
     Enums: {
-      user_role: "user" | "admin"
+      user_role: "user" | "admin" | "pdv"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -411,7 +547,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      user_role: ["user", "admin"],
+  user_role: ["user", "admin", "pdv"],
     },
   },
 } as const
