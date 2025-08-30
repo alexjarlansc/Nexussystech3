@@ -10,6 +10,7 @@ import { toast } from "@/components/ui/sonner";
 import { LogOut, Settings, User, Building2, Key, Copy } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { StorageKeys, setJSON } from '@/utils/storage';
+import { supabase } from '@/integrations/supabase/client';
 
 export function NexusProtectedHeader() {
   const { user, profile, company, signOut, updateProfile, updateCompany, generateInviteCode, getInviteCodes } = useAuth();
@@ -38,7 +39,8 @@ export function NexusProtectedHeader() {
   const [companyEmail, setCompanyEmail] = useState(company?.email || '');
   const [address, setAddress] = useState(company?.address || '');
   // Logo (apenas local / dataURL)
-  const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>(undefined);
+  const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>(undefined); // preview local
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   // Carregar logo persistida no localStorage ao abrir modal (ou inicialização)
   useEffect(() => {
@@ -329,16 +331,35 @@ export function NexusProtectedHeader() {
               <input
                 type="file"
                 accept="image/*"
-                onChange={(e) => {
+                disabled={uploadingLogo}
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  if (file.size > 1024 * 400) { // ~400KB limite
-                    toast.error('Imagem muito grande (máx 400KB)');
+                  if (file.size > 1024 * 700) { // ~700KB limite maior para qualidade
+                    toast.error('Imagem muito grande (máx 700KB)');
                     return;
                   }
-                  const reader = new FileReader();
-                  reader.onload = () => setLogoDataUrl(reader.result as string);
-                  reader.readAsDataURL(file);
+                  setUploadingLogo(true);
+                  try {
+                    // Upload para bucket 'logos'
+                    const ext = file.name.split('.').pop() || 'png';
+                    const path = `${company?.id || 'company'}/${Date.now()}.${ext}`;
+                    const { error: upErr } = await supabase.storage.from('logos').upload(path, file, { upsert: true, cacheControl: '3600' });
+                    if (upErr) throw upErr;
+                    const { data: pub } = supabase.storage.from('logos').getPublicUrl(path);
+                    const publicUrl = pub?.publicUrl;
+                    if (publicUrl) {
+                      setLogoDataUrl(publicUrl);
+                      // atualizar empresa no banco
+                      await updateCompany({ logo_url: publicUrl });
+                      toast.success('Logo enviada');
+                    }
+                  } catch (err) {
+                    console.error('Erro upload logo', err);
+                    toast.error('Falha ao enviar logo');
+                  } finally {
+                    setUploadingLogo(false);
+                  }
                 }}
                 className="text-sm"
               />
@@ -352,7 +373,7 @@ export function NexusProtectedHeader() {
                   >Remover</Button>
                 </div>
               )}
-              <p className="text-[10px] text-muted-foreground mt-1">Formatos: PNG/JPG. Usada no PDF e pré-visualização do orçamento.</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Formatos: PNG/JPG. Upload salvo no banco e usado no PDF / pré-visualização. {uploadingLogo && 'Enviando...'}</p>
             </div>
           </div>
         </DialogContent>

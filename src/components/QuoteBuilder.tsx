@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
 import { Client, Product, Quote, QuoteItemSnapshot, QuoteStatus, QuoteType, PaymentMethod, Vendor, CompanyInfo } from '@/types';
-import { StorageKeys, getString } from '@/utils/storage';
+import { StorageKeys, getString } from '@/utils/storage'; // StorageKeys mantido para compat mas não usado na numeração
 import { hashSHA256 } from '@/utils/crypto';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,22 +19,25 @@ function currencyBRL(n: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 }
 
-function nextNumber(type: QuoteType, used: Set<string>): string {
-  // Sequência separada para orçamento e pedido
-  let key: string = StorageKeys.orcCounter;
-  let prefix = 'ORC';
-  if (type === 'PEDIDO') {
-    key = StorageKeys.pedCounter;
-    prefix = 'PED';
+// Geração de número global (consulta banco) evitando duplicidade entre usuários.
+async function generateNextNumber(type: QuoteType): Promise<string> {
+  const prefix = type === 'PEDIDO' ? 'PED' : 'ORC';
+  // Busca último número existente desse tipo
+  const { data, error } = await supabase
+    .from('quotes')
+    .select('number')
+    .ilike('number', `${prefix}-%`)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  let nextSeq = 1;
+  if (!error && data && data.length > 0) {
+    const last = data[0].number; // formato PREFIX-000123
+    const match = /-(\d+)$/.exec(last);
+    if (match) {
+      nextSeq = parseInt(match[1], 10) + 1;
+    }
   }
-  let idx = parseInt(getString(key, '0') || '0', 10);
-  let number = '';
-  do {
-    idx += 1;
-    number = `${prefix}-${String(idx).padStart(6, '0')}`;
-  } while (used.has(number));
-  localStorage.setItem(key, String(idx));
-  return number;
+  return `${prefix}-${String(nextSeq).padStart(6, '0')}`;
 }
 
 export default function QuoteBuilder() {
@@ -119,6 +122,22 @@ export default function QuoteBuilder() {
   const [freight, setFreight] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Pix');
   const [paymentTerms, setPaymentTerms] = useState('');
+  // Estrutura avançada de condições (parcelas)
+  interface PaymentScheduleItem {
+    id: string;
+    kind: 'entrada' | 'parcela' | 'saldo';
+    valueType: 'percent' | 'fixed';
+    value: number; // percentual ou valor fixo
+    dueDays: number; // dias após emissão
+  }
+  const [paymentSchedule, setPaymentSchedule] = useState<PaymentScheduleItem[]>([]);
+
+  // Converter schedule em resumo string + persistir em paymentTerms (JSON)
+  useEffect(() => {
+    if (paymentSchedule.length === 0) return;
+    const json = JSON.stringify({ version: 1, items: paymentSchedule });
+    setPaymentTerms(json);
+  }, [paymentSchedule]);
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState<QuoteStatus>('Rascunho');
 
@@ -256,8 +275,18 @@ export default function QuoteBuilder() {
       setMaxDiscount(5); // volta o limite para 5% após uso
       setDiscountToken(''); // limpa o campo
     }
-    const used = new Set(quotes.map((q) => q.number));
-    const number = nextNumber(type, used);
+    // Gerar número global consultando banco
+    let number = '';
+    let attempts = 0;
+    while (attempts < 5) {
+      attempts += 1;
+      number = await generateNextNumber(type);
+      // Verificação leve local: evitar reutilizar em memória
+      if (quotes.some(q => q.number === number)) {
+        continue; // gera novamente
+      }
+      break;
+    }
     const client = clients.find((c) => c.id === clientId);
     if (!client) {
       toast.error('Selecione um cliente');
@@ -292,9 +321,26 @@ export default function QuoteBuilder() {
       created_by: user?.id,
       company_id: profile?.company_id,
     };
+    // Inserção com retry em caso de conflito unique (se constraint existir)
+  type QuoteRow = { id: string; number: string };
+  let saveError: { message?: string; code?: string } | null = null;
+  let saved: QuoteRow | null = null;
+    for (let i = 0; i < 5; i++) {
   const { data, error } = await supabase.from('quotes').insert(quote).select().single();
-    if (error) {
-      toast.error('Erro ao salvar orçamento: ' + error.message);
+      if (!error) { saved = data; saveError = null; break; }
+      // Se conflito (unique violation) tenta novo número
+  if (error && typeof error === 'object' && 'code' in error && (error as {code?: string}).code === '23505') {
+        quote.number = await generateNextNumber(type); // novo número
+        continue;
+      }
+      saveError = error; break;
+    }
+    if (saveError) {
+      toast.error('Erro ao salvar orçamento: ' + (saveError.message || 'desconhecido'));
+      return;
+    }
+    if (!saved) {
+      toast.error('Não foi possível salvar orçamento (tentativas excedidas)');
       return;
     }
     setItems([]);
@@ -498,7 +544,23 @@ export default function QuoteBuilder() {
 
     const escape = (s: string) => (s || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]!));
     const currency = (n:number)=> new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n);
-    const paymentLines = (quote.paymentTerms || '').split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+    let paymentLines: string[] = [];
+    if (quote.paymentTerms) {
+      try {
+        const parsed = JSON.parse(quote.paymentTerms);
+        if (parsed && parsed.version === 1 && Array.isArray(parsed.items)) {
+          paymentLines = parsed.items.map((it: {kind:string; valueType:string; value:number; dueDays:number}, idx: number) => {
+            const kindLabel = it.kind === 'entrada' ? 'Entrada' : it.kind === 'saldo' ? 'Saldo' : `Parcela ${idx+1}`;
+            const val = it.valueType === 'percent' ? `${it.value}%` : currencyBRL(Number(it.value));
+            return `${kindLabel}: ${val} em ${it.dueDays} dia(s)`;
+          });
+        } else {
+          paymentLines = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+        }
+      } catch {
+        paymentLines = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+      }
+    }
 
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8" />
       <title>${escape(quote.type==='ORCAMENTO'?'Orçamento':'Pedido')} ${escape(quote.number)}</title>
@@ -743,7 +805,58 @@ export default function QuoteBuilder() {
                   </SelectContent>
                 </Select>
                 <Label>Condições de pagamento</Label>
-                <Input placeholder="Ex: 30/60 dias, entrada + parcelas..." value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} />
+                <div className="space-y-2 border rounded-md p-3 bg-muted/20">
+                  {paymentSchedule.length === 0 && (
+                    <div className="text-xs text-muted-foreground">Nenhuma condição adicionada.</div>
+                  )}
+                  {paymentSchedule.map((p) => {
+                    const labelKind = p.kind === 'entrada' ? 'Entrada' : p.kind === 'saldo' ? 'Saldo' : 'Parcela';
+                    const valTxt = p.valueType === 'percent' ? `${p.value}%` : currencyBRL(p.value);
+                    return (
+                      <div key={p.id} className="flex items-center justify-between gap-2 text-xs bg-white rounded border p-2">
+                        <div className="flex flex-col">
+                          <span className="font-medium">{labelKind}</span>
+                          <span className="text-muted-foreground">{valTxt} • {p.dueDays} dia(s)</span>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                            // editar simples via prompt (rápido). Poderia ser modal futuro
+                            const nv = prompt('Valor (use % para percentual, ex 30% ou 500,00):', p.valueType === 'percent' ? `${p.value}%` : `${p.value}`);
+                            if (nv === null) return;
+                            let valueType: PaymentScheduleItem['valueType'] = 'fixed';
+                            let valueClean = nv.trim();
+                            if (valueClean.endsWith('%')) { valueType = 'percent'; valueClean = valueClean.slice(0,-1); }
+                            const num = parseFloat(valueClean.replace(',', '.'));
+                            if (isNaN(num) || num <= 0) { toast.error('Valor inválido'); return; }
+                            const days = prompt('Dias após emissão:', String(p.dueDays));
+                            if (days === null) return;
+                            const dnum = parseInt(days,10);
+                            if (isNaN(dnum) || dnum < 0) { toast.error('Dias inválido'); return; }
+                            setPaymentSchedule(arr => arr.map(it => it.id === p.id ? { ...it, valueType, value: num, dueDays: dnum } : it));
+                          }}>✎</Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPaymentSchedule(arr => arr.filter(it => it.id !== p.id))}>✕</Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => {
+                      const kind = prompt('Tipo (entrada, parcela, saldo):','parcela');
+                      if (!kind || !['entrada','parcela','saldo'].includes(kind)) { toast.error('Tipo inválido'); return; }
+                      const valueRaw = prompt('Valor (ex: 30% ou 500,00):','30%');
+                      if (valueRaw === null) return;
+                      const valueType: PaymentScheduleItem['valueType'] = valueRaw.trim().endsWith('%') ? 'percent' : 'fixed';
+                      const parsed = valueRaw.trim().replace('%','').replace(',','.');
+                      const num = parseFloat(parsed);
+                      if (isNaN(num) || num <= 0) { toast.error('Valor inválido'); return; }
+                      const daysRaw = prompt('Dias após emissão (0 para imediato):','30');
+                      if (daysRaw === null) return; const dnum = parseInt(daysRaw,10); if (isNaN(dnum)|| dnum<0) { toast.error('Dias inválido'); return; }
+                      setPaymentSchedule(arr => [...arr, { id: crypto.randomUUID(), kind: kind as 'entrada'|'parcela'|'saldo', valueType, value: num, dueDays: dnum }]);
+                    }}>Adicionar</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => { setPaymentSchedule([]); setPaymentTerms(''); }}>Limpar</Button>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Os itens são salvos e exibidos no PDF. Edição futura pode ter UI mais rica.</div>
+                </div>
               </div>
               <div className="space-y-1 md:space-y-2">
                 <Label>Observações</Label>
@@ -1356,7 +1469,23 @@ function ReceiptView({ quote }: { quote: Quote }) {
   const validade = new Date(new Date(quote.createdAt).getTime() + quote.validityDays * 86400000).toLocaleDateString('pt-BR');
 
   // Processar condições de pagamento em linhas
-  const paymentLines = (quote.paymentTerms || '').split(/\n|;/).map(l => l.trim()).filter(Boolean);
+  let paymentLines: string[] = [];
+  if (quote.paymentTerms) {
+    try {
+      const parsed = JSON.parse(quote.paymentTerms);
+      if (parsed && parsed.version === 1 && Array.isArray(parsed.items)) {
+        paymentLines = parsed.items.map((it: {kind:string; valueType:string; value:number; dueDays:number}, idx: number) => {
+          const kindLabel = it.kind === 'entrada' ? 'Entrada' : it.kind === 'saldo' ? 'Saldo' : `Parcela ${idx+1}`;
+          const val = it.valueType === 'percent' ? `${it.value}%` : currencyBRL(Number(it.value));
+          return `${kindLabel}: ${val} em ${it.dueDays} dia(s)`;
+        });
+      } else {
+        paymentLines = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+      }
+    } catch {
+      paymentLines = quote.paymentTerms.split(/\n|;/).map(l=>l.trim()).filter(Boolean);
+    }
+  }
 
   return (
     <article className="print-area text-[12px] leading-relaxed text-foreground">
