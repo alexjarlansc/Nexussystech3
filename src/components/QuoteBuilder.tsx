@@ -65,7 +65,7 @@ export default function QuoteBuilder() {
       localStorage.setItem(`gen_token_${generatedToken}`, String(Date.now()));
     }
   }, [generatedToken]);
-  const { profile, user } = useAuth();
+  const { profile, user, company } = useAuth();
   const [type, setType] = useState<QuoteType>('ORCAMENTO');
   const [validityDays, setValidityDays] = useState(7);
   // Estados para controle de desconto com token
@@ -160,7 +160,8 @@ export default function QuoteBuilder() {
       return;
     }
     // Converter snake_case para camelCase para uso no frontend
-    const mapped = (data || []).map((q: any) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapped = (data || []).map((q: any) => ({
       ...q,
       clientId: q.client_id,
       createdAt: q.created_at,
@@ -271,7 +272,8 @@ export default function QuoteBuilder() {
       return;
     }
 
-    const quote: any = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const quote: any = {
       number,
       type,
       created_at: new Date().toISOString(),
@@ -490,6 +492,23 @@ export default function QuoteBuilder() {
                 </Select>
               </div>
             </div>
+            {/* Dados da Empresa - preenchidos automaticamente */}
+            <div className="mt-2 w-full rounded-md border bg-accent/40 p-2 text-xs grid gap-1 md:text-sm" aria-label="Dados da Empresa">
+              <div className="font-semibold text-primary leading-tight">{company?.name || 'Empresa não cadastrada'}</div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {company?.cnpj_cpf && <span><span className="font-medium">CNPJ/CPF:</span> {company.cnpj_cpf}</span>}
+                {company?.phone && <span><span className="font-medium">Tel.:</span> {company.phone}</span>}
+                {company?.email && <span className="truncate max-w-[160px] md:max-w-none"><span className="font-medium">Email:</span> {company.email}</span>}
+              </div>
+              {company?.address && (
+                <div className="text-muted-foreground truncate" title={company.address}>
+                  {company.address}
+                </div>
+              )}
+              {!company && (
+                <div className="text-muted-foreground">Complete os dados da empresa nas configurações.</div>
+              )}
+            </div>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
               <div className="space-y-1 md:space-y-2">
@@ -538,15 +557,15 @@ export default function QuoteBuilder() {
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-2 md:gap-3">
-                <div className="grid grid-cols-12 gap-1 md:gap-2 text-xs text-muted-foreground">
-                  <div className="col-span-6 md:col-span-6">Produto</div>
+                <div className="grid grid-cols-12 gap-1 md:gap-2 text-[11px] md:text-xs text-muted-foreground font-medium">
+                  <div className="col-span-5 md:col-span-6">Produto</div>
                   <div className="col-span-2 text-right">Qtd</div>
                   <div className="col-span-2 text-right">Unitário</div>
-                  <div className="col-span-2 text-right">Subtotal</div>
+                  <div className="col-span-3 md:col-span-2 text-right">Subtotal</div>
                 </div>
                 {items.map((it, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-1 md:gap-2 items-center border rounded-md p-1 md:p-2">
-                    <div className="col-span-6 flex items-center gap-3">
+                  <div key={idx} className="grid grid-cols-12 gap-2 md:gap-2 items-center border rounded-md p-1 md:p-2">
+                    <div className="col-span-5 md:col-span-6 flex items-center gap-3">
                       {it.imageDataUrl ? (
                         <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
                       ) : (
@@ -569,8 +588,8 @@ export default function QuoteBuilder() {
                         onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
                       />
                     </div>
-                    <div className="col-span-2 text-right">{currencyBRL(it.unitPrice)}</div>
-                    <div className="col-span-2 text-right font-medium">{currencyBRL(it.subtotal)}</div>
+                    <div className="col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
+                    <div className="col-span-3 md:col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30">{currencyBRL(it.subtotal)}</div>
                     <div className="col-span-12 text-right">
                       <Button size="sm" variant="ghost" onClick={() => removeItem(idx)}>Remover</Button>
                     </div>
@@ -1201,7 +1220,9 @@ function ReceiptView({ quote, hideTitle }: { quote: Quote, hideTitle?: boolean }
     if (raw) {
       company = { ...company, ...JSON.parse(raw) };
     }
-  } catch {}
+  } catch {
+    // ignore JSON parse errors silently; fallback defaults already set
+  }
 
   return (
   <article className="text-sm print-area" style={{ marginTop: 0, paddingTop: 0 }}>

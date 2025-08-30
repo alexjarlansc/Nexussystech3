@@ -92,60 +92,84 @@ export function NexusProtectedHeader() {
   return (
     <>
       <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-4">
-            <Building2 className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-xl font-bold text-primary">Nexus System</h1>
-              <p className="text-xs text-muted-foreground">{company?.name}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="text-right">
-              <p className="text-sm font-medium">{profile?.first_name}</p>
-              <Badge variant={profile?.role === 'admin' ? 'default' : 'secondary'} className="text-xs">
-                {profile?.role === 'admin' ? 'Administrador' : 'Usuário'}
-              </Badge>
+        <div className="container mx-auto px-4 py-2">
+          {/* Wrapper que permite empilhar no mobile e alinhar lado a lado em telas maiores */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+              <div className="leading-tight min-w-0">
+                <h1 className="font-bold text-primary text-lg sm:text-xl">Nexus System</h1>
+                <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px]">
+                  {company?.name}
+                </p>
+              </div>
             </div>
 
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setFirstName(profile?.first_name || '');
-                setPhone(profile?.phone || '');
-                setEmail(profile?.email || '');
-                setOpenProfile(true);
-              }}
-            >
-              <User className="h-4 w-4" />
-            </Button>
+            {/* Ações / usuário */}
+            <div className="flex items-center flex-wrap gap-1 sm:gap-2 justify-end">
+              <div className="flex flex-col items-end leading-tight gap-0.5 pr-2 border-r sm:border-r-0">
+                <p className="text-xs sm:text-sm font-medium max-w-[120px] truncate">
+                  {profile?.first_name}
+                </p>
+                <Badge
+                  variant={profile?.role === 'admin' ? 'default' : 'secondary'}
+                  className="text-[10px] sm:text-xs px-1.5 py-0.5"
+                >
+                  {profile?.role === 'admin' ? 'Administrador' : 'Usuário'}
+                </Badge>
+              </div>
 
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setCompanyName(company?.name || '');
-                setCnpjCpf(company?.cnpj_cpf || '');
-                setCompanyPhone(company?.phone || '');
-                setCompanyEmail(company?.email || '');
-                setAddress(company?.address || '');
-                setOpenCompany(true);
-              }}
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-
-            {profile?.role === 'admin' && (
-              <Button variant="ghost" size="sm" onClick={openInviteModal}>
-                <Key className="h-4 w-4" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                aria-label="Editar perfil"
+                onClick={() => {
+                  setFirstName(profile?.first_name || '');
+                  setPhone(profile?.phone || '');
+                  setEmail(profile?.email || '');
+                  setOpenProfile(true);
+                }}
+              >
+                <User className="h-4 w-4" />
               </Button>
-            )}
-
-            <Button variant="ghost" size="sm" onClick={signOut}>
-              <LogOut className="h-4 w-4" />
-            </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                aria-label="Configurações da empresa"
+                onClick={() => {
+                  setCompanyName(company?.name || '');
+                  setCnpjCpf(company?.cnpj_cpf || '');
+                  setCompanyPhone(company?.phone || '');
+                  setCompanyEmail(company?.email || '');
+                  setAddress(company?.address || '');
+                  setOpenCompany(true);
+                }}
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+              {profile?.role === 'admin' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  aria-label="Gerar convites"
+                  onClick={openInviteModal}
+                >
+                  <Key className="h-4 w-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                aria-label="Sair"
+                onClick={signOut}
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </header>
