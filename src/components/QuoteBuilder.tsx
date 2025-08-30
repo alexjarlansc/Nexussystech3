@@ -796,9 +796,9 @@ export default function QuoteBuilder() {
                 </Select>
                 <Label>Condições de pagamento</Label>
                 <div className="space-y-3 border rounded-md p-3 bg-muted/10">
-                  {/* Form inline */}
-                  <div className="grid grid-cols-12 gap-2 items-end">
-                    <div className="col-span-4">
+                  {/* Form inline responsivo */}
+                  <div className="flex flex-wrap gap-2 items-end">
+                    <div className="w-[110px] flex-1 min-w-[120px] sm:min-w-[100px]">
                       <Label className="text-[10px] uppercase">Tipo</Label>
                       <select id="pg-kind" className="w-full border rounded px-2 py-1 text-xs">
                         <option value="entrada">Entrada</option>
@@ -806,16 +806,16 @@ export default function QuoteBuilder() {
                         <option value="saldo">Saldo</option>
                       </select>
                     </div>
-                    <div className="col-span-3">
+                    <div className="w-[120px] flex-1 min-w-[120px] sm:min-w-[100px]">
                       <Label className="text-[10px] uppercase">Valor</Label>
                       <input id="pg-value" className="w-full border rounded px-2 py-1 text-xs" placeholder="30% ou 500" />
                     </div>
-                    <div className="col-span-3">
+                    <div className="w-[90px] flex-1 min-w-[80px] sm:min-w-[80px]">
                       <Label className="text-[10px] uppercase">Dias</Label>
                       <input id="pg-days" type="number" className="w-full border rounded px-2 py-1 text-xs" defaultValue={30} />
                     </div>
-                    <div className="col-span-2 flex gap-1">
-                      <Button type="button" size="sm" className="w-full" onClick={() => {
+                    <div className="flex gap-1 ml-auto">
+                      <Button type="button" size="sm" className="px-4" onClick={() => {
                         const kindSel = (document.getElementById('pg-kind') as HTMLSelectElement).value as PaymentScheduleItem['kind'];
                         const valueRaw = (document.getElementById('pg-value') as HTMLInputElement).value.trim();
                         const daysVal = parseInt((document.getElementById('pg-days') as HTMLInputElement).value, 10);
@@ -827,7 +827,7 @@ export default function QuoteBuilder() {
                         setPaymentSchedule(arr => [...arr, { id: crypto.randomUUID(), kind: kindSel, valueType, value: num, dueDays: daysVal }]);
                         (document.getElementById('pg-value') as HTMLInputElement).value='';
                       }}>Add</Button>
-                      <Button type="button" size="sm" variant="outline" onClick={() => { setPaymentSchedule([]); }}>Clear</Button>
+                      <Button type="button" size="sm" variant="outline" onClick={() => { setPaymentSchedule([]); }}>Limpar</Button>
                     </div>
                   </div>
                   {paymentSchedule.length > 0 && (
