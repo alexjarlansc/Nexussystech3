@@ -1131,21 +1131,19 @@ export default function QuoteBuilder() {
       {/* Receipt Modal */}
       <Dialog open={!!openReceipt} onOpenChange={() => setOpenReceipt(null)}>
         <DialogContent className="sm:max-w-2xl">
-          {openReceipt && (() => {
-            const quote = quotes.find((q) => q.id === openReceipt);
-            if (!quote) return <div className="text-red-600 text-sm">Orçamento não encontrado.</div>;
-            // Se for pedido, não exibe título
-            if (quote.type === 'PEDIDO') {
-              return <ReceiptView quote={quote} hideTitle />;
-            }
+          {(() => {
+            const currentQuote = quotes.find(q => q.id === openReceipt!);
+            if (!currentQuote) return <div className="text-red-600 text-sm">Orçamento não encontrado.</div>;
             return <>
-              <DialogHeader><DialogTitle>Recibo</DialogTitle></DialogHeader>
-              <ReceiptView quote={quote} />
+              {currentQuote.type !== 'PEDIDO' && (
+                <DialogHeader><DialogTitle>Recibo</DialogTitle></DialogHeader>
+              )}
+              <ReceiptView quote={currentQuote} />
+              <DialogFooter>
+                <Button className="no-print" onClick={() => openQuotePdf(currentQuote)}>Gerar PDF</Button>
+              </DialogFooter>
             </>;
           })()}
-          <DialogFooter>
-            <Button className="no-print" onClick={() => openQuotePdf(quote)}>Gerar PDF</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </main>
