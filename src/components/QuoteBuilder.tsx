@@ -768,10 +768,16 @@ export default function QuoteBuilder() {
           <tr><td><strong>Total</strong></td><td class='right'><strong>${currency(quote.total)}</strong></td></tr>
         </table>
         <div class='line'></div>
-        <div class='small'>Cliente: ${escape(quote.clientSnapshot.name.substring(0,32))}</div>
-        ${quote.clientSnapshot.taxid?`<div class='small'>Doc: ${escape(quote.clientSnapshot.taxid)}</div>`:''}
-        <div class='line'></div>
-        <div class='small center'>Cupom fiscal simplificado (não substitui documento fiscal autorizado).</div>
+  <div class='small'><strong>Cliente:</strong> ${escape(quote.clientSnapshot.name.substring(0,40))}</div>
+  ${quote.clientSnapshot.taxid?`<div class='small'>Doc: ${escape(quote.clientSnapshot.taxid)}</div>`:''}
+  ${quote.clientSnapshot.phone?`<div class='small'>Tel: ${escape(quote.clientSnapshot.phone)}</div>`:''}
+  ${quote.clientSnapshot.email?`<div class='small'>Email: ${escape(quote.clientSnapshot.email.substring(0,50))}</div>`:''}
+  <div class='line'></div>
+  <div class='small'><strong>Representante:</strong> ${escape(quote.vendor?.name||'-')}</div>
+  ${quote.vendor?.phone?`<div class='small'>Tel Rep: ${escape(quote.vendor.phone)}</div>`:''}
+  ${quote.vendor?.email?`<div class='small'>Email Rep: ${escape(quote.vendor.email.substring(0,50))}</div>`:''}
+  <div class='line'></div>
+  <div class='small center'>Cupom fiscal simplificado (não substitui documento fiscal autorizado)</div>
         <div class='qr'>QR CODE</div>
         <script>window.onload=()=>setTimeout(()=>window.print(),80);</script>
       </body></html>`;
