@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -198,6 +198,27 @@ export default function QuoteBuilder() {
       createdBy: q.created_by,
     }));
     setQuotes(mapped);
+  // Normalizar números antigos com "FALLBACK" (gera novos números únicos) - uma vez por sessão
+  scheduleNormalizeFallbackNumbers(mapped);
+  }
+
+  // Normalização de números com "FALLBACK" (executa uma vez)
+  const didNormalizeFallback = useRef(false);
+  async function scheduleNormalizeFallbackNumbers(currentQuotes: Quote[]) {
+    if (didNormalizeFallback.current) return;
+    const fallbackQuotes = currentQuotes.filter(q => q.number.includes('FALLBACK'));
+    if (fallbackQuotes.length === 0) { didNormalizeFallback.current = true; return; }
+    // Processar em série para simplicidade
+    for (const fq of fallbackQuotes) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const newNumber = await generateNextNumber(fq.type as QuoteType);
+        const { error: upErr } = await supabase.from('quotes').update({ number: newNumber }).eq('id', fq.id);
+        if (!upErr) break; // sucesso
+      }
+    }
+    didNormalizeFallback.current = true;
+    // Recarrega lista após normalização
+    fetchQuotes();
   }
 
   useEffect(() => {
