@@ -164,6 +164,16 @@ export default function PDV() {
     const full = normalizeOrder(num);
     const { data, error } = await supabase.from('quotes').select('*').eq('number', full).maybeSingle();
     if (error || !data) { toast.error('Pedido não encontrado'); return; }
+    // Regras de elegibilidade: apenas TYPE=PEDIDO e status em lista branca
+    const rawStatus = (data.status || '').toString().trim().toLowerCase();
+    const rawType = (data.type || '').toString().trim().toUpperCase();
+    const allowStatuses = ['aprovado','liberado','fechado','confirmado','pedido','finalizado'];
+    const blockedStatuses = ['rascunho','digitacao','digitação','edicao','edição','aberto','em edição','em edicao'];
+    if (rawType !== 'PEDIDO' || blockedStatuses.includes(rawStatus) || (!allowStatuses.includes(rawStatus) && rawStatus !== '')) {
+      console.warn('PDV: Pedido bloqueado para carregamento', { number: full, status: data.status, type: data.type });
+      toast.error('Pedido ainda em digitação/edição. Conclua e aprove antes de usar no PDV.');
+      return;
+    }
     // map fields
     const q = {
       id: data.id,
