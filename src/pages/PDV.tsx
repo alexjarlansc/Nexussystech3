@@ -167,17 +167,30 @@ export default function PDV() {
     // Regras de elegibilidade: apenas TYPE=PEDIDO e status em lista branca
     const rawStatus = (data.status || '').toString().trim().toLowerCase();
     const rawType = (data.type || '').toString().trim().toUpperCase();
-    const allowStatuses = ['aprovado','liberado','fechado','confirmado','pedido','finalizado'];
+    // Aceitar variações masculinas/femininas e diferentes sufixos
+    const allowPatterns = [
+      /^aprov/,      // aprovado, aprovada
+      /^liber/,      // liberado, liberada
+      /^fech/,       // fechado, fechada
+      /^confirm/,    // confirmado, confirmada
+      /^pedido$/,    // exatamente 'pedido'
+      /^finaliz/,    // finalizado, finalizada
+    ];
     const blockedStatuses = ['rascunho','digitacao','digitação','edicao','edição','aberto','em edição','em edicao'];
-    if (rawType !== 'PEDIDO' || blockedStatuses.includes(rawStatus) || (!allowStatuses.includes(rawStatus) && rawStatus !== '')) {
+    const isAllowed = allowPatterns.some(r => r.test(rawStatus));
+    if (rawType !== 'PEDIDO' || blockedStatuses.includes(rawStatus) || (!isAllowed && rawStatus !== '')) {
       console.warn('PDV: Pedido bloqueado para carregamento', { number: full, status: data.status, type: data.type });
       let vendorName = '';
       try {
         const v = data.vendor as unknown as { name?: string } | null;
         vendorName = v?.name ? v.name.trim() : '';
       } catch { /* ignore */ }
-      const consult = vendorName ? ` Consulte o vendedor: ${vendorName}.` : '';
-      toast.error('Pedido ainda em digitação/edição. Conclua e aprove antes de usar no PDV.' + consult);
+      const baseMsg = 'Pedido ainda em digitação/edição.';
+      if (vendorName) {
+        toast.error(`${baseMsg} Consulte o vendedor: ${vendorName}.`);
+      } else {
+        toast.error(baseMsg);
+      }
       return;
     }
     // map fields
