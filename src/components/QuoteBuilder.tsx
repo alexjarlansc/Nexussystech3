@@ -1189,26 +1189,89 @@ export default function QuoteBuilder() {
                       {/* Botão para gerar pedido de venda se for orçamento */}
                       {q.type === 'ORCAMENTO' && (
                         <Button size="sm" variant="default" onClick={async () => {
-                          // Atualiza o tipo para PEDIDO
-                          const { error } = await supabase.from('quotes').update({ type: 'PEDIDO' }).eq('id', q.id);
-                          if (!error) {
-                            toast.success('Pedido de venda gerado!');
+                          const oldNumber = q.number;
+                          try {
+                            let newNum: string;
+                            try {
+                              const { data, error: numErr } = await supabase.rpc('next_quote_number', { p_type: 'PEDIDO' });
+                              if (numErr || !data) throw numErr || new Error('Sem retorno');
+                              newNum = data as string;
+                            } catch {
+                              // fallback usando helper (gera timestamp se RPC falhar)
+                              newNum = await generateNextNumber('PEDIDO');
+                              // Mensagem de fallback convertida para debug silencioso (console) para não confundir o usuário
+                              console.warn('RPC next_quote_number indisponível. Usando fallback local para número do Pedido.');
+                            }
+                            let origin: string | null = null;
+                            try {
+                              const { data: row } = await supabase.from('quotes').select('origin_orc_number').eq('id', q.id).maybeSingle();
+                              origin = (row as { origin_orc_number?: string | null } | null)?.origin_orc_number || null;
+                            } catch { /* ignore */ }
+                            const payload: { type: 'PEDIDO'; number: string; origin_orc_number?: string | null } = { type: 'PEDIDO', number: newNum as string, origin_orc_number: origin || oldNumber };
+                            const { error } = await supabase.from('quotes').update(payload).eq('id', q.id);
+                            if (error) {
+                              console.error('Falha update com origin_orc_number, tentando sem a coluna', error);
+                              const errObj = error as unknown as { message?: string; code?: string };
+                              const msg = errObj?.message || '';
+                              if (msg.includes('origin_orc_number') || msg.includes('column') || errObj?.code === '42703') {
+                                const retry = { type: 'PEDIDO', number: newNum as string };
+                                const retryRes = await supabase.from('quotes').update(retry).eq('id', q.id);
+                                if (retryRes.error) {
+                                  console.error('Retry sem origin_orc_number também falhou', retryRes.error);
+                                  toast.error('Erro ao atualizar para Pedido');
+                                  return;
+                                }
+                              } else {
+                                toast.error('Erro ao atualizar para Pedido');
+                                return;
+                              }
+                            }
+                            toast.success(`Pedido ${newNum} gerado (origem ${oldNumber})`);
                             fetchQuotes();
-                          } else {
-                            toast.error('Erro ao gerar pedido');
-                          }
+                          } catch { toast.error('Falha na conversão'); }
                         }}>Gerar Pedido de Venda</Button>
                       )}
                       {/* Botão para retornar para orçamento, só admin */}
                       {q.type === 'PEDIDO' && profile?.role === 'admin' && (
                         <Button size="sm" variant="outline" onClick={async () => {
-                          const { error } = await supabase.from('quotes').update({ type: 'ORCAMENTO' }).eq('id', q.id);
-                          if (!error) {
+                          try {
+                            const { data, error: fetchErr } = await supabase.from('quotes').select('origin_orc_number, number').eq('id', q.id).maybeSingle();
+                            let origin: string | null = null;
+                            if (!fetchErr && data) origin = (data as { origin_orc_number?: string | null }).origin_orc_number || null;
+                            let targetNumber = origin;
+                            if (!targetNumber) {
+                              try {
+                                const { data: newOrc, error: orcErr } = await supabase.rpc('next_quote_number', { p_type: 'ORCAMENTO' });
+                                if (orcErr || !newOrc) throw orcErr || new Error('Sem retorno');
+                                targetNumber = newOrc as string;
+                              } catch {
+                                targetNumber = await generateNextNumber('ORCAMENTO');
+                                console.warn('RPC next_quote_number indisponível. Usando fallback local para número do Orçamento.');
+                              }
+                            }
+                            const updateFields: { type: 'ORCAMENTO'; number?: string; origin_orc_number?: string | null } = { type: 'ORCAMENTO' };
+                            if (targetNumber) updateFields.number = targetNumber;
+                            // Se existir origin guardado, removemos (mantemos apenas quando é Pedido)
+                            updateFields.origin_orc_number = null;
+                            const { error } = await supabase.from('quotes').update(updateFields).eq('id', q.id);
+                            if (error) {
+                              console.error('Erro ao retornar para orçamento (com origin_orc_number)', error);
+                              const errObj = error as unknown as { message?: string; code?: string };
+                              const msg = errObj?.message || '';
+                              if (msg.includes('origin_orc_number') || errObj?.code === '42703') {
+                                // Retry sem o campo
+                                const retryFields: { type: 'ORCAMENTO'; number?: string } = { type: 'ORCAMENTO' };
+                                if (targetNumber) retryFields.number = targetNumber;
+                                const retryRes = await supabase.from('quotes').update(retryFields).eq('id', q.id);
+                                if (retryRes.error) { toast.error('Erro ao retornar para orçamento'); return; }
+                              } else {
+                                toast.error('Erro ao retornar para orçamento');
+                                return;
+                              }
+                            }
                             toast.success('Retornado para orçamento!');
                             fetchQuotes();
-                          } else {
-                            toast.error('Erro ao retornar para orçamento');
-                          }
+                          } catch { toast.error('Falha ao retornar para orçamento'); }
                         }}>Retornar para Orçamento</Button>
                       )}
                       {profile?.role === 'admin' ? (
