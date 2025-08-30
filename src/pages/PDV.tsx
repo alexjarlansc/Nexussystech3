@@ -430,7 +430,7 @@ export default function PDV() {
             <div className="flex items-center gap-1">
               <div className="flex h-7 w-full">
                 <span className="inline-flex items-center px-2 border border-r-0 rounded-l text-[11px] bg-slate-100 font-semibold">PED-</span>
-                <Input value={orderNumber} placeholder="000123" onChange={e=> setOrderNumber(e.target.value.replace(/[^0-9]/g,''))} onKeyDown={e=> { if(e.key==='Enter'){ loadQuoteByNumber(orderNumber); }}} className="h-7 text-right rounded-l-none" />
+                <Input value={orderNumber} placeholder="" onChange={e=> setOrderNumber(e.target.value.replace(/[^0-9]/g,''))} onKeyDown={e=> { if(e.key==='Enter'){ loadQuoteByNumber(orderNumber); }}} className="h-7 text-right rounded-l-none" />
               </div>
               <Button variant="outline" size="icon" className="h-7 w-7 text-xs" onClick={()=> loadQuoteByNumber(orderNumber)}>🔍</Button>
             </div>
@@ -451,10 +451,7 @@ export default function PDV() {
               {(!clientTaxId && !clientPhone && !clientEmail && !address) && <div className="text-muted-foreground">Dados adicionais não informados</div>}
             </div>
           </div>
-          <div>
-            <label className="text-xs font-medium">Endereço:</label>
-            <textarea value={address} disabled className="w-full h-16 text-xs border rounded p-1 resize-none bg-muted/30" />
-          </div>
+          {/* Removido bloco de endereço duplicado; informações já mostradas no painel de cliente */}
           <div>
             <label className="text-xs font-medium">Vendedor:</label>
             <div className="flex items-center gap-1">
