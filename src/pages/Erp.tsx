@@ -563,6 +563,11 @@ function FinanceGeneric({ kind,title,numberField,amountField,paidField,supplierF
   const [search,setSearch]=useState('');
   const [status,setStatus]=useState('');
   const [page,setPage]=useState(1); const pageSize=15; const [total,setTotal]=useState(0);
+  const [openNew,setOpenNew]=useState(false);
+  const [openPay,setOpenPay]=useState<null|{id:string; amount:number; paid:number; number:string}>(null);
+  const [form,setForm]=useState({ description:'', due_date:'', amount:'', reference_month:'', employee_name:'', gross_amount:'', deductions:'', net_amount:'' });
+  const [payValue,setPayValue]=useState('');
+  const remaining = (openPay? (openPay.amount - openPay.paid):0);
   useEffect(()=>{(async()=>{
     setLoading(true); setError(null);
     try {
@@ -575,6 +580,60 @@ function FinanceGeneric({ kind,title,numberField,amountField,paidField,supplierF
     } catch(e:any){ setError(e.message);} finally { setLoading(false); }
   })();},[search,status,page,kind,numberField]);
   const totalPages = Math.max(1, Math.ceil(total/pageSize));
+
+  async function handleCreate(){
+    try {
+      if (!form.description) return toast.error('Descrição obrigatória');
+      if (!payroll && !form.due_date) return toast.error('Vencimento obrigatório');
+      if (payroll && !form.reference_month) return toast.error('Ref mês obrigatório');
+      let numberResp;
+      if (kind==='payables') numberResp = await (supabase as any).rpc('next_payable_number');
+      if (kind==='receivables') numberResp = await (supabase as any).rpc('next_receivable_number');
+      if (kind==='payroll') numberResp = await (supabase as any).rpc('next_payroll_number');
+      const numberVal = numberResp?.data;
+      const payload:any = { [numberField]: numberVal, description: form.description };
+      if (!payroll){ payload.due_date = form.due_date; payload.amount = Number(form.amount||0); }
+      if (kind==='receivables'){ payload.received_amount=0; }
+      if (kind==='payables'){ payload.paid_amount=0; }
+      if (payroll){
+        payload.reference_month=form.reference_month;
+        payload.employee_name=form.employee_name||'Funcionário';
+        payload.gross_amount=Number(form.gross_amount||0);
+        payload.deductions=Number(form.deductions||0);
+        payload.net_amount=Number(form.net_amount|| (Number(form.gross_amount||0)-Number(form.deductions||0)) );
+      }
+      const { error } = await (supabase as any).from(kind).insert(payload);
+      if (error) throw error;
+      toast.success('Criado');
+      setOpenNew(false);
+      setForm({ description:'', due_date:'', amount:'', reference_month:'', employee_name:'', gross_amount:'', deductions:'', net_amount:'' });
+      // reload first page
+      setPage(1); setSearch(''); setStatus('');
+    } catch(e:any){ toast.error(e.message); }
+  }
+
+  async function handlePayment(){
+    if (!openPay) return;
+    const val = Number(payValue||0);
+    if (val<=0) return toast.error('Valor inválido');
+    if (val>remaining) return toast.error('Maior que saldo');
+    try {
+      const newPaid = openPay.paid + val;
+      const fully = newPaid + 0.00001 >= openPay.amount; // tolerância
+      const update:any = {};
+      update[paidField] = newPaid;
+      update.status = fully ? (kind==='receivables'?'RECEBIDO':'PAGO') : 'PARCIAL';
+      if (fully) update[kind==='receivables'?'receipt_date':'payment_date'] = new Date().toISOString();
+      const { error } = await (supabase as any).from(kind).update(update).eq('id',openPay.id);
+      if (error) throw error;
+      toast.success(fully?'Liquidado':'Baixa parcial registrada');
+      setOpenPay(null); setPayValue('');
+      // refresh current page
+      setPage(p=>p); // trigger effect by changing dependency? We'll force reload by updating search dummy
+      setSearch(s=>s);
+    } catch(e:any){ toast.error(e.message); }
+  }
+
   return <Card className="p-6 space-y-4">
     <header className="flex flex-wrap gap-3 items-end">
       <div>
@@ -582,6 +641,7 @@ function FinanceGeneric({ kind,title,numberField,amountField,paidField,supplierF
         <p className="text-sm text-muted-foreground">Listagem básica.</p>
       </div>
       <div className="flex gap-2 ml-auto flex-wrap text-xs">
+        <Button size="sm" onClick={()=>setOpenNew(true)}>Novo</Button>
         <Input placeholder="Número" value={search} onChange={e=>{setPage(1);setSearch(e.target.value);}} className="w-32 h-8" />
         <select value={status} onChange={e=>{setPage(1);setStatus(e.target.value);}} className="h-8 border rounded px-2">
           <option value="">Status</option>
@@ -596,10 +656,10 @@ function FinanceGeneric({ kind,title,numberField,amountField,paidField,supplierF
     {error && <div className="text-sm text-red-500">{error}</div>}
     <div className="border rounded overflow-auto max-h-[500px]">
       <table className="w-full text-xs">
-        <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Número</th>{payroll && <th className="px-2 py-1 text-left">Ref</th>}<th className="px-2 py-1 text-left">Descrição</th><th className="px-2 py-1 text-left">Vencimento</th><th className="px-2 py-1 text-right">Valor</th><th className="px-2 py-1 text-right">Pago/Rec</th><th className="px-2 py-1 text-left">Status</th></tr></thead>
+        <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Número</th>{payroll && <th className="px-2 py-1 text-left">Ref</th>}<th className="px-2 py-1 text-left">Descrição</th><th className="px-2 py-1 text-left">Vencimento</th><th className="px-2 py-1 text-right">Valor</th><th className="px-2 py-1 text-right">Pago/Rec</th><th className="px-2 py-1 text-left">Status</th><th className="px-2 py-1 text-left">Ações</th></tr></thead>
         <tbody>
           {loading && <tr><td colSpan={7} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
-          {!loading && rows.length===0 && <tr><td colSpan={7} className="text-center py-6 text-muted-foreground">Sem registros</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={8} className="text-center py-6 text-muted-foreground">Sem registros</td></tr>}
           {!loading && rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
             <td className="px-2 py-1 font-medium">{r[numberField]}</td>
             {payroll && <td className="px-2 py-1">{r.reference_month}</td>}
@@ -608,6 +668,13 @@ function FinanceGeneric({ kind,title,numberField,amountField,paidField,supplierF
             <td className="px-2 py-1 text-right">{Number(r[amountField]||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
             <td className="px-2 py-1 text-right">{Number(r[paidField]||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
             <td className="px-2 py-1">{r.status}</td>
+            <td className="px-2 py-1">
+              { !payroll && (r.status==='ABERTO' || r.status==='PARCIAL') && <Button size="xs" variant="outline" onClick={()=>setOpenPay({id:r.id, amount:Number(r[amountField]||0), paid:Number(r[paidField]||0), number:r[numberField]})}>Baixa</Button> }
+              { payroll && r.status==='ABERTA' && <Button size="xs" variant="outline" onClick={async()=>{
+                const { error } = await (supabase as any).from('payroll').update({ status:'PAGA', payment_date: new Date().toISOString() }).eq('id',r.id);
+                if (error) toast.error(error.message); else { toast.success('Folha paga'); setPage(p=>p); }
+              }}>Pagar</Button> }
+            </td>
           </tr>)}
         </tbody>
       </table>
@@ -619,6 +686,73 @@ function FinanceGeneric({ kind,title,numberField,amountField,paidField,supplierF
         <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
       </div>
     </div>
+
+    {/* Dialog Novo */}
+    <Dialog open={openNew} onOpenChange={setOpenNew}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Novo {title}</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-xs">
+          <div>
+            <label className="block mb-1 font-medium">Descrição</label>
+            <Input value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Descrição" />
+          </div>
+          {!payroll && <div>
+            <label className="block mb-1 font-medium">Vencimento</label>
+            <Input type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))} />
+          </div>}
+          {!payroll && <div>
+            <label className="block mb-1 font-medium">Valor</label>
+            <Input type="number" step="0.01" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} />
+          </div>}
+          {payroll && <>
+            <div>
+              <label className="block mb-1 font-medium">Ref (YYYY-MM)</label>
+              <Input value={form.reference_month} onChange={e=>setForm(f=>({...f,reference_month:e.target.value}))} placeholder="2025-08" />
+            </div>
+            <div>
+              <label className="block mb-1 font-medium">Funcionário</label>
+              <Input value={form.employee_name} onChange={e=>setForm(f=>({...f,employee_name:e.target.value}))} placeholder="Nome" />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block mb-1 font-medium">Bruto</label>
+                <Input type="number" step="0.01" value={form.gross_amount} onChange={e=>setForm(f=>({...f,gross_amount:e.target.value, net_amount: (Number(e.target.value||0)-Number(f.deductions||0)).toString()}))} />
+              </div>
+              <div>
+                <label className="block mb-1 font-medium">Desc.</label>
+                <Input type="number" step="0.01" value={form.deductions} onChange={e=>setForm(f=>({...f,deductions:e.target.value, net_amount: (Number(f.gross_amount||0)-Number(e.target.value||0)).toString()}))} />
+              </div>
+              <div>
+                <label className="block mb-1 font-medium">Líquido</label>
+                <Input type="number" step="0.01" value={form.net_amount} onChange={e=>setForm(f=>({...f,net_amount:e.target.value}))} />
+              </div>
+            </div>
+          </>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setOpenNew(false)}>Cancelar</Button>
+          <Button onClick={handleCreate}>Salvar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Dialog Baixa */}
+    <Dialog open={!!openPay} onOpenChange={(o)=>{ if(!o) { setOpenPay(null); setPayValue(''); } }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Baixa {openPay?.number}</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-xs">
+          <div>Saldo: {remaining.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+          <div>
+            <label className="block mb-1 font-medium">Valor a baixar</label>
+            <Input type="number" step="0.01" value={payValue} onChange={e=>setPayValue(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>{setOpenPay(null); setPayValue('');}}>Cancelar</Button>
+          <Button onClick={handlePayment}>Confirmar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </Card>;
 }
 
