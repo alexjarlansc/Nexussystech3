@@ -92,7 +92,7 @@ export default function Auth() {
     <div className="min-h-screen gradient-hero flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-6 card-elevated">
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-primary mb-2">Nexus System</h1>
+          <h1 className="text-2xl font-bold text-primary mb-2">NexusSystech</h1>
           <p className="text-muted-foreground">Sistema de Orçamentos</p>
           {error && (
             <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm">

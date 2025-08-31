@@ -149,7 +149,7 @@ export function NexusProtectedHeader() {
             <div className="flex items-center gap-3 min-w-0">
               <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
               <div className="leading-tight min-w-0">
-                <h1 className="font-bold text-primary text-lg sm:text-xl">Nexus System</h1>
+                <h1 className="font-bold text-primary text-lg sm:text-xl">NexusSystech</h1>
                 <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px]">
                   {company?.name}
                 </p>
