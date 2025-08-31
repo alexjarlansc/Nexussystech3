@@ -1,14 +1,13 @@
 import { supabase } from '@/integrations/supabase/client';
 
 export async function nextSaleNumber(): Promise<string> {
-  // Chamada RPC; types podem não existir ainda no cliente gerado
-  const client = supabase as unknown as { rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> };
-  const { data, error } = await client.rpc('next_sale_number');
-  const saleNum = typeof data === 'string' ? data : null;
-  if (error || !saleNum) {
+  // @ts-expect-error RPC adicionada via migration ainda não refletida no types gerado
+  const { data, error } = await supabase.rpc('next_sale_number');
+  if (error || !data) {
     // Fallback timestamp
-    const stamp = new Date().toISOString().replace(/[-:TZ.]/g,'').slice(2,12);
+  const d = new Date();
+  const stamp = `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
     return `VEN-${stamp}`;
   }
-  return saleNum;
+  return data as string;
 }
