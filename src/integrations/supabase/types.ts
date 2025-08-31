@@ -619,6 +619,24 @@ export type AppDatabase = {
         }
         Relationships: []
       }
+      ,nfe_invoices: {
+        Row: { id:string; nfe_number:string; series:number; sale_id:string|null; client_id:string|null; client_snapshot:Json|null; emit_snapshot:Json|null; items:Json; total_products:number; total_invoice:number; status:string; environment:string; xml_draft:string|null; xml_signed:string|null; xml_protocol:string|null; rejection_reason:string|null; authorized_at:string|null; cancelled_at:string|null; company_id:string|null; created_by:string|null; created_at:string }
+        Insert: { id?:string; nfe_number:string; series?:number; sale_id?:string|null; client_id?:string|null; client_snapshot?:Json|null; emit_snapshot?:Json|null; items:Json; total_products?:number; total_invoice?:number; status?:string; environment?:string; xml_draft?:string|null; xml_signed?:string|null; xml_protocol?:string|null; rejection_reason?:string|null; authorized_at?:string|null; cancelled_at?:string|null; company_id?:string|null; created_by?:string|null; created_at?:string }
+        Update: { id?:string; nfe_number?:string; series?:number; sale_id?:string|null; client_id?:string|null; client_snapshot?:Json|null; emit_snapshot?:Json|null; items?:Json; total_products?:number; total_invoice?:number; status?:string; environment?:string; xml_draft?:string|null; xml_signed?:string|null; xml_protocol?:string|null; rejection_reason?:string|null; authorized_at?:string|null; cancelled_at?:string|null; company_id?:string|null; created_by?:string|null; created_at?:string }
+        Relationships: []
+      }
+      ,nfe_items: {
+        Row: { id:string; invoice_id:string; line_number:number; product_id:string|null; description:string; quantity:number; unit_price:number; total:number; taxes:Json|null }
+        Insert: { id?:string; invoice_id:string; line_number:number; product_id?:string|null; description:string; quantity?:number; unit_price?:number; total?:number; taxes?:Json|null }
+        Update: { id?:string; invoice_id?:string; line_number?:number; product_id?:string|null; description?:string; quantity?:number; unit_price?:number; total?:number; taxes?:Json|null }
+        Relationships: []
+      }
+      ,nfe_events: {
+        Row: { id:string; invoice_id:string; event_type:string; payload:Json|null; created_at:string; created_by:string|null }
+        Insert: { id?:string; invoice_id:string; event_type:string; payload?:Json|null; created_at?:string; created_by?:string|null }
+        Update: { id?:string; invoice_id?:string; event_type?:string; payload?:Json|null; created_at?:string; created_by?:string|null }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -653,6 +671,13 @@ export type AppDatabase = {
         }
         Returns: Json
       }
+  ,next_payable_number: { Args: Record<string, never>; Returns: string }
+  ,next_receivable_number: { Args: Record<string, never>; Returns: string }
+  ,next_payroll_number: { Args: Record<string, never>; Returns: string }
+  ,next_nfe_number: { Args: Record<string, never>; Returns: string }
+  ,sign_nfe: { Args: { p_invoice_id: string }; Returns: Json }
+  ,transmit_nfe: { Args: { p_invoice_id: string }; Returns: Json }
+  ,cancel_nfe: { Args: { p_invoice_id: string; p_reason: string }; Returns: Json }
       ,next_purchase_number: {
         Args: Record<PropertyKey, never>
         Returns: string

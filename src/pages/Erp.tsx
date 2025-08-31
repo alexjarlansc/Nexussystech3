@@ -555,17 +555,89 @@ function FinancePayrollPlaceholder(){
   return <FinanceGeneric kind="payroll" title="Folha de Pagamento" numberField="payroll_number" amountField="gross_amount" paidField="net_amount" payroll />;
 }
 function FiscalDocsPlaceholder(){
+  const [rows,setRows]=useState<any[]>([]); const [loading,setLoading]=useState(false); const [error,setError]=useState<string|null>(null);
+  const [openNew,setOpenNew]=useState(false); const [creating,setCreating]=useState(false);
+  const [saleSearch,setSaleSearch]=useState(''); const [sales,setSales]=useState<any[]>([]);
+  const [selectedSale,setSelectedSale]=useState<any|null>(null);
+  useEffect(()=>{(async()=>{ setLoading(true); try { const { data, error } = await (supabase as any).from('nfe_invoices').select('*').order('created_at',{ascending:false}).limit(100); if (error) throw error; setRows(data||[]);} catch(e:any){ setError(e.message);} finally { setLoading(false);} })();},[]);
+  async function searchSales(){ const { data, error } = await (supabase as any).from('sales').select('*').ilike('sale_number','%'+saleSearch+'%').limit(20); if(!error) setSales(data||[]); }
+  async function createFromSale(){ if(!selectedSale) return; setCreating(true); try {
+    const numResp = await (supabase as any).rpc('next_nfe_number'); const nfe_number = numResp.data;
+    // montar itens simples a partir de sale.items
+    const saleItems = Array.isArray(selectedSale.items)? selectedSale.items : (typeof selectedSale.items==='object'? Object.values(selectedSale.items): []);
+    const mapped = saleItems.map((it:any,idx:number)=> ({ line_number: idx+1, description: it.name||it.description||'Item', quantity: it.quantity||it.qty||1, unit_price: it.price||it.unit_price||0, total: (it.quantity||it.qty||1)*(it.price||it.unit_price||0) }));
+    const totalProducts = mapped.reduce((s:any,i:any)=> s + Number(i.total||0),0);
+    const payload = { nfe_number, sale_id: selectedSale.id, client_id: null, client_snapshot: selectedSale.client_snapshot||null, emit_snapshot:null, items: mapped, total_products: totalProducts, total_invoice: totalProducts, status:'DRAFT'};
+    const { error } = await (supabase as any).from('nfe_invoices').insert(payload);
+    if (error) throw error; toast.success('NF-e criada'); setOpenNew(false); setSelectedSale(null); } catch(e:any){ toast.error(e.message);} finally { setCreating(false);} }
+  async function sign(inv:any){ const { data, error } = await (supabase as any).rpc('sign_nfe',{p_invoice_id: inv.id}); if(error || !data?.ok) return toast.error(error?.message||data?.error||'Erro'); toast.success('Assinada'); inv.status='SIGNED'; setRows(r=>[...r]); }
+  async function transmit(inv:any){ const { data, error } = await (supabase as any).rpc('transmit_nfe',{p_invoice_id: inv.id}); if(error || !data?.ok) return toast.error(error?.message||data?.error||'Erro'); toast.success('Autorizada'); inv.status='AUTHORIZED'; setRows(r=>[...r]); }
+  async function cancel(inv:any){ const reason='Cancelamento teste'; const { data, error } = await (supabase as any).rpc('cancel_nfe',{p_invoice_id: inv.id, p_reason: reason}); if(error || !data?.ok) return toast.error(error?.message||data?.error||'Erro'); toast.success('Cancelada'); inv.status='CANCELLED'; setRows(r=>[...r]); }
   return <Card className="p-6 space-y-4">
-    <div>
-      <h2 className="text-xl font-semibold mb-1">Notas Fiscais (NFe)</h2>
-      <p className="text-sm text-muted-foreground">Central de emissão/consulta. Também disponível no PDV.</p>
+    <div className="flex items-start gap-4 flex-wrap">
+      <div>
+        <h2 className="text-xl font-semibold mb-1">Notas Fiscais (NF-e)</h2>
+        <p className="text-sm text-muted-foreground">Emissão e status (mock). Produção futura: integração SEFAZ.</p>
+      </div>
+      <div className="ml-auto flex gap-2">
+        <Button size="sm" onClick={()=>setOpenNew(true)}>Nova NF-e (Venda)</Button>
+      </div>
     </div>
-    <div className="grid gap-3 md:grid-cols-3 text-xs">
-      <Card className="p-3"><h3 className="font-medium mb-1 text-sm">Emitir NFe</h3><p className="text-muted-foreground">Gerar nota a partir de venda / pedido / orçamento convertido.</p><Button size="sm" className="mt-2" disabled>Nova (futuro)</Button></Card>
-      <Card className="p-3"><h3 className="font-medium mb-1 text-sm">Consultar Situação</h3><p className="text-muted-foreground">Status SEFAZ, protocolos, rejeições.</p><Button size="sm" variant="outline" className="mt-2" disabled>Atualizar</Button></Card>
-      <Card className="p-3"><h3 className="font-medium mb-1 text-sm">Configurações</h3><p className="text-muted-foreground">Certificado, série, numeração, CSC / token.</p><Button size="sm" variant="outline" className="mt-2" disabled>Abrir</Button></Card>
+    {error && <div className="text-sm text-red-500">{error}</div>}
+    <div className="border rounded overflow-auto max-h-[500px]">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Data</th><th className="px-2 py-1 text-left">Número</th><th className="px-2 py-1 text-left">Status</th><th className="px-2 py-1 text-left">Total</th><th className="px-2 py-1 text-left">Ações</th></tr></thead>
+        <tbody>
+          {loading && <tr><td colSpan={5} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={5} className="text-center py-6 text-muted-foreground">Sem NF-e</td></tr>}
+          {!loading && rows.map(inv=> <tr key={inv.id} className="border-t hover:bg-muted/40">
+            <td className="px-2 py-1 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString('pt-BR')}</td>
+            <td className="px-2 py-1 font-medium">{inv.nfe_number}</td>
+            <td className="px-2 py-1">{inv.status}</td>
+            <td className="px-2 py-1">{Number(inv.total_invoice||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+            <td className="px-2 py-1 flex gap-1 flex-wrap">
+              {inv.status==='DRAFT' && <Button size="sm" variant="outline" onClick={()=>sign(inv)}>Assinar</Button>}
+              {['SIGNED','SENT'].includes(inv.status) && <Button size="sm" variant="outline" onClick={()=>transmit(inv)}>Transmitir</Button>}
+              {inv.status==='AUTHORIZED' && <Button size="sm" variant="outline" onClick={()=>cancel(inv)}>Cancelar</Button>}
+            </td>
+          </tr>)}
+        </tbody>
+      </table>
     </div>
-    <div className="text-xs text-muted-foreground">Próximos passos: vincular tabela fiscal (nfe_headers / nfe_items), assinar XML, transmitir, armazenar protocolos, download PDF DANFe e cancelamento/carta de correção.</div>
+    <div className="text-xs text-muted-foreground">Fluxo mock: DRAFT → SIGNED → AUTHORIZED (Transmitir) → CANCELLED. Próximos: XML real, carta de correção, eventos completos.</div>
+
+    <Dialog open={openNew} onOpenChange={setOpenNew}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader><DialogTitle>Nova NF-e (a partir de venda)</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-xs">
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="block mb-1 font-medium">Buscar Venda</label>
+              <Input value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} placeholder="Número da venda" />
+            </div>
+            <Button size="sm" variant="outline" onClick={searchSales}>Pesquisar</Button>
+          </div>
+          <div className="max-h-40 overflow-auto border rounded">
+            <table className="w-full text-[11px]">
+              <thead className="bg-muted/40"><tr><th className="px-2 py-1 text-left">Número</th><th className="px-2 py-1 text-left">Total</th><th className="px-2 py-1 text-left">Selecionar</th></tr></thead>
+              <tbody>
+                {sales.map(s=> <tr key={s.id} className={`border-t ${selectedSale?.id===s.id? 'bg-primary/10':''}`}>
+                  <td className="px-2 py-1">{s.sale_number}</td>
+                  <td className="px-2 py-1">{Number(s.total||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                  <td className="px-2 py-1"><Button size="sm" variant="outline" onClick={()=>setSelectedSale(s)}>Selecionar</Button></td>
+                </tr>)}
+                {sales.length===0 && <tr><td colSpan={3} className="text-center py-4 text-muted-foreground">Sem resultados</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          {selectedSale && <div className="text-[11px] p-2 bg-muted rounded">Venda selecionada: {selectedSale.sale_number}</div>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setOpenNew(false)}>Fechar</Button>
+          <Button disabled={!selectedSale || creating} onClick={createFromSale}>{creating? 'Criando...' : 'Criar NF-e'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </Card>;
 }
 
