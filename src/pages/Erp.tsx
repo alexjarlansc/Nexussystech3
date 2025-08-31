@@ -49,7 +49,10 @@ type SectionKey =
   | 'purchases_list'
   | 'purchases_xml'
   | 'purchases_returns'
-  | 'purchases_history';
+  | 'purchases_history'
+  | 'fin_payables'
+  | 'fin_receivables'
+  | 'fin_payroll';
 
 export default function Erp() {
   const [section, setSection] = useState<SectionKey>('dashboard');
@@ -154,6 +157,15 @@ export default function Erp() {
               <ErpNavItem icon={<RotateIcon /> as any} label="Troca / Devolução" active={section==='purchases_returns'} onClick={()=>setSection('purchases_returns')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Histórico de Compras" active={section==='purchases_history'} onClick={()=>setSection('purchases_history')} />
             </div>
+            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <FileText className="h-3.5 w-3.5" />
+              <span>Financeiro</span>
+            </div>
+            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Pagar" active={section==='fin_payables'} onClick={()=>setSection('fin_payables')} />
+              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Receber" active={section==='fin_receivables'} onClick={()=>setSection('fin_receivables')} />
+              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Folha de Pagamento" active={section==='fin_payroll'} onClick={()=>setSection('fin_payroll')} />
+            </div>
           </nav>
           <div className="p-3 border-t text-[10px] text-muted-foreground">
             MVP inicial do módulo ERP • Expandir funções posteriormente
@@ -188,6 +200,9 @@ export default function Erp() {
               {section === 'purchases_xml' && <ErpPurchaseXmlImport />}
               {section === 'purchases_returns' && <ErpPurchaseReturns />}
               {section === 'purchases_history' && <ErpPurchasesList />}
+              {section === 'fin_payables' && <FinancePayablesPlaceholder />}
+              {section === 'fin_receivables' && <FinanceReceivablesPlaceholder />}
+              {section === 'fin_payroll' && <FinancePayrollPlaceholder />}
             </div>
           </ScrollArea>
         </main>
@@ -518,6 +533,17 @@ function BudgetsPlaceholder(){
     </div>
     <div className="text-[10px] text-muted-foreground">Limite 200 resultados • adicionar paginação e exportação CSV posteriormente.</div>
   </Card>;
+}
+
+// ===== Financeiro Placeholders =====
+function FinancePayablesPlaceholder(){
+  return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Contas a Pagar</h2><p className="text-sm text-muted-foreground mb-4">Gerencie títulos de fornecedores, vencimentos e pagamentos parciais.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Título Pagar')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Filtro Avançado')}>Filtrar</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Exportar CSV')}>Exportar</Button></div><div className="text-xs text-muted-foreground">Tabela (número | fornecedor | descrição | emissão | vencimento | valor | pago | status).</div></Card>;
+}
+function FinanceReceivablesPlaceholder(){
+  return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Contas a Receber</h2><p className="text-sm text-muted-foreground mb-4">Controle de parcelas de vendas, recebimentos e inadimplência.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Título Receber')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Gerar Parcelas')}>Gerar Parcelas</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Exportar CSV')}>Exportar</Button></div><div className="text-xs text-muted-foreground">Tabela (número | cliente | descrição | emissão | vencimento | valor | recebido | status).</div></Card>;
+}
+function FinancePayrollPlaceholder(){
+  return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Folha de Pagamento</h2><p className="text-sm text-muted-foreground mb-4">Processamento simplificado de lançamentos de funcionários.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Lançamento Folha')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Processar Mês')}>Processar Mês</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Exportar Holerites')}>Exportar</Button></div><div className="text-xs text-muted-foreground">Tabela (número | ref mês | funcionário | bruto | descontos | líquido | status).</div></Card>;
 }
 
 // Componente real de Ordens de Serviço integrado (placeholder removido)

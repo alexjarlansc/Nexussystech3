@@ -541,6 +541,24 @@ export type AppDatabase = {
         }
         Relationships: []
       }
+      ,payables: {
+        Row: { id:string; payable_number:string; invoice_number:string|null; supplier_id:string|null; supplier_snapshot:Json|null; description:string; issue_date:string; due_date:string; amount:number; paid_amount:number; status:string; payment_date:string|null; notes:string|null; company_id:string|null; created_by:string|null; created_at:string }
+        Insert: { id?:string; payable_number:string; invoice_number?:string|null; supplier_id?:string|null; supplier_snapshot?:Json|null; description:string; issue_date?:string; due_date:string; amount?:number; paid_amount?:number; status?:string; payment_date?:string|null; notes?:string|null; company_id?:string|null; created_by?:string|null; created_at?:string }
+        Update: { id?:string; payable_number?:string; invoice_number?:string|null; supplier_id?:string|null; supplier_snapshot?:Json|null; description?:string; issue_date?:string; due_date?:string; amount?:number; paid_amount?:number; status?:string; payment_date?:string|null; notes?:string|null; company_id?:string|null; created_by?:string|null; created_at?:string }
+        Relationships: []
+      }
+      ,receivables: {
+        Row: { id:string; receivable_number:string; sale_id:string|null; client_id:string|null; client_snapshot:Json|null; description:string; issue_date:string; due_date:string; amount:number; received_amount:number; status:string; receipt_date:string|null; notes:string|null; company_id:string|null; created_by:string|null; created_at:string }
+        Insert: { id?:string; receivable_number:string; sale_id?:string|null; client_id?:string|null; client_snapshot?:Json|null; description:string; issue_date?:string; due_date:string; amount?:number; received_amount?:number; status?:string; receipt_date?:string|null; notes?:string|null; company_id?:string|null; created_by?:string|null; created_at?:string }
+        Update: { id?:string; receivable_number?:string; sale_id?:string|null; client_id?:string|null; client_snapshot?:Json|null; description?:string; issue_date?:string; due_date?:string; amount?:number; received_amount?:number; status?:string; receipt_date?:string|null; notes?:string|null; company_id?:string|null; created_by?:string|null; created_at?:string }
+        Relationships: []
+      }
+      ,payroll: {
+        Row: { id:string; payroll_number:string; reference_month:string; employee_name:string; gross_amount:number; deductions:number; net_amount:number; status:string; payment_date:string|null; notes:string|null; company_id:string|null; created_by:string|null; created_at:string }
+        Insert: { id?:string; payroll_number:string; reference_month:string; employee_name:string; gross_amount?:number; deductions?:number; net_amount?:number; status?:string; payment_date?:string|null; notes?:string|null; company_id?:string|null; created_by?:string|null; created_at?:string }
+        Update: { id?:string; payroll_number?:string; reference_month?:string; employee_name?:string; gross_amount?:number; deductions?:number; net_amount?:number; status?:string; payment_date?:string|null; notes?:string|null; company_id?:string|null; created_by?:string|null; created_at?:string }
+        Relationships: []
+      }
       ,service_orders: {
         Row: {
           id: string
