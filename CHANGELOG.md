@@ -2,6 +2,11 @@
 
 Todas as mudanças notáveis deste projeto serão documentadas aqui.
 
+## [0.1.4] - 2025-08-31
+### Correções
+- Fix em `sales.ts`: remoção de `@ts-expect-error` não utilizado e tipagem explícita do retorno da RPC `next_sale_number`.
+- Fix em `NexusProtectedHeader.tsx`: remoção de interface duplicada `InviteCode` e uso do tipo centralizado com tratamento de `expires_at` opcional.
+
 ## [0.1.3] - 2025-08-31
 ### Build / Otimizações
 - Adição de `manualChunks` no `vite.config.ts` para dividir dependências principais (react, router, supabase, recharts) e reduzir o tamanho do bundle principal (~329 kB), preparando terreno para futuros lazy loads de rotas/modais.
