@@ -25,8 +25,16 @@ interface Company {
 }
 
 type BasicResult = { error: { message: string } | null };
+interface InviteCode {
+  id?: string;
+  code: string;
+  role: 'user' | 'admin' | 'pdv';
+  created_at?: string;
+  expires_at?: string;
+  used_by?: string | null;
+}
 interface InviteCodeResult { code?: string; error: { message: string } | null }
-interface CodesResult { data: Array<unknown>; error: { message: string } | null }
+interface CodesResult { data: InviteCode[]; error: { message: string } | null }
 
 interface AuthContextType {
   user: User | null;
@@ -406,7 +414,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const generateInviteCode = async (role: 'user' | 'admin') => {
+  const generateInviteCode = async (role: 'user' | 'admin' | 'pdv') => {
     try {
       if (profile?.role !== 'admin') {
         return { error: { message: 'Apenas administradores podem gerar códigos de convite' } };
@@ -414,7 +422,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const code = await supabase.rpc('generate_invite_code');
       
-      const { data, error } = await supabase
+  const { data, error } = await supabase
         .from('invite_codes')
         .insert({
           code: code.data,
@@ -438,14 +446,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { data: [], error: { message: 'Acesso negado' } };
       }
 
-      const { data, error } = await supabase
+  const { data, error } = await supabase
         .from('invite_codes')
         .select('*')
         .order('created_at', { ascending: false });
 
-      return { data: data || [], error };
+  return { data: (data as InviteCode[]) || [], error };
     } catch (error) {
-      return { data: [], error };
+  return { data: [], error: error as { message: string } | null };
     }
   };
 
