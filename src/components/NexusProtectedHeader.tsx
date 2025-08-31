@@ -7,26 +7,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/sonner";
-import { LogOut, Settings, User, Building2, Key, Copy, Boxes, Home } from "lucide-react";
-import { Link, useLocation } from 'react-router-dom';
+import { LogOut, Settings, User, Building2, Key, Copy } from "lucide-react";
+import { Link } from 'react-router-dom';
 import { useAuth } from "@/hooks/useAuth";
+import type { InviteCode } from '@/hooks/authTypes';
 import { StorageKeys, setJSON } from '@/utils/storage';
 import { supabase } from '@/integrations/supabase/client';
 
 export function NexusProtectedHeader() {
-  const location = useLocation();
   const { user, profile, company, signOut, updateProfile, updateCompany, generateInviteCode, getInviteCodes } = useAuth();
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
   const [openInvites, setOpenInvites] = useState(false);
-  interface InviteCode {
-    id: string;
-    code: string;
-    role: 'user' | 'admin' | 'pdv';
-    created_at?: string;
-    expires_at: string;
-    used_by?: string | null;
-  }
+  // Códigos de convite (tipo centralizado em authTypes com campos opcionais)
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
 
   // Profile form
@@ -119,14 +112,7 @@ export function NexusProtectedHeader() {
   const loadInviteCodes = async () => {
     const { data, error } = await getInviteCodes();
     if (!error) {
-      // garantir estrutura com narrowing evitando any
-      const arr = Array.isArray(data) ? data : [];
-      const safe: InviteCode[] = arr.filter((d: unknown): d is InviteCode => {
-        if (typeof d !== 'object' || d === null) return false;
-        const o = d as Record<string, unknown>;
-        return typeof o.id === 'string' && typeof o.code === 'string' && typeof o.role === 'string' && typeof o.expires_at === 'string';
-      });
-      setInviteCodes(safe);
+      setInviteCodes(data);
     }
   };
 
@@ -143,13 +129,13 @@ export function NexusProtectedHeader() {
   return (
     <>
       <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className={`${location.pathname.startsWith('/erp') ? 'w-full max-w-full px-2 sm:px-3' : 'container mx-auto px-4'} py-2`}>        
+        <div className="container mx-auto px-4 py-2">
           {/* Wrapper que permite empilhar no mobile e alinhar lado a lado em telas maiores */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3 min-w-0">
               <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
               <div className="leading-tight min-w-0">
-                <h1 className="font-bold text-primary text-lg sm:text-xl">NexusSystech</h1>
+                <h1 className="font-bold text-primary text-lg sm:text-xl">Nexus System</h1>
                 <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px]">
                   {company?.name}
                 </p>
@@ -158,16 +144,6 @@ export function NexusProtectedHeader() {
 
             {/* Ações / usuário */}
             <div className="flex items-center flex-wrap gap-1 sm:gap-2 justify-end">
-              {/* Link Home somente quando não estamos já na raiz e especialmente útil dentro do ERP */}
-              {location.pathname.startsWith('/erp') && (
-                <Link
-                  to="/"
-                  aria-label="Início"
-                  className="h-8 w-8 p-0 flex items-center justify-center rounded hover:bg-muted text-primary/80 hover:text-primary transition-colors"
-                >
-                  <Home className="h-4 w-4" />
-                </Link>
-              )}
               <div className="flex flex-col items-end leading-tight gap-0.5 pr-2 border-r sm:border-r-0">
                 <p className="text-xs sm:text-sm font-medium max-w-[120px] truncate">
                   {profile?.first_name}
@@ -213,14 +189,6 @@ export function NexusProtectedHeader() {
               {profile?.role === 'pdv' && (
                 <Link to="/pdv" className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted">PDV</Link>
               )}
-              {/* Novo ícone para módulo ERP */}
-              <Link
-                to="/erp"
-                aria-label="Módulo ERP"
-                className="h-8 w-8 p-0 flex items-center justify-center rounded hover:bg-muted text-primary/80 hover:text-primary transition-colors"
-              >
-                <Boxes className="h-4 w-4" />
-              </Link>
               {profile?.role === 'admin' && (
                 <Button
                   variant="ghost"
@@ -417,58 +385,72 @@ export function NexusProtectedHeader() {
               <DialogTitle>Códigos de Convite</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              {/* Botões em estilo de tabs conforme layout desejado */}
               <div className="flex gap-2">
-                <InviteGeneratorButton roleType="user" label="Gerar Código Usuário" onGenerate={handleGenerateInvite} />
-                <InviteGeneratorButton roleType="admin" label="Gerar Código Admin" onGenerate={handleGenerateInvite} primary />
-                <InviteGeneratorButton roleType="pdv" label="Gerar Código PDV" onGenerate={handleGenerateInvite} alt />
+                <Button
+                  onClick={() => handleGenerateInvite('user')}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Gerar Código Usuário
+                </Button>
+                <Button
+                  onClick={() => handleGenerateInvite('admin')}
+                  className="flex-1"
+                >
+                  Gerar Código Admin
+                </Button>
+                <Button
+                  onClick={() => handleGenerateInvite('pdv')}
+                  className="flex-1"
+                  variant="secondary"
+                >
+                  Gerar Código PDV
+                </Button>
               </div>
 
-              <div className="max-h-[60vh] overflow-auto space-y-3">
+              <div className="max-h-[60vh] overflow-auto space-y-2">
                 {inviteCodes.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-6 border rounded">Nenhum código gerado ainda</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Nenhum código gerado ainda
+                  </p>
                 )}
                 {inviteCodes.map((invite) => {
-                  const expired = new Date(invite.expires_at) < new Date();
-                  const used = !!invite.used_by;
-                  const statusColor = used ? 'text-green-600' : expired ? 'text-red-600' : 'text-sky-700';
-                  const statusLabel = used ? 'Usado' : expired ? 'Expirado' : 'Disponível';
+                  const expiresDate = invite.expires_at ? new Date(invite.expires_at) : null;
+                  const isExpired = expiresDate ? expiresDate < new Date() : false;
                   return (
-                    <Card key={invite.id} className="p-4 hover:shadow-sm transition-shadow">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <code className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-sm font-mono tracking-wide border border-slate-200 dark:border-slate-700">
-                              {invite.code}
-                            </code>
-                            <Badge variant={invite.role === 'admin' ? 'default' : invite.role === 'pdv' ? 'outline' : 'secondary'} className="text-xs px-2 py-0.5">
-                              {invite.role === 'admin' ? 'Admin' : invite.role === 'pdv' ? 'PDV' : 'Usuário'}
-                            </Badge>
-                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${used? 'border-green-200 bg-green-50 dark:bg-green-900/20':'border-slate-200 dark:border-slate-700'} ${statusColor}`}>
-                              {statusLabel}
-                            </span>
-                          </div>
-                          <div className="text-[11px] mt-2 text-muted-foreground flex items-center gap-2 flex-wrap">
-                            <span className="font-medium">Expira:</span>
-                            <span>{new Date(invite.expires_at).toLocaleDateString('pt-BR')}</span>
-                            {used && <span className="text-green-600">(utilizado)</span>}
-                            {expired && !used && <span className="text-red-600">(expirado)</span>}
-                          </div>
-                        </div>
+                  <Card key={invite.id} className="p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
                         <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => copyToClipboard(invite.code)}
-                            disabled={used || expired}
-                            className="h-8 w-8 p-0"
-                            title="Copiar código"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
+                          <code className="bg-muted px-2 py-1 rounded text-sm font-mono">
+                            {invite.code}
+                          </code>
+                          <Badge variant={invite.role === 'admin' ? 'default' : invite.role === 'pdv' ? 'outline' : 'secondary'}>
+                            {invite.role === 'admin' ? 'Admin' : invite.role === 'pdv' ? 'PDV' : 'Usuário'}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {invite.used_by ? (
+                            <span className="text-green-600">✓ Usado</span>
+                          ) : isExpired ? (
+                            <span className="text-red-600">✗ Expirado</span>
+                          ) : (
+                            <span className="text-blue-600">◯ Disponível</span>
+                          )}
+                          {' | '}
+                          Expira: {expiresDate ? expiresDate.toLocaleDateString('pt-BR') : '—'}
                         </div>
                       </div>
-                    </Card>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => copyToClipboard(invite.code)}
+                        disabled={!!invite.used_by || isExpired}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </Card>
                   );
                 })}
               </div>
@@ -478,15 +460,4 @@ export function NexusProtectedHeader() {
       )}
     </>
   );
-}
-
-interface InviteGeneratorButtonProps { roleType: 'user'|'admin'|'pdv'; label: string; onGenerate: (r: 'user'|'admin'|'pdv')=>void; primary?: boolean; alt?: boolean; }
-function InviteGeneratorButton({ roleType,label,onGenerate,primary,alt }:InviteGeneratorButtonProps){
-  const base = 'flex-1 text-xs sm:text-sm font-medium rounded-md border transition-colors h-10';
-  const styles = primary
-    ? 'bg-primary text-white hover:brightness-110 border-primary'
-    : alt
-      ? 'bg-teal-600/80 text-white hover:bg-teal-600 border-teal-700'
-      : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-300 dark:border-slate-700';
-  return <button onClick={()=>onGenerate(roleType)} className={`${base} ${styles}`}>{label}</button>;
 }
