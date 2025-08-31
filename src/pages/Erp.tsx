@@ -537,13 +537,89 @@ function BudgetsPlaceholder(){
 
 // ===== Financeiro Placeholders =====
 function FinancePayablesPlaceholder(){
-  return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Contas a Pagar</h2><p className="text-sm text-muted-foreground mb-4">Gerencie títulos de fornecedores, vencimentos e pagamentos parciais.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Título Pagar')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Filtro Avançado')}>Filtrar</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Exportar CSV')}>Exportar</Button></div><div className="text-xs text-muted-foreground">Tabela (número | fornecedor | descrição | emissão | vencimento | valor | pago | status).</div></Card>;
+  return <FinanceGeneric kind="payables" title="Contas a Pagar" numberField="payable_number" amountField="amount" paidField="paid_amount" supplierField />;
 }
 function FinanceReceivablesPlaceholder(){
-  return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Contas a Receber</h2><p className="text-sm text-muted-foreground mb-4">Controle de parcelas de vendas, recebimentos e inadimplência.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Título Receber')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Gerar Parcelas')}>Gerar Parcelas</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Exportar CSV')}>Exportar</Button></div><div className="text-xs text-muted-foreground">Tabela (número | cliente | descrição | emissão | vencimento | valor | recebido | status).</div></Card>;
+  return <FinanceGeneric kind="receivables" title="Contas a Receber" numberField="receivable_number" amountField="amount" paidField="received_amount" clientField />;
 }
 function FinancePayrollPlaceholder(){
-  return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Folha de Pagamento</h2><p className="text-sm text-muted-foreground mb-4">Processamento simplificado de lançamentos de funcionários.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Lançamento Folha')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Processar Mês')}>Processar Mês</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Exportar Holerites')}>Exportar</Button></div><div className="text-xs text-muted-foreground">Tabela (número | ref mês | funcionário | bruto | descontos | líquido | status).</div></Card>;
+  return <FinanceGeneric kind="payroll" title="Folha de Pagamento" numberField="payroll_number" amountField="gross_amount" paidField="net_amount" payroll />;
+}
+
+interface FinanceGenericProps {
+  kind:'payables'|'receivables'|'payroll';
+  title:string;
+  numberField:string;
+  amountField:string;
+  paidField:string;
+  supplierField?:boolean;
+  clientField?:boolean;
+  payroll?:boolean;
+}
+function FinanceGeneric({ kind,title,numberField,amountField,paidField,supplierField,clientField,payroll}:FinanceGenericProps){
+  const [rows,setRows]=useState<any[]>([]);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState<string|null>(null);
+  const [search,setSearch]=useState('');
+  const [status,setStatus]=useState('');
+  const [page,setPage]=useState(1); const pageSize=15; const [total,setTotal]=useState(0);
+  useEffect(()=>{(async()=>{
+    setLoading(true); setError(null);
+    try {
+      let q = (supabase as any).from(kind).select('*',{count:'exact'}).order('due_date' in ({} as any)?'due_date':'created_at',{ascending:false}).range((page-1)*pageSize,page*pageSize-1);
+      if (search) q = q.ilike(numberField,'%'+search+'%');
+      if (status) q = q.eq('status',status);
+      const { data, error, count } = await q;
+      if (error) throw error;
+      setRows(data||[]); setTotal(count||0);
+    } catch(e:any){ setError(e.message);} finally { setLoading(false); }
+  })();},[search,status,page,kind,numberField]);
+  const totalPages = Math.max(1, Math.ceil(total/pageSize));
+  return <Card className="p-6 space-y-4">
+    <header className="flex flex-wrap gap-3 items-end">
+      <div>
+        <h2 className="text-xl font-semibold mb-1">{title}</h2>
+        <p className="text-sm text-muted-foreground">Listagem básica.</p>
+      </div>
+      <div className="flex gap-2 ml-auto flex-wrap text-xs">
+        <Input placeholder="Número" value={search} onChange={e=>{setPage(1);setSearch(e.target.value);}} className="w-32 h-8" />
+        <select value={status} onChange={e=>{setPage(1);setStatus(e.target.value);}} className="h-8 border rounded px-2">
+          <option value="">Status</option>
+          <option value="ABERTO">Aberto</option>
+          <option value="PARCIAL">Parcial</option>
+          <option value={kind==='receivables'?'RECEBIDO':'PAGO'}>{kind==='receivables'?'Recebido':'Pago'}</option>
+          <option value="CANCELADO">Cancelado</option>
+        </select>
+        <Button size="sm" variant="outline" onClick={()=>{setSearch('');setStatus('');setPage(1);}}>Limpar</Button>
+      </div>
+    </header>
+    {error && <div className="text-sm text-red-500">{error}</div>}
+    <div className="border rounded overflow-auto max-h-[500px]">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Número</th>{payroll && <th className="px-2 py-1 text-left">Ref</th>}<th className="px-2 py-1 text-left">Descrição</th><th className="px-2 py-1 text-left">Vencimento</th><th className="px-2 py-1 text-right">Valor</th><th className="px-2 py-1 text-right">Pago/Rec</th><th className="px-2 py-1 text-left">Status</th></tr></thead>
+        <tbody>
+          {loading && <tr><td colSpan={7} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={7} className="text-center py-6 text-muted-foreground">Sem registros</td></tr>}
+          {!loading && rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
+            <td className="px-2 py-1 font-medium">{r[numberField]}</td>
+            {payroll && <td className="px-2 py-1">{r.reference_month}</td>}
+            <td className="px-2 py-1 truncate max-w-[160px]">{r.description || r.employee_name}</td>
+            <td className="px-2 py-1 whitespace-nowrap">{r.due_date? new Date(r.due_date).toLocaleDateString('pt-BR'): (r.payment_date? new Date(r.payment_date).toLocaleDateString('pt-BR'):'-')}</td>
+            <td className="px-2 py-1 text-right">{Number(r[amountField]||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+            <td className="px-2 py-1 text-right">{Number(r[paidField]||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+            <td className="px-2 py-1">{r.status}</td>
+          </tr>)}
+        </tbody>
+      </table>
+    </div>
+    <div className="flex justify-between items-center text-xs text-muted-foreground">
+      <div>Página {page} de {totalPages} • {total} registros</div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</Button>
+        <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
+      </div>
+    </div>
+  </Card>;
 }
 
 // Componente real de Ordens de Serviço integrado (placeholder removido)
