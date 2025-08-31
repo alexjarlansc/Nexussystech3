@@ -39,3 +39,18 @@ CREATE TABLE IF NOT EXISTS public.sales (
 CREATE INDEX IF NOT EXISTS sales_company_idx ON public.sales(company_id);
 CREATE INDEX IF NOT EXISTS sales_quote_idx ON public.sales(quote_id);
 CREATE INDEX IF NOT EXISTS sales_created_at_idx ON public.sales(created_at DESC);
+
+-- RLS e políticas se ainda não aplicadas
+ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY sales_select ON public.sales FOR SELECT USING (auth.uid() IS NOT NULL);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY sales_insert ON public.sales FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY sales_update ON public.sales FOR UPDATE USING (auth.uid() IS NOT NULL);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY sales_delete ON public.sales FOR DELETE USING (auth.uid() IS NOT NULL);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

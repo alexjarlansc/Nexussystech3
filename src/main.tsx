@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import PDV from "./pages/PDV";
+import Erp from "./pages/Erp";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,11 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/pdv" element={
                 <ProtectedRoute>
                   <PDV />
+                </ProtectedRoute>
+              } />
+              <Route path="/erp" element={
+                <ProtectedRoute requireAdmin>
+                  <Erp />
                 </ProtectedRoute>
               } />
               <Route path="*" element={<NotFound />} />

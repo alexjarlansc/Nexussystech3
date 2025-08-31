@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
-import Erp from "./pages/Erp";
+import { lazy, Suspense } from 'react';
+const Erp = lazy(() => import('@/pages/Erp'));
 
 const queryClient = new QueryClient();
 
@@ -17,7 +18,8 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
-          <Route path="/erp" element={<Erp />} />
+          <Route path="/erp" element={<Suspense fallback={<div className='p-6 text-sm text-slate-500'>Carregando ERP...</div>}><Erp /></Suspense>} />
+          <Route path="/erp/*" element={<Suspense fallback={<div className='p-6 text-sm text-slate-500'>Carregando ERP...</div>}><Erp /></Suspense>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

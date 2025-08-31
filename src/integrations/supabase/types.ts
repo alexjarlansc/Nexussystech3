@@ -6,7 +6,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export type Database = {
+export type AppDatabase = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
@@ -57,7 +57,7 @@ export type Database = {
           created_by: string
           expires_at: string
           id: string
-          role: Database["public"]["Enums"]["user_role"]
+          role: AppDatabase["public"]["Enums"]["user_role"]
           used_at: string | null
           used_by: string | null
         }
@@ -67,7 +67,7 @@ export type Database = {
           created_by: string
           expires_at?: string
           id?: string
-          role?: Database["public"]["Enums"]["user_role"]
+          role?: AppDatabase["public"]["Enums"]["user_role"]
           used_at?: string | null
           used_by?: string | null
         }
@@ -77,7 +77,7 @@ export type Database = {
           created_by?: string
           expires_at?: string
           id?: string
-          role?: Database["public"]["Enums"]["user_role"]
+          role?: AppDatabase["public"]["Enums"]["user_role"]
           used_at?: string | null
           used_by?: string | null
         }
@@ -161,6 +161,33 @@ export type Database = {
         }
         Relationships: []
       }
+      ,suppliers: {
+        Row: {
+          id: string
+          name: string
+          taxid: string | null
+          phone: string | null
+          email: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          taxid?: string | null
+          phone?: string | null
+          email?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          taxid?: string | null
+          phone?: string | null
+          email?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
   quotes: {
         Row: {
           id: string
@@ -232,7 +259,7 @@ export type Database = {
           first_name: string | null
           id: string
           phone: string | null
-          role: Database["public"]["Enums"]["user_role"]
+          role: AppDatabase["public"]["Enums"]["user_role"]
           updated_at: string
           user_id: string
         }
@@ -243,7 +270,7 @@ export type Database = {
           first_name?: string | null
           id?: string
           phone?: string | null
-          role?: Database["public"]["Enums"]["user_role"]
+          role?: AppDatabase["public"]["Enums"]["user_role"]
           updated_at?: string
           user_id: string
         }
@@ -254,7 +281,7 @@ export type Database = {
           first_name?: string | null
           id?: string
           phone?: string | null
-          role?: Database["public"]["Enums"]["user_role"]
+          role?: AppDatabase["public"]["Enums"]["user_role"]
           updated_at?: string
           user_id?: string
         }
@@ -288,6 +315,7 @@ export type Database = {
           company_id: string | null
           created_by: string | null
           created_at: string
+          sale_type?: string | null
         }
         Insert: {
           id?: string
@@ -308,6 +336,7 @@ export type Database = {
             company_id?: string | null
             created_by?: string | null
             created_at?: string
+            sale_type?: string | null
         }
         Update: {
           id?: string
@@ -328,6 +357,7 @@ export type Database = {
           company_id?: string | null
           created_by?: string | null
           created_at?: string
+          sale_type?: string | null
         }
         Relationships: []
       },
@@ -400,6 +430,177 @@ export type Database = {
         }
         Relationships: []
       }
+      ,stock_movements: {
+        Row: {
+          id: string
+          product_id: string
+          location: string | null
+          signed_qty: number
+          type: string
+          reason: string | null
+          related_sale_id: string | null
+          movement_group: string | null
+          company_id: string | null
+          created_by: string | null
+          metadata: Json | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          location?: string | null
+          signed_qty: number
+          type: string
+          reason?: string | null
+          related_sale_id?: string | null
+          movement_group?: string | null
+          company_id?: string | null
+          created_by?: string | null
+          metadata?: Json | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          location?: string | null
+          signed_qty?: number
+          type?: string
+          reason?: string | null
+          related_sale_id?: string | null
+          movement_group?: string | null
+          company_id?: string | null
+          created_by?: string | null
+          metadata?: Json | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      ,purchases: {
+        Row: {
+          id: string
+          purchase_number: string
+          purchase_type: string | null
+          original_purchase_id: string | null
+          supplier_id: string | null
+          supplier_snapshot: Json | null
+          items: Json
+             subtotal: number
+          discount: number
+          freight: number
+          taxes: Json | null
+          total: number
+          status: string
+          xml_access_key: string | null
+          xml_raw: string | null
+          notes: string | null
+          company_id: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          purchase_number: string
+          purchase_type?: string | null
+          original_purchase_id?: string | null
+          supplier_id?: string | null
+          supplier_snapshot?: Json | null
+          items: Json
+          subtotal?: number
+          discount?: number
+          freight?: number
+          taxes?: Json | null
+          total?: number
+          status?: string
+          xml_access_key?: string | null
+          xml_raw?: string | null
+          notes?: string | null
+          company_id?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          purchase_number?: string
+          purchase_type?: string | null
+          original_purchase_id?: string | null
+          supplier_id?: string | null
+          supplier_snapshot?: Json | null
+          items?: Json
+          subtotal?: number
+          discount?: number
+          freight?: number
+          taxes?: Json | null
+          total?: number
+          status?: string
+          xml_access_key?: string | null
+          xml_raw?: string | null
+          notes?: string | null
+          company_id?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      ,service_orders: {
+        Row: {
+          id: string
+          number: string
+          status: string
+          created_at: string
+          updated_at: string
+          company_id: string | null
+          created_by: string | null
+          client_id: string | null
+          client_snapshot: Json | null
+          origin_quote_id: string | null
+          description: string | null
+          items: Json | null
+          subtotal: number | null
+          discount: number | null
+          total: number | null
+          notes: string | null
+          service_sale_id?: string | null
+        }
+        Insert: {
+          id?: string
+          number: string
+          status?: string
+          created_at?: string
+          updated_at?: string
+          company_id?: string | null
+          created_by?: string | null
+          client_id?: string | null
+          client_snapshot?: Json | null
+          origin_quote_id?: string | null
+          description?: string | null
+          items?: Json | null
+          subtotal?: number | null
+          discount?: number | null
+          total?: number | null
+          notes?: string | null
+          service_sale_id?: string | null
+        }
+        Update: {
+          id?: string
+          number?: string
+          status?: string
+          created_at?: string
+          updated_at?: string
+          company_id?: string | null
+          created_by?: string | null
+          client_id?: string | null
+          client_snapshot?: Json | null
+          origin_quote_id?: string | null
+          description?: string | null
+          items?: Json | null
+          subtotal?: number | null
+          discount?: number | null
+          total?: number | null
+          notes?: string | null
+          service_sale_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -416,10 +617,31 @@ export type Database = {
       next_sale_number: {
         Args: Record<PropertyKey, never>
         Returns: string
+      },
+      next_service_order_number: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      },
+      register_stock_movement: {
+        Args: {
+          p_product_id: string
+          p_qty: number
+          p_type: string
+          p_reason?: string | null
+          p_location_from?: string | null
+          p_location_to?: string | null
+          p_related_sale_id?: string | null
+          p_metadata?: Json | null
+        }
+        Returns: Json
+      }
+      ,next_purchase_number: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
     }
     Enums: {
-      user_role: "user" | "admin" | "pdv"
+  user_role: "user" | "admin" | "pdv"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -427,7 +649,7 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DatabaseWithoutInternals = Omit<AppDatabase, "__InternalSupabase">
 
 type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
@@ -551,3 +773,5 @@ export const Constants = {
     },
   },
 } as const
+
+// Alias retrocompatível
