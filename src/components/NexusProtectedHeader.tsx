@@ -190,6 +190,14 @@ export function NexusProtectedHeader() {
                 <Link to="/pdv" className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted">PDV</Link>
               )}
               {profile?.role === 'admin' && (
+                <Link
+                  to="/erp"
+                  className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted"
+                  aria-label="ERP"
+                  title="ERP"
+                >ERP</Link>
+              )}
+              {profile?.role === 'admin' && (
                 <Button
                   variant="ghost"
                   size="sm"
