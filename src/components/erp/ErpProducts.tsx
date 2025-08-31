@@ -71,10 +71,10 @@ export function ErpProducts(){
       // Buscar estoque e reservado para cada produto
       const ids = products.map(p=>p.id);
       if(ids.length) {
-        const { data: stocks } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
+        const { data: stocks } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
         products = products.map(p=>{
           const found = stocks?.find((s:any)=>s.product_id===p.id);
-          return { ...p, stock: found?.stock ?? 0, reserved: found?.reserved ?? 0 };
+          return { ...p, stock: found?.stock ?? 0 };
         });
       }
       setRows(products);
@@ -155,8 +155,30 @@ export function ErpProducts(){
         if(companyId) payload.company_id = companyId; // garantir
       }
       let resp: { data: ProductRow|null; error: unknown };
-      if(editing){
+      let oldStock = 0;
+      if(editing) {
+        // Buscar estoque atual para comparar
+        const { data: stockData } = await (supabase as any).from('product_stock').select('stock').eq('product_id', editing.id).single();
+        oldStock = stockData?.stock ?? 0;
         resp = await (supabase as unknown as { from: any }).from('products').update(payload).eq('id', editing.id).select('*').single();
+        // Se quantidade de estoque mudou, registrar ajuste
+        if(resp.data && typeof form.stock_qty === 'number' && form.stock_qty !== oldStock) {
+          const diff = form.stock_qty - oldStock;
+          if(diff !== 0) {
+            try {
+              await supabase.rpc('register_stock_movement', {
+                p_product_id: resp.data.id,
+                p_qty: Math.abs(diff),
+                p_type: diff > 0 ? 'IN' : 'OUT',
+                p_reason: 'Ajuste manual',
+                p_location_from: null,
+                p_location_to: null,
+                p_related_sale_id: null,
+                p_metadata: null
+              });
+            } catch(e) { if(import.meta.env.DEV) console.error('Erro ao ajustar estoque', e); }
+          }
+        }
       } else {
         resp = await (supabase as unknown as { from: any }).from('products').insert(payload).select('*').single();
         // Se estoque inicial informado, criar movimentação de entrada
@@ -444,6 +466,8 @@ export function ErpProducts(){
                 setForm(f=>({...f, image_url: uploadedUrl }));
               } catch(e:unknown){ toast.error('Upload falhou: '+ extractErr(e)); if(import.meta.env.DEV) console.error('upload error', e); }
             }
+            // Se não houver novo upload mas já existe image_url no form, manter
+            if(!uploadedUrl && form.image_url) uploadedUrl = form.image_url;
             if(uploadedUrl) form.image_url = uploadedUrl;
             save();
           }} disabled={saving}>{saving? 'Salvando...':'Salvar'}</Button>

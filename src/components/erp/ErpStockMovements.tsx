@@ -23,6 +23,7 @@ export const ErpStockMovements = () => {
   const [rows, setRows] = useState<Tables<'stock_movements'>[]>([]);
   const [page,setPage]=useState(1); const pageSize=50; const [total,setTotal]=useState(0);
   const [search, setSearch] = useState('');
+  const [productSearch, setProductSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -56,6 +57,13 @@ export const ErpStockMovements = () => {
       if (companyId) query = query.eq('company_id', companyId);
       if (typeFilter) query = query.eq('type', typeFilter);
       if (search) query = query.ilike('reason', `%${search}%`);
+      if (productSearch) {
+        // Buscar produtos que batem com o termo
+        const { data: prodData } = await supabase.from('products').select('id').or(`name.ilike.%${productSearch}%,code.ilike.%${productSearch}%`);
+        const prodIds = prodData?.map((p:any)=>p.id) || [];
+        if(prodIds.length) query = query.in('product_id', prodIds);
+        else query = query.in('product_id', ['']); // força vazio se não encontrar
+      }
       const { data, error, count } = await query;
       if (error) throw error;
       setRows(data || []);
@@ -64,9 +72,9 @@ export const ErpStockMovements = () => {
       const msg = (e instanceof Error) ? e.message : 'Falha ao carregar movimentos';
       toast.error(msg);
     } finally { setLoading(false); }
-  }, [typeFilter, search, page, companyId]);
+  }, [typeFilter, search, page, companyId, productSearch]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [typeFilter, search, page, companyId, productSearch]);
   useEffect(() => { loadProducts(); }, []);
 
   async function submit() {
@@ -84,14 +92,19 @@ export const ErpStockMovements = () => {
         p_location_to: form.loc_to || null,
       };
       const { error } = await supabase.rpc('register_stock_movement', payload);
-      if (error) throw error;
+      if (error) {
+        toast.error('Erro ao registrar: ' + (error.message || JSON.stringify(error)));
+        if(import.meta.env.DEV) console.error('Erro detalhado:', error);
+        return;
+      }
       toast.success('Movimento registrado');
       setCreateOpen(false);
-      setForm({ product_id: '', qty: '', type: 'ENTRADA', reason: '', loc_from: '', loc_to: '' });
+      setForm({ product_id: '', qty: '', type: 'IN', reason: '', loc_from: '', loc_to: '' });
       load();
     } catch(e){
       const msg = (e instanceof Error) ? e.message : 'Erro ao registrar';
       toast.error(msg);
+      if(import.meta.env.DEV) console.error('Erro inesperado:', e);
     } finally { setCreating(false); }
   }
 
@@ -122,9 +135,13 @@ export const ErpStockMovements = () => {
     <div className='space-y-4'>
       <div className='flex gap-2 items-end flex-wrap'>
         <div className='flex flex-col'>
-          <span className='text-[11px] uppercase text-slate-500'>Buscar</span>
+          <span className='text-[11px] uppercase text-slate-500'>Buscar Motivo</span>
           <Input value={search} onChange={e=>setSearch(e.target.value)} placeholder='Motivo...' className='h-9 w-52' />
         </div>
+        <div className='flex flex-col'>
+          <span className='text-[11px] uppercase text-slate-500'>Buscar Produto</span>
+          <Input value={productSearch} onChange={e=>setProductSearch(e.target.value)} placeholder='Nome ou código do produto...' className='h-9 w-52' />
+  </div>
         <div className='flex flex-col'>
           <span className='text-[11px] uppercase text-slate-500'>Tipo</span>
           <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} className='h-9 border rounded px-2 text-sm'>
@@ -133,8 +150,8 @@ export const ErpStockMovements = () => {
           </select>
         </div>
         <Button onClick={()=>load()} variant='outline' size='sm'>Atualizar</Button>
-  <Button onClick={()=>setCreateOpen(true)} size='sm'>Novo Movimento</Button>
-  <Button onClick={exportCsv} variant='outline' size='sm'>Exportar CSV</Button>
+        <Button onClick={()=>setCreateOpen(true)} size='sm'>Novo Movimento</Button>
+        <Button onClick={exportCsv} variant='outline' size='sm'>Exportar CSV</Button>
       </div>
       <div className='overflow-auto border rounded'>
         <table className='w-full text-xs'>
