@@ -21,9 +21,10 @@ interface AuthContextType {
   getInviteCodes: () => Promise<CodesResult>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+// Função interna que monta e retorna o valor do contexto
+export function useAuthInternal() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -408,7 +409,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const value = {
+  const value: AuthContextType = {
     user,
     session,
     profile,
@@ -423,8 +424,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     generateInviteCode,
     getInviteCodes,
   };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return value;
 }
 
 // Nota: arquivo exporta provider + hook; fast refresh warning pode ser ignorado neste contexto
