@@ -1,0 +1,481 @@
+  // Utilitário para formatar valores monetários (R$) apenas ao sair do campo
+  function formatBRL(value: number|string|undefined): string {
+    if(value === undefined || value === null || value === '') return '';
+  const num = typeof value === 'number' ? value : Number(String(value).replace(/[^\d,]/g, '').replace(/(\d{2})$/, ',$1'));
+    if(isNaN(num)) return '';
+    return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
+  function parseBRL(value: string): number|undefined {
+    if(!value) return undefined;
+    let clean = value.replace(/[^\d,]/g, '');
+    clean = clean.replace(',', '.');
+    const num = parseFloat(clean);
+    return isNaN(num) ? undefined : num;
+  }
+
+  // Calcula preço de venda a partir do custo e margem
+  function calcSalePrice(cost: number|undefined, margin: number|undefined): number|undefined {
+    if(cost === undefined || margin === undefined) return undefined;
+    return +(cost * (1 + margin/100)).toFixed(2);
+  }
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useEffect, useState } from 'react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { toast } from '@/components/ui/sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { Product, Supplier } from '@/types';
+
+interface ProductForm extends Partial<Product> {
+  name: string;
+  sale_price?: number;
+  code_prefix?: string;
+  stock_qty?: number;
+  margin?: number;
+}
+
+const UNITS = ['UN','CX','KG','MT','LT','PC'];
+const STATUS = ['ATIVO','INATIVO'];
+
+export function ErpProducts(){
+  const [rows,setRows]=useState<(Product & { stock?: number, reserved?: number })[]>([]);
+  const [loading,setLoading]=useState(false);
+  const [search,setSearch]=useState('');
+  const [open,setOpen]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [suppliers,setSuppliers]=useState<Supplier[]>([]);
+  const [editing,setEditing]=useState<Product|null>(null);
+  const empty:ProductForm={ name:'', unit:'UN', status:'ATIVO'};
+  const [form,setForm]=useState<ProductForm>(empty);
+  const [imageFile,setImageFile]=useState<File|null>(null);
+  const [confirmDelete,setConfirmDelete]=useState<null|Product>(null);
+  const [extendedCols,setExtendedCols]=useState(true); // se false não enviar campos novos
+  const [companyId,setCompanyId]=useState<string|undefined>(undefined);
+
+  type ProductRow = Product & { created_at?: string };
+  async function load(){
+    setLoading(true);
+    try {
+      try { await (supabase as any).rpc('ensure_profile'); } catch(err) { if(import.meta.env.DEV) console.warn('ensure_profile rpc indisponível', err); }
+      let q = (supabase as unknown as { select: any; ilike: any; order: any; limit: any; from?: any })
+        .from('products').select('*').order('created_at',{ascending:false}).limit(200);
+      if(search) q = q.ilike('name','%'+search+'%');
+      const { data, error }:{ data: ProductRow[]|null; error: unknown } = await q;
+      if(error) throw error;
+      let products = (data as ProductRow[])||[];
+      // Buscar estoque e reservado para cada produto
+      const ids = products.map(p=>p.id);
+      if(ids.length) {
+        const { data: stocks } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
+        products = products.map(p=>{
+          const found = stocks?.find((s:any)=>s.product_id===p.id);
+          return { ...p, stock: found?.stock ?? 0, reserved: found?.reserved ?? 0 };
+        });
+      }
+      setRows(products);
+    } catch(e:unknown){ const msg = e instanceof Error? e.message: String(e); toast.error('Falha ao carregar produtos: '+msg); }
+    setLoading(false);
+  }
+  async function loadSuppliers(){
+    const { data, error }:{ data: Pick<Supplier,'id'|'name'>[]|null; error: unknown } = await (supabase as unknown as { from: any }).from('suppliers').select('id,name').eq('is_active', true).limit(200);
+    if(!error) setSuppliers(data||[]);
+  }
+  useEffect(()=>{ load(); loadSuppliers(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+  // Carregar companyId do profile do usuário autenticado (evita pegar outro profile)
+  useEffect(()=>{(async()=>{
+    try {
+      const { data: userRes } = await (supabase as any).auth.getUser();
+      const user = userRes?.user;
+      if(!user){ console.warn('Sem usuário autenticado para obter company_id'); return; }
+      const { data, error } = await (supabase as any).from('profiles').select('company_id').eq('user_id', user.id).single();
+      if(error){ console.warn('Erro ao buscar profile para company_id', error); return; }
+      if(data?.company_id){ setCompanyId(data.company_id); }
+      else console.warn('Profile sem company_id');
+    } catch (err) { console.warn('Falha ao carregar company_id', err); }
+  })();},[]);
+  // Recarregar quando companyId definido (não obrigatório mas ajuda debug)
+  // Quando companyId for obtido, recarrega. Ignoramos dependência de 'load' intencionalmente.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(()=>{ if(companyId) { load(); } },[companyId]);
+  // Detecta se colunas estendidas existem (ex: brand). Se não, evita enviar para não gerar PGRST204
+  useEffect(()=>{
+    (async()=>{
+      const test = await (supabase as unknown as { from:any }).from('products').select('brand').limit(1);
+      if(test.error){
+        setExtendedCols(false);
+        if(import.meta.env.DEV) console.warn('Colunas estendidas ausentes, ocultando campos avançados. Aplique migration 20250831150000_extend_products_fields.sql');
+      }
+    })();
+  },[]);
+
+  async function save(){
+    if(!form.name.trim()){ toast.error('Nome obrigatório'); return; }
+    const salePrice = Number(form.sale_price||form.price||0);
+    if(isNaN(salePrice)){ toast.error('Preço inválido'); return; }
+    setSaving(true);
+    try {
+  const payload: Record<string, unknown> = {
+        name: form.name.trim(),
+        description: form.description||null,
+  code: (form.code && form.code !== 'sample_code') ? form.code : null,
+        category: form.category||null,
+        brand: form.brand||null,
+        model: form.model||null,
+        unit: form.unit||null,
+        stock_min: form.stock_min? Number(form.stock_min):null,
+        stock_max: form.stock_max? Number(form.stock_max):null,
+        location: form.location||null,
+        cost_price: form.cost_price? Number(form.cost_price):null,
+        sale_price: salePrice,
+        price: salePrice, // manter compatível
+        status: form.status||'ATIVO',
+        validity_date: form.validity_date||null,
+        lot_number: form.lot_number||null,
+        default_supplier_id: form.default_supplier_id||null,
+        payment_terms: form.payment_terms||null,
+        ncm: form.ncm||null,
+        cfop: form.cfop||null,
+        cest: form.cest||null,
+        cst: form.cst||null,
+        origin: form.origin||null,
+        icms_rate: form.icms_rate? Number(form.icms_rate):null,
+        pis_rate: form.pis_rate? Number(form.pis_rate):null,
+        cofins_rate: form.cofins_rate? Number(form.cofins_rate):null,
+      };
+      if(companyId) payload.company_id = companyId;
+      if(!extendedCols){
+        const allowed = ['name','description','price','sale_price','status'];
+        Object.keys(payload).forEach(k=>{ if(!allowed.includes(k)) delete payload[k]; });
+        if(companyId) payload.company_id = companyId; // garantir
+      }
+      let resp: { data: ProductRow|null; error: unknown };
+      if(editing){
+        resp = await (supabase as unknown as { from: any }).from('products').update(payload).eq('id', editing.id).select('*').single();
+      } else {
+        resp = await (supabase as unknown as { from: any }).from('products').insert(payload).select('*').single();
+        // Se estoque inicial informado, criar movimentação de entrada
+        if(resp.data && form.stock_qty && form.stock_qty > 0) {
+          try {
+            await supabase.rpc('register_stock_movement', {
+              p_product_id: resp.data.id,
+              p_qty: form.stock_qty,
+              p_type: 'IN',
+              p_reason: 'Cadastro inicial',
+              p_location_from: null,
+              p_location_to: null,
+              p_related_sale_id: null,
+              p_metadata: null
+            });
+          } catch(e) { if(import.meta.env.DEV) console.error('Erro ao registrar estoque inicial', e); }
+        }
+      }
+      if(resp.error) throw resp.error;
+      toast.success(editing?'Produto atualizado':'Produto criado');
+      setOpen(false); setEditing(null); setForm(empty); load();
+    } catch(e:unknown){ toast.error(extractErr(e)); if(import.meta.env.DEV) console.error('save product error', e); }
+    setSaving(false);
+  }
+
+  // Utilitário unificado para gerar código evitando falso negativo de erro (agora com prefixo opcional)
+  // Gera código aleatório local de 6 dígitos
+  function generateLocalCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  function startNew(){ setEditing(null); setForm(empty); setOpen(true); }
+  function normalizeNumber(v: unknown): number|undefined {
+    if(v === null || v === undefined || v === '') return undefined;
+    if(typeof v === 'number') return v;
+    if(typeof v === 'string') { const n = Number(v.replace(',','.')); return isNaN(n)? undefined : n; }
+    return undefined;
+  }
+  function startEdit(p:Product){
+    // Normalizar campos possivelmente retornados como string (numeric) ou objetos
+    const norm: ProductForm = {
+      ...p,
+      sale_price: normalizeNumber((p as any).sale_price ?? p.price),
+      cost_price: normalizeNumber((p as any).cost_price),
+      stock_min: normalizeNumber((p as any).stock_min),
+      stock_max: normalizeNumber((p as any).stock_max),
+      icms_rate: normalizeNumber((p as any).icms_rate),
+      pis_rate: normalizeNumber((p as any).pis_rate),
+      cofins_rate: normalizeNumber((p as any).cofins_rate)
+    };
+    // Sanitizar qualquer objeto inesperado (evitar [object Object] em inputs)
+    const scrubbed: ProductForm = Object.fromEntries(
+      Object.entries(norm).map(([k,v])=> {
+        if(v && typeof v === 'object') {
+          if (v instanceof Date) return [k, v.toISOString().slice(0,10)];
+          return [k, ''];
+        }
+        return [k,v];
+      })
+    ) as ProductForm;
+  // Se código legado placeholder, limpar para forçar geração nova
+  if(scrubbed.code === 'sample_code') scrubbed.code = '';
+  if(import.meta.env.DEV) console.log('Editar produto raw:', p);
+  setEditing(p);
+    setForm(scrubbed);
+    setOpen(true);
+  }
+  async function toggleStatus(p:Product){
+    try {
+      const newStatus = p.status==='INATIVO' ? 'ATIVO' : 'INATIVO';
+      const { error } = await (supabase as unknown as { from: any }).from('products').update({ status:newStatus }).eq('id', p.id);
+      if(error) throw error; toast.success('Status atualizado'); load();
+    } catch(e:unknown){ toast.error(extractErr(e)); if(import.meta.env.DEV) console.error('toggle status error', e); }
+  }
+  async function doDelete(){
+    if(!confirmDelete) return;
+    try {
+      const { error } = await (supabase as unknown as { from:any }).from('products').delete().eq('id', confirmDelete.id);
+      if(error) throw error; toast.success('Produto removido'); setConfirmDelete(null); load();
+    } catch(e:unknown){ toast.error(extractErr(e)); if(import.meta.env.DEV) console.error('delete product error', e); }
+  }
+
+  return <Card className="p-6 space-y-4">
+    <header className="flex flex-wrap gap-3 items-end">
+      <div>
+        <h2 className="text-xl font-semibold mb-1">Produtos</h2>
+        <p className="text-sm text-muted-foreground">Cadastro completo de itens para estoque, vendas e fiscal.</p>
+      </div>
+      <div className="flex gap-2 ml-auto flex-wrap">
+  <Input placeholder="Buscar nome" value={search} onChange={e=>setSearch(e.target.value)} className="w-48" />
+  <Button size="sm" onClick={load} disabled={loading}>{loading?'Carregando...':'Filtrar'}</Button>
+  <Button size="sm" onClick={startNew}>Novo</Button>
+      </div>
+    </header>
+    <div className="border rounded max-h-[520px] overflow-auto">
+      <table className="w-full text-xs">
+  <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1">Un</th><th className="px-2 py-1 text-right">Preço</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th><th className="px-2 py-1">Status</th><th className="px-2 py-1"/></tr></thead>
+        <tbody>
+          {rows.filter(r=> !search || r.name.toLowerCase().includes(search.toLowerCase())).map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
+            <td className="px-2 py-1 font-mono truncate max-w-[120px]" title={r.code||''}>{r.code||'-'}</td>
+            <td className="px-2 py-1 truncate max-w-[240px]" title={r.name}>{r.name}</td>
+            <td className="px-2 py-1 text-center">{r.unit||'-'}</td>
+            <td className="px-2 py-1 text-right">{(r.sale_price||r.price||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+            <td className="px-2 py-1 text-right">{r.stock ?? '-'}</td>
+            <td className="px-2 py-1 text-right">{r.reserved ?? '-'}</td>
+            <td className="px-2 py-1 text-center"><button onClick={()=>toggleStatus(r)} className={"underline-offset-2 hover:underline "+(r.status==='INATIVO'? 'text-red-500':'text-green-600')}>{r.status||'ATIVO'}</button></td>
+            <td className="px-2 py-1 text-right flex gap-1 justify-end">
+              <Button size="sm" variant="outline" onClick={()=>startEdit(r)}>Editar</Button>
+              <button
+                onClick={()=>setConfirmDelete(r)}
+                aria-label="Excluir"
+                title="Excluir"
+                className="text-red-600 font-bold text-lg leading-none px-1 hover:text-red-700 focus:outline-none"
+              >
+                ×
+              </button>
+            </td>
+          </tr>)}
+          {rows.length===0 && !loading && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Sem produtos</td></tr>}
+          {loading && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+        </tbody>
+      </table>
+    </div>
+    <div className="text-[10px] text-muted-foreground">Limite 200 resultados • adicionar paginação e importações futuras.</div>
+
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
+        <DialogHeader>
+          <DialogTitle>{editing? 'Editar Produto':'Novo Produto'}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-6 text-xs">
+          {/* Básico */}
+          {extendedCols && <section className="space-y-2">
+            <h3 className="font-semibold text-sm">Básico</h3>
+            <div className="grid md:grid-cols-4 gap-2">
+              <div className="flex gap-2">
+                <Input placeholder="Código (gerar)" value={form.code||''} onChange={e=>setForm(f=>({...f,code:e.target.value}))} />
+                <Button type="button" variant="outline" size="sm" onClick={()=>{
+                  const code = generateLocalCode();
+                  setForm(f=>({...f, code }));
+                }}>Gerar</Button>
+              </div>
+              <div className="flex gap-2">
+                <Input placeholder="Nome *" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} />
+                {/* Botão de gerar código remoto removido pois generateRemoteCode não existe */}
+              </div>
+              <select className="h-9 border rounded px-2" value={form.unit||''} onChange={e=>setForm(f=>({...f,unit:e.target.value}))}>
+                <option value="">Unidade</option>
+                {UNITS.map(u=> <option key={u} value={u}>{u}</option>)}
+              </select>
+              <select className="h-9 border rounded px-2" value={form.status||'ATIVO'} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>
+                {STATUS.map(s=> <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="grid md:grid-cols-5 gap-2">
+              <Input placeholder="Categoria" value={form.category||''} onChange={e=>setForm(f=>({...f,category:e.target.value}))} />
+              <Input placeholder="Marca" value={form.brand||''} onChange={e=>setForm(f=>({...f,brand:e.target.value}))} />
+              <Input placeholder="Modelo" value={form.model||''} onChange={e=>setForm(f=>({...f,model:e.target.value}))} />
+              <Input placeholder="Localização" value={form.location||''} onChange={e=>setForm(f=>({...f,location:e.target.value}))} />
+              <Input placeholder="Prefixo Código (opc)" value={(form as any).code_prefix||''} onChange={e=>setForm(f=>({...f, code_prefix:e.target.value||undefined}))} />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-1">
+                <input type="file" accept="image/*" onChange={e=>setImageFile(e.target.files?.[0]||null)} className="text-xs" />
+                <div className="text-[10px] text-muted-foreground">Imagem (opcional)</div>
+              </div>
+              {(editing?.image_url || imageFile) && (
+                <div className="flex items-center gap-2">
+                  {imageFile && <img src={URL.createObjectURL(imageFile)} alt="preview" className="h-16 w-16 object-cover rounded border" />}
+                  {!imageFile && editing?.image_url && <img src={editing.image_url} alt="img" className="h-16 w-16 object-cover rounded border" />}
+                  {(imageFile || editing?.image_url) && <Button size="sm" variant="outline" onClick={()=>{setImageFile(null); if(editing) editing.image_url=undefined;}}>Remover</Button>}
+                </div>
+              )}
+            </div>
+            <Textarea placeholder="Descrição / Observações" value={form.description||''} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={3} />
+          </section>}
+          {!extendedCols && <section className="space-y-2">
+            <h3 className="font-semibold text-sm">Básico</h3>
+            <div className="grid md:grid-cols-4 gap-2">
+              <Input placeholder="Nome *" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} />
+              <select className="h-9 border rounded px-2" value={form.status||'ATIVO'} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>
+                {STATUS.map(s=> <option key={s} value={s}>{s}</option>)}
+              </select>
+              <Input placeholder="Preço Venda *" value={formatBRL(form.sale_price)}
+                onChange={e=>{
+                  const raw = e.target.value;
+                  const parsed = parseBRL(raw);
+                  setForm(f=>({...f, sale_price: parsed }));
+                }}
+                inputMode="decimal"
+              />
+              <Input placeholder="Custo" value={formatBRL(form.cost_price)}
+                onChange={e=>{
+                  const raw = e.target.value;
+                  const parsed = parseBRL(raw);
+                  setForm(f=>({...f, cost_price: parsed }));
+                }}
+                inputMode="decimal"
+              />
+            </div>
+            <Textarea placeholder="Descrição" value={form.description||''} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={3} />
+            <div className="text-xs text-amber-600">Colunas avançadas ausentes. Aplique migration 20250831150000_extend_products_fields.sql para liberar campos completos.</div>
+          </section>}
+          {/* Estoque */}
+            {extendedCols && <section className="space-y-2">
+              <h3 className="font-semibold text-sm">Estoque</h3>
+              <div className="grid md:grid-cols-4 gap-2">
+                <Input placeholder="Quantidade em Estoque" value={form.stock_qty ?? ''} onChange={e=>setForm(f=>({...f,stock_qty:e.target.value? Number(e.target.value):undefined}))} />
+                <Input placeholder="Estoque Mínimo" value={form.stock_min||''} onChange={e=>setForm(f=>({...f,stock_min:e.target.value? Number(e.target.value):undefined}))} />
+                <Input placeholder="Estoque Máximo" value={form.stock_max||''} onChange={e=>setForm(f=>({...f,stock_max:e.target.value? Number(e.target.value):undefined}))} />
+                <Input placeholder="Lote" value={form.lot_number||''} onChange={e=>setForm(f=>({...f,lot_number:e.target.value}))} />
+                <Input type="date" placeholder="Validade" value={form.validity_date||''} onChange={e=>setForm(f=>({...f,validity_date:e.target.value}))} />
+              </div>
+            </section>}
+          {/* Preços */}
+          {extendedCols && <section className="space-y-2">
+            <h3 className="font-semibold text-sm">Preços</h3>
+            <div className="grid md:grid-cols-4 gap-2">
+              <Input placeholder="Custo" value={formatBRL(form.cost_price)}
+                onChange={e=>{
+                  const raw = e.target.value;
+                  const parsed = parseBRL(raw);
+                  setForm(f=>({...f, cost_price: parsed }));
+                }}
+                inputMode="decimal"
+              />
+              <Input placeholder="Preço Venda *" value={formatBRL(form.sale_price)}
+                onChange={e=>{
+                  const raw = e.target.value;
+                  const parsed = parseBRL(raw);
+                  setForm(f=>({...f, sale_price: parsed }));
+                }}
+                inputMode="decimal"
+              />
+              <Input placeholder="Margem %" value={form.margin ?? ''}
+                onChange={e=>{
+                  const margin = Number(e.target.value.replace(/[^\d.]/g, ''));
+                  if(!isNaN(margin)) {
+                    setForm(f=>{
+                      const cost = f.cost_price ?? 0;
+                      return { ...f, margin, sale_price: calcSalePrice(cost, margin) };
+                    });
+                  } else {
+                    setForm(f=>({...f, margin: undefined }));
+                  }
+                }}
+                inputMode="decimal"
+              />
+              <Input placeholder="Prazo Pagamento" value={form.payment_terms||''} onChange={e=>setForm(f=>({...f,payment_terms:e.target.value}))} />
+            </div>
+          </section>}
+          {/* Fiscal */}
+          {extendedCols && <section className="space-y-2">
+            <h3 className="font-semibold text-sm">Fiscal / Tributação</h3>
+            <div className="grid md:grid-cols-6 gap-2">
+              <Input placeholder="NCM" value={form.ncm||''} onChange={e=>setForm(f=>({...f,ncm:e.target.value}))} />
+              <Input placeholder="CFOP" value={form.cfop||''} onChange={e=>setForm(f=>({...f,cfop:e.target.value}))} />
+              <Input placeholder="CEST" value={form.cest||''} onChange={e=>setForm(f=>({...f,cest:e.target.value}))} />
+              <Input placeholder="CST/CSOSN" value={form.cst||''} onChange={e=>setForm(f=>({...f,cst:e.target.value}))} />
+              <Input placeholder="Origem (0..8)" value={form.origin||''} onChange={e=>setForm(f=>({...f,origin:e.target.value}))} />
+              <Input placeholder="ICMS %" value={form.icms_rate??''} onChange={e=>setForm(f=>({...f,icms_rate:e.target.value? Number(e.target.value):undefined}))} />
+            </div>
+            <div className="grid md:grid-cols-3 gap-2">
+              <Input placeholder="PIS %" value={form.pis_rate??''} onChange={e=>setForm(f=>({...f,pis_rate:e.target.value? Number(e.target.value):undefined}))} />
+              <Input placeholder="COFINS %" value={form.cofins_rate??''} onChange={e=>setForm(f=>({...f,cofins_rate:e.target.value? Number(e.target.value):undefined}))} />
+              <select className="h-9 border rounded px-2" value={form.default_supplier_id||''} onChange={e=>setForm(f=>({...f,default_supplier_id:e.target.value||undefined}))}>
+                <option value="">Fornecedor Padrão</option>
+                {suppliers.map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          </section>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setOpen(false)}>Cancelar</Button>
+          <Button onClick={async()=>{
+            // upload imagem antes de salvar se houver
+            let uploadedUrl: string | undefined;
+            if(imageFile){
+              try {
+                const path = `produtos/${Date.now()}-${imageFile.name}`;
+                const { error:upErr } = await supabase.storage.from('product-images').upload(path, imageFile, { upsert:false });
+                if(upErr) throw upErr;
+                const { data:pub } = supabase.storage.from('product-images').getPublicUrl(path);
+                uploadedUrl = pub?.publicUrl;
+                setForm(f=>({...f, image_url: uploadedUrl }));
+              } catch(e:unknown){ toast.error('Upload falhou: '+ extractErr(e)); if(import.meta.env.DEV) console.error('upload error', e); }
+            }
+            if(uploadedUrl) form.image_url = uploadedUrl;
+            save();
+          }} disabled={saving}>{saving? 'Salvando...':'Salvar'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <AlertDialog open={!!confirmDelete} onOpenChange={(o)=>!o && setConfirmDelete(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remover produto?</AlertDialogTitle>
+        </AlertDialogHeader>
+        <div className="text-sm">Esta ação é permanente. Confirma excluir <b>{confirmDelete?.name}</b>?</div>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={()=>setConfirmDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={doDelete}>Excluir</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </Card>;
+}
+
+function calcMargin(f:ProductForm){
+  if(!f.sale_price || !f.cost_price || f.cost_price===0) return '';
+  const m = ((f.sale_price - f.cost_price)/f.sale_price)*100; return m.toFixed(1);
+}
+
+function extractErr(e:unknown): string {
+  if(!e) return 'Erro desconhecido';
+  if(typeof e === 'string') return e;
+  if(e instanceof Error) return e.message;
+  if(typeof e === 'object') {
+    try { return JSON.stringify(e); } catch { return Object.prototype.toString.call(e); }
+  }
+  return String(e);
+}

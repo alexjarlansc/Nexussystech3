@@ -24,6 +24,24 @@ export interface Client {
   phone?: string;
   email?: string;
   address?: string;
+  // Campos expandidos
+  birth_date?: string; // ISO date
+  sex?: string;
+  marital_status?: string;
+  street?: string; number?: string; complement?: string; neighborhood?: string; city?: string; state?: string; zip?: string;
+  phone_fixed?: string; phone_mobile?: string; whatsapp?: string;
+  preferred_payment_method?: string;
+  bank_info?: { bank?: string; agency?: string; account?: string; pix?: string; holder?: string };
+  credit_limit?: number;
+  interests?: string;
+  purchase_frequency?: string;
+  preferred_channel?: string;
+  custom_notes?: string;
+  documents?: { type?: string; url?: string; name?: string }[];
+  address_proof_url?: string;
+  signature_url?: string;
+  access_user?: string; access_role?: string;
+  interactions?: { date: string; type: string; note?: string }[]; // histórico simples
 }
 
 export interface Product {
@@ -32,7 +50,28 @@ export interface Product {
   description?: string;
   options?: string; // texto livre para opcionais
   imageDataUrl?: string;
+  image_url?: string; // armazenado no storage
+  // Legacy basic price (mantido para compatibilidade)
   price: number;
+  // Novos campos estendidos
+  code?: string;
+  category?: string;
+  brand?: string;
+  model?: string;
+  unit?: string;
+  stock_min?: number;
+  stock_max?: number;
+  location?: string;
+  cost_price?: number;
+  sale_price?: number; // preço de venda principal
+  status?: string; // ATIVO / INATIVO
+  validity_date?: string; // ISO date
+  lot_number?: string;
+  default_supplier_id?: string;
+  payment_terms?: string;
+  // Fiscal (podem já existir na tabela)
+  ncm?: string; cfop?: string; cest?: string; cst?: string; origin?: string;
+  icms_rate?: number; pis_rate?: number; cofins_rate?: number;
 }
 
 // ===== ERP NOVOS TIPOS =====
@@ -51,6 +90,7 @@ export interface Supplier {
   contact_name?: string;
   notes?: string;
   created_at?: string;
+  is_active?: boolean;
 }
 
 export interface Carrier {

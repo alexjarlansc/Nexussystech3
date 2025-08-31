@@ -27,6 +27,20 @@ export const ErpStockMovements = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ product_id: '', qty: '', type: 'IN', reason: '', loc_from: '', loc_to: '' });
+  const [companyId, setCompanyId] = useState<string|undefined>(undefined);
+  // Carregar companyId do profile do usuário autenticado
+  useEffect(()=>{(async()=>{
+    try {
+  const { data: userRes } = await supabase.auth.getUser();
+      const user = userRes?.user;
+      if(!user){ console.warn('Sem usuário autenticado para obter company_id'); return; }
+  const { data, error } = await supabase.from('profiles').select('company_id').eq('user_id', user.id).single();
+      if(error){ console.warn('Erro ao buscar profile para company_id', error); return; }
+      if(data?.company_id){ setCompanyId(data.company_id); }
+      else console.warn('Profile sem company_id');
+    } catch (err) { console.warn('Falha ao carregar company_id', err); }
+  })();},[]);
+  // Corrigir valor inicial para 'ENTRADA'
   const [products, setProducts] = useState<ProductOption[]>([]);
 
   async function loadProducts() {
@@ -37,19 +51,20 @@ export const ErpStockMovements = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-  const from = (page-1)*pageSize; const to = from + pageSize - 1;
-  let query = supabase.from('stock_movements').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(from,to);
+      const from = (page-1)*pageSize; const to = from + pageSize - 1;
+      let query = supabase.from('stock_movements').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(from,to);
+      if (companyId) query = query.eq('company_id', companyId);
       if (typeFilter) query = query.eq('type', typeFilter);
       if (search) query = query.ilike('reason', `%${search}%`);
-  const { data, error, count } = await query;
+      const { data, error, count } = await query;
       if (error) throw error;
       setRows(data || []);
-  setTotal(count||0);
+      setTotal(count||0);
     } catch (e) {
       const msg = (e instanceof Error) ? e.message : 'Falha ao carregar movimentos';
       toast.error(msg);
     } finally { setLoading(false); }
-  }, [typeFilter, search, page]);
+  }, [typeFilter, search, page, companyId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadProducts(); }, []);
@@ -60,10 +75,10 @@ export const ErpStockMovements = () => {
     if (!qtyNum || qtyNum <= 0) { toast.error('Qtd inválida'); return; }
     setCreating(true);
     try {
-  const payload = {
+      const payload = {
         p_product_id: form.product_id,
         p_qty: qtyNum,
-        p_type: form.type,
+        p_type: form.type, // agora já está no padrão correto
         p_reason: form.reason || null,
         p_location_from: form.loc_from || null,
         p_location_to: form.loc_to || null,
@@ -72,8 +87,8 @@ export const ErpStockMovements = () => {
       if (error) throw error;
       toast.success('Movimento registrado');
       setCreateOpen(false);
-      setForm({ product_id: '', qty: '', type: 'IN', reason: '', loc_from: '', loc_to: '' });
-  load();
+      setForm({ product_id: '', qty: '', type: 'ENTRADA', reason: '', loc_from: '', loc_to: '' });
+      load();
     } catch(e){
       const msg = (e instanceof Error) ? e.message : 'Erro ao registrar';
       toast.error(msg);
@@ -166,7 +181,11 @@ export const ErpStockMovements = () => {
               <label className='text-[11px] uppercase text-slate-500'>Produto</label>
               <select value={form.product_id} onChange={e=>setForm(f=>({...f, product_id:e.target.value}))} className='mt-1 w-full border rounded h-9 px-2'>
                 <option value=''>Selecione...</option>
-                {products.map(p=> <option key={p.id} value={p.id}>{p.name}</option>)}
+                {products.map(p => (
+                  <option key={p.id} value={p.id} title={p.name}>
+                    {p.name.length > 40 ? p.name.slice(0, 40) + '...' : p.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div className='flex gap-3'>

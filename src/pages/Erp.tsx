@@ -2,10 +2,12 @@ import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart } from 'lucide-react';
+import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 // Ícone simples para trocas/devoluções (setas circulares)
 const RotateIcon = () => <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 6.76 5.36L1 10" /><path d="M3.51 15A9 9 0 0 0 17.24 18.64L23 14" /></svg>;
 import { ErpSuppliers } from '@/components/erp/ErpSuppliers';
+import { ErpProducts } from '@/components/erp/ErpProducts';
 import { ErpCarriers } from '@/components/erp/ErpCarriers';
 import { ErpClients } from '@/components/erp/ErpClients';
 import ErpServiceOrders from '@/components/erp/ErpServiceOrders';
@@ -53,7 +55,11 @@ type SectionKey =
   | 'fin_payables'
   | 'fin_receivables'
   | 'fin_payroll'
-  | 'fiscal_docs';
+  | 'fiscal_docs'
+  | 'report_stock_full'
+  | 'report_sales_full'
+  | 'report_finance_full'
+  | 'reports_dashboard';
 
 export default function Erp() {
   const [section, setSection] = useState<SectionKey>('dashboard');
@@ -155,6 +161,13 @@ export default function Erp() {
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Emitir / Gerenciar" active={section==='fiscal_docs'} onClick={()=>setSection('fiscal_docs')} />
             </div>
+            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Relatórios" />
+            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Dashboard (KPIs)" active={section==='reports_dashboard'} onClick={()=>setSection('reports_dashboard')} />
+              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Estoque completo" active={section==='report_stock_full'} onClick={()=>setSection('report_stock_full')} />
+              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Vendas completo" active={section==='report_sales_full'} onClick={()=>setSection('report_sales_full')} />
+              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Financeiro completo" active={section==='report_finance_full'} onClick={()=>setSection('report_finance_full')} />
+            </div>
           </nav>
           <div className="p-3 border-t text-[10px] text-muted-foreground">
             MVP inicial do módulo ERP • Expandir funções posteriormente
@@ -169,7 +182,7 @@ export default function Erp() {
               {section === 'clients' && <ErpClients />}
               {section === 'suppliers' && <ErpSuppliers />}
               {section === 'carriers' && <ErpCarriers />}
-              {section === 'products_manage' && <ProductsManagePlaceholder />}
+              {section === 'products_manage' && <ErpProducts />}
               {section === 'products_pricing' && <ProductsPricingPlaceholder />}
               {section === 'product_groups' && <ProductGroupsPlaceholder />}
               {section === 'product_units' && <ProductUnitsPlaceholder />}
@@ -193,6 +206,10 @@ export default function Erp() {
               {section === 'fin_receivables' && <FinanceReceivablesPlaceholder />}
               {section === 'fin_payroll' && <FinancePayrollPlaceholder />}
               {section === 'fiscal_docs' && <FiscalDocsPlaceholder />}
+              {section === 'report_stock_full' && <ReportStockFull />}
+              {section === 'report_sales_full' && <ReportSalesFull />}
+              {section === 'report_finance_full' && <ReportFinanceFull />}
+              {section === 'reports_dashboard' && <ReportDashboard />}
             </div>
           </ScrollArea>
         </main>
@@ -866,3 +883,386 @@ function FinanceGeneric({ kind,title,numberField,amountField,paidField,supplierF
 }
 
 // Componente real de Ordens de Serviço integrado (placeholder removido)
+
+// ===== Relatórios Placeholders =====
+function BaseReportWrapper({ title, description, children, onExport, onExportXlsx }:{title:string; description:string; children:React.ReactNode; onExport?: ()=>void; onExportXlsx?:()=>void}) {
+  return <Card className="p-6 space-y-4">
+    <header className="flex flex-wrap gap-3 items-start">
+      <div>
+        <h2 className="text-xl font-semibold mb-1">{title}</h2>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      <div className="ml-auto flex gap-2 items-center">
+  <Button size="sm" variant="outline" onClick={() => onExport?.()}>CSV</Button>
+  <Button size="sm" variant="outline" onClick={() => onExportXlsx?.()}>XLSX</Button>
+        <Button size="sm" variant="outline" onClick={() => window.print()}>Imprimir</Button>
+      </div>
+    </header>
+    {children}
+    <div className="text-[10px] text-muted-foreground">Relatório resumido (MVP). Próximos passos: filtros avançados, agrupamentos, exportação XLSX/PDF.</div>
+  </Card>;
+}
+
+function ReportStockFull(){
+  // MVP aprimorado: limite + soma total
+  const [rows,setRows]=useState<any[]>([]);
+  const [loading,setLoading]=useState(false);
+  const [search,setSearch]=useState('');
+  const LIMIT=1500;
+  useEffect(()=>{(async()=>{
+    setLoading(true);
+    try {
+      let q = (supabase as any).from('product_stock').select('*').order('product_id').limit(LIMIT);
+      if (search) q = q.ilike('product_id','%'+search+'%');
+      const { data, error } = await q;
+      if (error) throw error;
+      setRows(data||[]);
+    } catch(e:any){ toast.error(e.message); } finally { setLoading(false); }
+  })();},[search]);
+  const totalQtd = rows.reduce((s:any,r:any)=> s + Number(r.stock||0),0);
+  const [page,setPage]=useState(1); const pageSize = 100; const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageRows = rows.slice((page-1)*pageSize, page*pageSize);
+  return <BaseReportWrapper title="Estoque Completo" description="Posição atual de estoque por produto (limite 1500 registros)" onExport={()=>exportCsv(rows,'estoque_completo.csv')} onExportXlsx={()=>exportXlsx(rows,'estoque_completo.xlsx')}>
+    <div className="flex gap-2 mb-2 text-xs flex-wrap items-end">
+      <Input placeholder="Produto" value={search} onChange={e=>setSearch(e.target.value)} className="w-40 h-8" />
+      <Button size="sm" variant="outline" onClick={()=>setSearch('')}>Limpar</Button>
+      <div className="ml-auto flex gap-4 font-medium text-[11px]">
+        <span>SKUs: {rows.length}</span>
+        <span>Total Estoque: {totalQtd}</span>
+      </div>
+    </div>
+    <div className="border rounded max-h-[480px] overflow-auto">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Produto</th><th className="px-2 py-1 text-right">Estoque</th></tr></thead>
+        <tbody>
+          {loading && <tr><td colSpan={2} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={2} className="text-center py-6 text-muted-foreground">Sem dados</td></tr>}
+          {!loading && pageRows.map(r=> <tr key={r.product_id} className="border-t"><td className="px-2 py-1">{r.product_id}</td><td className="px-2 py-1 text-right">{r.stock}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+    <div className="flex justify-between items-center mt-2 text-[11px] text-muted-foreground">
+      <span>Página {page} de {totalPages}</span>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</Button>
+        <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
+      </div>
+    </div>
+  </BaseReportWrapper>;
+}
+
+function ReportSalesFull(){
+  const [rows,setRows]=useState<any[]>([]); const [loading,setLoading]=useState(false);
+  const [from,setFrom]=useState(''); const [to,setTo]=useState('');
+  const [status,setStatus]=useState(''); const [payStatus,setPayStatus]=useState('');
+  useEffect(()=>{(async()=>{
+    setLoading(true);
+    try {
+      const applyFilters = (query:any)=>{
+        if (from) query = query.gte('created_at', from+'T00:00:00');
+        if (to) query = query.lte('created_at', to+'T23:59:59');
+        if (status) query = query.eq('status', status);
+        if (payStatus) query = query.eq('payment_status', payStatus);
+        return query;
+      };
+  const q = applyFilters((supabase as any).from('sales').select('created_at,total,sale_number,status,payment_status').order('created_at',{ascending:false}).limit(1000));
+  const { data, error } = await q;
+      if (error) {
+        const msg = (error.message||'').toLowerCase();
+        if (msg.includes('column') && msg.includes('total')) {
+          // fallback: buscar subtotal/discount/freight e calcular total localmente
+          const q2 = applyFilters((supabase as any).from('sales').select('created_at,subtotal,discount,freight,sale_number,status,payment_status').order('created_at',{ascending:false}).limit(1000));
+          const { data: data2, error: err2 } = await q2;
+            if (err2) throw err2;
+          const calc = (r:any)=> ({...r, total: (Number(r.subtotal||0) - Number(r.discount||0) + Number(r.freight||0))});
+          setRows((data2||[]).map(calc));
+          toast.message('Coluna total ausente - usando cálculo local');
+        } else throw error;
+      } else {
+        const enriched = (data||[]).map((r:any)=> r.total==null ? ({...r, total: (Number(r.subtotal||0) - Number(r.discount||0) + Number(r.freight||0))}) : r);
+        setRows(enriched);
+      }
+    } catch(e:any){ toast.error(e.message);} finally { setLoading(false); }
+  })();},[from,to,status,payStatus]);
+  const total = rows.reduce((s:any,r:any)=> s + Number(r.total||0),0);
+  const avg = rows.length? total/rows.length : 0;
+  const [page,setPage]=useState(1); const pageSize=100; const totalPages=Math.max(1,Math.ceil(rows.length/pageSize));
+  const pageRows = rows.slice((page-1)*pageSize, page*pageSize);
+  // resumo mensal
+  const monthly = rows.reduce((acc:any,r:any)=>{ const d=new Date(r.created_at); const k=d.getFullYear()+ '-' + String(d.getMonth()+1).padStart(2,'0'); acc[k]=(acc[k]||0)+ Number(r.total||0); return acc;},{});
+  const monthlyEntries = Object.entries(monthly).sort().slice(-6); // últimos 6
+  return <BaseReportWrapper title="Vendas Completo" description="Pedidos de venda consolidados (últimos 1000)" onExport={()=>exportCsv(rows,'vendas_completo.csv')} onExportXlsx={()=>exportXlsx(rows,'vendas_completo.xlsx')}>
+    <div className="flex gap-2 mb-2 text-xs flex-wrap items-end">
+      <Input type="date" value={from} onChange={e=>setFrom(e.target.value)} className="h-8" />
+      <Input type="date" value={to} onChange={e=>setTo(e.target.value)} className="h-8" />
+      <select value={status} onChange={e=>setStatus(e.target.value)} className="h-8 border rounded px-2">
+        <option value="">Status</option>
+        <option value="ABERTO">Aberto</option>
+        <option value="FATURADO">Faturado</option>
+        <option value="CANCELADO">Cancelado</option>
+      </select>
+      <select value={payStatus} onChange={e=>setPayStatus(e.target.value)} className="h-8 border rounded px-2">
+        <option value="">Pagamento</option>
+        <option value="PENDENTE">Pendente</option>
+        <option value="PAGO">Pago</option>
+        <option value="PARCIAL">Parcial</option>
+      </select>
+      <Button size="sm" variant="outline" onClick={()=>{setFrom('');setTo('');setStatus('');setPayStatus('');}}>Limpar</Button>
+      <div className="ml-auto flex gap-4 font-medium text-[11px]">
+        <span>Registros: {rows.length}</span>
+        <span>Total: {total.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
+        <span>Ticket Médio: {avg.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
+      </div>
+    </div>
+    <div className="border rounded max-h-[480px] overflow-auto">
+      <table className="w-full text-[11px]">
+        <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Data</th><th className="px-2 py-1 text-left">Número</th><th className="px-2 py-1 text-right">Total</th><th className="px-2 py-1 text-left">Status</th><th className="px-2 py-1 text-left">Pagamento</th></tr></thead>
+        <tbody>
+          {loading && <tr><td colSpan={5} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={5} className="text-center py-6 text-muted-foreground">Sem vendas</td></tr>}
+          {!loading && pageRows.map(r=> <tr key={r.sale_number} className="border-t"><td className="px-2 py-1 whitespace-nowrap">{new Date(r.created_at).toLocaleDateString('pt-BR')}</td><td className="px-2 py-1 font-medium">{r.sale_number}</td><td className="px-2 py-1 text-right">{Number(r.total||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td><td className="px-2 py-1">{r.status}</td><td className="px-2 py-1">{r.payment_status}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+    <div className="flex justify-between items-start mt-2 flex-wrap gap-4">
+      <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+        <span>Página {page} de {totalPages}</span>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</Button>
+          <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
+        </div>
+      </div>
+      <div className="text-[11px] bg-muted/40 rounded p-2 w-full md:w-auto">
+        <div className="font-medium mb-1 flex items-center gap-1"><BarChart2 className="h-3 w-3"/>Últimos meses</div>
+        <div className="h-28 w-full md:w-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={monthlyEntries.map(([m,v])=>({mes:m, valor:v}))}>
+              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+              <XAxis dataKey="mes" tick={{fontSize:10}} />
+              <YAxis tick={{fontSize:10}} width={48} />
+              <ReTooltip formatter={(v)=> (Number(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} />
+              <Bar dataKey="valor" fill="#2563eb" radius={[3,3,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  </BaseReportWrapper>;
+}
+
+function ReportFinanceFull(){
+  const [rows,setRows]=useState<any[]>([]); const [loading,setLoading]=useState(false);
+  const [from,setFrom]=useState(''); const [to,setTo]=useState('');
+  const [kind,setKind]=useState<'payables'|'receivables'>('payables');
+  const [status,setStatus]=useState('');
+  useEffect(()=>{(async()=>{
+    setLoading(true);
+    try {
+      const table = kind; // payables | receivables
+      let q = (supabase as any).from(table).select('*').order('due_date',{ascending:false}).limit(2000);
+      if (from) q = q.gte('due_date', from);
+      if (to) q = q.lte('due_date', to);
+      if (status) q = q.eq('status', status);
+      const { data, error } = await q;
+      if (error) throw error; setRows(data||[]);
+    } catch(e:any){ toast.error(e.message);} finally { setLoading(false); }
+  })();},[from,to,kind,status]);
+  const totalValor = rows.reduce((s:any,r:any)=> s + Number(r.amount||0),0);
+  const totalPago = rows.reduce((s:any,r:any)=> s + Number((r.paid_amount||r.received_amount)||0),0);
+  const totalAberto = totalValor - totalPago;
+  const [page,setPage]=useState(1); const pageSize=120; const totalPages=Math.max(1,Math.ceil(rows.length/pageSize));
+  const pageRows = rows.slice((page-1)*pageSize, page*pageSize);
+  // agregação por mês
+  const monthly = rows.reduce((acc:any,r:any)=>{ if(!r.due_date) return acc; const d=new Date(r.due_date); const k=d.getFullYear()+ '-' + String(d.getMonth()+1).padStart(2,'0'); acc[k]=(acc[k]||0)+ Number(r.amount||0); return acc;},{});
+  const monthlyEntries = Object.entries(monthly).sort().slice(-6);
+  return <BaseReportWrapper title="Financeiro Completo" description="Consolidado de contas a pagar/receber (limite 2000)" onExport={()=>exportCsv(rows,'financeiro_completo.csv')} onExportXlsx={()=>exportXlsx(rows,'financeiro_completo.xlsx')}>
+    <div className="flex gap-2 mb-2 text-xs flex-wrap items-end">
+      <select value={kind} onChange={e=>{setKind(e.target.value as any); setStatus('');}} className="h-8 border rounded px-2">
+        <option value="payables">Contas a Pagar</option>
+        <option value="receivables">Contas a Receber</option>
+      </select>
+      <Input type="date" value={from} onChange={e=>setFrom(e.target.value)} className="h-8" />
+      <Input type="date" value={to} onChange={e=>setTo(e.target.value)} className="h-8" />
+      <select value={status} onChange={e=>setStatus(e.target.value)} className="h-8 border rounded px-2">
+        <option value="">Status</option>
+        <option value="ABERTO">Aberto</option>
+        <option value="PARCIAL">Parcial</option>
+        <option value={kind==='payables'?'PAGO':'RECEBIDO'}>{kind==='payables'?'Pago':'Recebido'}</option>
+        <option value="CANCELADO">Cancelado</option>
+      </select>
+      <Button size="sm" variant="outline" onClick={()=>{setFrom('');setTo('');setStatus('');}}>Limpar</Button>
+      <div className="ml-auto flex gap-4 font-medium text-[11px] flex-wrap">
+        <span>Valor: {totalValor.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
+        <span>{kind==='payables'?'Pago':'Recebido'}: {totalPago.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
+        <span>Em Aberto: {totalAberto.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
+      </div>
+    </div>
+    <div className="border rounded max-h-[480px] overflow-auto">
+      <table className="w-full text-[11px]">
+        <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Número</th><th className="px-2 py-1 text-left">Descrição</th><th className="px-2 py-1 text-left">Vencimento</th><th className="px-2 py-1 text-right">Valor</th><th className="px-2 py-1 text-right">Pago/Rec</th><th className="px-2 py-1 text-left">Status</th></tr></thead>
+        <tbody>
+          {loading && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Sem registros</td></tr>}
+          {!loading && pageRows.map(r=> <tr key={r.id} className="border-t"><td className="px-2 py-1 font-medium">{r.payable_number||r.receivable_number}</td><td className="px-2 py-1 truncate max-w-[180px]">{r.description}</td><td className="px-2 py-1 whitespace-nowrap">{r.due_date? new Date(r.due_date).toLocaleDateString('pt-BR'):'-'}</td><td className="px-2 py-1 text-right">{Number(r.amount||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td><td className="px-2 py-1 text-right">{Number((r.paid_amount||r.received_amount)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td><td className="px-2 py-1">{r.status}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+    <div className="flex justify-between items-start mt-2 flex-wrap gap-4">
+      <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+        <span>Página {page} de {totalPages}</span>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</Button>
+          <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
+        </div>
+      </div>
+      <div className="text-[11px] bg-muted/40 rounded p-2 w-full md:w-auto">
+        <div className="font-medium mb-1 flex items-center gap-1"><BarChart2 className="h-3 w-3"/>Últimos meses</div>
+        <div className="h-28 w-full md:w-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={monthlyEntries.map(([m,v])=>({mes:m, valor:v}))}>
+              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+              <XAxis dataKey="mes" tick={{fontSize:10}} />
+              <YAxis tick={{fontSize:10}} width={48} />
+              <ReTooltip formatter={(v)=> (Number(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} />
+              <Bar dataKey="valor" fill="#0f766e" radius={[3,3,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  </BaseReportWrapper>;
+}
+
+function exportCsv(rows:any[], filename:string){
+  if (!rows || rows.length===0) { toast.message('Sem dados para exportar'); return; }
+  const headers = Object.keys(rows[0]);
+  const escape = (v:any)=> '"'+ String(v??'').replace(/"/g,'""') +'"';
+  const csv = [headers.join(','), ...rows.map(r=> headers.map(h=>escape(r[h])).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),2000);
+  toast.success('Exportado');
+}
+
+async function exportXlsx(rows:any[], filename:string){
+  if (!rows || rows.length===0) { toast.message('Sem dados para exportar'); return; }
+  try {
+    const XLSX = await import('xlsx');
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Dados');
+    const wbout = XLSX.write(wb, { type:'array', bookType:'xlsx'});
+    const blob = new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),2500);
+    toast.success('XLSX gerado');
+  } catch(e:any){ toast.error(e.message); }
+}
+
+// ===== Dashboard de Relatórios =====
+function ReportDashboard(){
+  const [range,setRange]=useState<{from:string;to:string}>({from:'',to:''});
+  const [loading,setLoading]=useState(false);
+  const [kpi,setKpi]=useState<{vendas:number; pedidos:number; ticket:number; receber:number; pagar:number; saldo:number}>({vendas:0,pedidos:0,ticket:0,receber:0,pagar:0,saldo:0});
+  const [topClientes,setTopClientes]=useState<any[]>([]);
+  const [erro,setErro]=useState<string|null>(null);
+  useEffect(()=>{(async()=>{
+    setLoading(true); setErro(null);
+    try {
+      const from = range.from? range.from+'T00:00:00' : undefined;
+      const to = range.to? range.to+'T23:59:59' : undefined;
+      // vendas
+      const applySaleFilters = (q:any)=>{ if (from) q = q.gte('created_at', from); if (to) q = q.lte('created_at', to); return q; };
+  const qSales = applySaleFilters((supabase as any).from('sales').select('total,created_at,client_snapshot').limit(5000));
+  const { data: salesData, error: salesErr } = await qSales;
+  let salesDataLocal:any[]|null = salesData || [];
+      if (salesErr) {
+        const msg = (salesErr.message||'').toLowerCase();
+        if (msg.includes('column') && msg.includes('total')) {
+          // refaz query pegando subtotal/discount/freight
+          const q2 = applySaleFilters((supabase as any).from('sales').select('subtotal,discount,freight,created_at,client_snapshot').limit(5000));
+          const { data: s2, error: e2 } = await q2; if (e2) throw e2;
+          salesDataLocal = (s2||[]).map((r:any)=> ({...r, total: (Number(r.subtotal||0)-Number(r.discount||0)+Number(r.freight||0))}));
+          toast.message('Dashboard: coluna total ausente - cálculo local');
+        } else throw salesErr;
+      }
+  const totalVendas = (salesDataLocal||[]).reduce((s:any,r:any)=> s + Number(r.total|| (Number(r.subtotal||0)-Number(r.discount||0)+Number(r.freight||0))),0);
+  const pedidos = (salesDataLocal||[]).length;
+      const ticket = pedidos? totalVendas/pedidos:0;
+      // contas a receber
+      let qRec = (supabase as any).from('receivables').select('amount,received_amount,created_at').limit(5000);
+      if (from) qRec = qRec.gte('created_at', from); if (to) qRec = qRec.lte('created_at', to);
+      const { data: recData } = await qRec;
+      const receber = (recData||[]).reduce((s:any,r:any)=> s + (Number(r.amount||0) - Number(r.received_amount||0)),0);
+      // contas a pagar
+      let pagar = 0;
+      try {
+        let qPay = (supabase as any).from('payables').select('amount,paid_amount,created_at').limit(5000);
+        if (from) qPay = qPay.gte('created_at', from); if (to) qPay = qPay.lte('created_at', to);
+        const { data: payData, error: payErr } = await qPay;
+        if (payErr) {
+          const msg = (payErr.message||'').toLowerCase();
+          if (msg.includes('payables')) {
+            toast.message('Tabela payables ausente - KPI Pagar = 0');
+          } else throw payErr;
+        } else {
+          pagar = (payData||[]).reduce((s:any,r:any)=> s + (Number(r.amount||0) - Number(r.paid_amount||0)),0);
+        }
+      } catch(inner:any){ console.warn('Falha payables', inner); }
+      const saldo = receber - pagar;
+      // top clientes por total (client_snapshot name)
+      const mapa:any = {};
+  (salesDataLocal||[]).forEach((r:any)=>{ let nome='-'; if(r.client_snapshot && typeof r.client_snapshot==='object'){ nome = (r.client_snapshot as any).name||(r.client_snapshot as any).company_name||'-'; } mapa[nome]=(mapa[nome]||0)+ Number(r.total||0); });
+  const top = Object.entries(mapa).map(([cliente,valor])=>({cliente,valor:Number(valor)||0})).sort((a,b)=> (b.valor||0) - (a.valor||0)).slice(0,10);
+      setTopClientes(top);
+      setKpi({vendas:totalVendas,pedidos, ticket, receber, pagar, saldo});
+    } catch(e:any){ setErro(e.message); } finally { setLoading(false); }
+  })();},[range.from,range.to]);
+  return <Card className="p-6 space-y-6">
+    <div className="flex flex-wrap gap-3 items-end">
+      <div>
+        <h2 className="text-xl font-semibold mb-1">Dashboard de KPIs</h2>
+        <p className="text-sm text-muted-foreground">Visão consolidada (limite 5000 registros por conjunto).</p>
+      </div>
+      <div className="flex gap-2 ml-auto text-xs items-end">
+        <div className="flex flex-col">
+          <label className="text-[10px] uppercase font-medium">De</label>
+          <Input type="date" value={range.from} onChange={e=>setRange(r=>({...r,from:e.target.value}))} className="h-8" />
+        </div>
+        <div className="flex flex-col">
+          <label className="text-[10px] uppercase font-medium">Até</label>
+          <Input type="date" value={range.to} onChange={e=>setRange(r=>({...r,to:e.target.value}))} className="h-8" />
+        </div>
+        <Button size="sm" variant="outline" onClick={()=>setRange({from:'',to:''})}>Limpar</Button>
+      </div>
+    </div>
+    {erro && <div className="text-sm text-red-500">{erro}</div>}
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <KpiCard label="Total Vendas" value={kpi.vendas} currency />
+      <KpiCard label="Pedidos" value={kpi.pedidos} />
+      <KpiCard label="Ticket Médio" value={kpi.ticket} currency />
+      <KpiCard label="A Receber" value={kpi.receber} currency />
+      <KpiCard label="A Pagar" value={kpi.pagar} currency />
+      <KpiCard label="Saldo (Receber - Pagar)" value={kpi.saldo} currency highlight={kpi.saldo>=0} />
+    </div>
+    <div className="space-y-2">
+      <h3 className="font-semibold text-sm">Top 10 Clientes (Total Vendas)</h3>
+      <div className="border rounded overflow-auto max-h-72">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Cliente</th><th className="px-2 py-1 text-right">Total</th><th className="px-2 py-1 text-right">%</th></tr></thead>
+          <tbody>
+            {loading && <tr><td colSpan={3} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+            {!loading && topClientes.length===0 && <tr><td colSpan={3} className="text-center py-6 text-muted-foreground">Sem dados</td></tr>}
+            {!loading && topClientes.map(c=> <tr key={c.cliente} className="border-t"><td className="px-2 py-1 truncate max-w-[180px]" title={c.cliente}>{c.cliente}</td><td className="px-2 py-1 text-right">{Number(c.valor).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td><td className="px-2 py-1 text-right">{kpi.vendas? ((c.valor/kpi.vendas)*100).toFixed(1)+'%':'-'}</td></tr>)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </Card>;
+}
+
+function KpiCard({label,value,currency,highlight}:{label:string; value:number; currency?:boolean; highlight?:boolean}){
+  return <div className={`p-4 rounded border bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 shadow-sm flex flex-col gap-1 ${highlight? 'border-emerald-500/40 ring-1 ring-emerald-500/30':''}`}> 
+    <div className="text-[11px] uppercase font-medium text-slate-500 tracking-wide">{label}</div>
+    <div className={`text-lg font-semibold ${highlight? 'text-emerald-600 dark:text-emerald-400':''}`}>{currency? value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}): value.toLocaleString('pt-BR')}</div>
+  </div>;
+}

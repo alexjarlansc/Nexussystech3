@@ -1,0 +1,1 @@
+-- Script removido conforme solicitado

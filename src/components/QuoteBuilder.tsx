@@ -1479,33 +1479,53 @@ function SearchProductModal({
         placeholder="Buscar por nome ou código..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
+        className="w-full"
       />
-      <div className="max-h-[50vh] overflow-auto space-y-2">
+      <div className="max-h-[60vh] overflow-auto flex flex-col gap-2">
         {filteredProducts.length === 0 && (
           <div className="text-sm text-muted-foreground">Nenhum produto encontrado.</div>
         )}
         {filteredProducts.map((p) => (
-          <div 
-            key={p.id} 
-            className="flex items-center justify-between border rounded-md p-3 hover:bg-accent/50 cursor-pointer"
+          <button
+            type="button"
+            key={p.id}
+            className="flex items-center justify-between border rounded-lg p-3 bg-background hover:bg-accent/70 active:bg-accent/90 cursor-pointer w-full focus:outline-none focus:ring-2 focus:ring-primary gap-2 transition"
             onClick={() => onSelectProduct(p)}
+            style={{ minHeight: 64 }}
           >
-            <div className="flex items-center gap-3">
-              {p.imageDataUrl ? (
-                <img src={p.imageDataUrl} alt={p.name} className="h-10 w-10 rounded object-cover border" />
+            <div className="flex items-center gap-3 min-w-0">
+              {p.imageDataUrl || p.image_url ? (
+                <img
+                  src={p.imageDataUrl || p.image_url}
+                  alt={p.name}
+                  className="h-14 w-14 rounded object-cover border bg-white flex-shrink-0"
+                  loading="lazy"
+                />
               ) : (
-                <div className="h-10 w-10 rounded border bg-accent/60 grid place-items-center text-xs">IMG</div>
+                <div className="h-14 w-14 rounded border bg-accent/60 grid place-items-center text-xs text-muted-foreground flex-shrink-0">IMG</div>
               )}
-              <div>
-                <div className="font-medium">{p.name}</div>
-                <div className="text-xs text-muted-foreground">Código: {p.id.slice(-8)}</div>
-                <div className="text-xs text-muted-foreground">{currencyBRL(p.price)}</div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-medium truncate max-w-[120px] sm:max-w-[200px]">{p.name}</span>
+                <span className="text-xs text-muted-foreground truncate">Código: {p.id.slice(-8)}</span>
+                <span className="text-xs text-muted-foreground">{currencyBRL(p.price)}</span>
               </div>
             </div>
-            <Button size="sm" variant="secondary">Adicionar</Button>
-          </div>
+            <span className="ml-2">
+              <Button size="sm" variant="secondary" className="px-3 py-1 text-xs">Adicionar</Button>
+            </span>
+          </button>
         ))}
       </div>
+      <style>{`
+        @media (max-width: 640px) {
+          .sm\\:max-w-lg, .sm\\:max-w-2xl {
+            max-width: 100vw !important;
+            width: 100vw !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

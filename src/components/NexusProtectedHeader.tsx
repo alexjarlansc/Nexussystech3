@@ -129,18 +129,22 @@ export function NexusProtectedHeader() {
   return (
     <>
       <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="container mx-auto px-4 py-2">
+  <div className="w-full mx-auto px-2 sm:px-4 py-2">
           {/* Wrapper que permite empilhar no mobile e alinhar lado a lado em telas maiores */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3 min-w-0">
-              <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+            <Link
+              to="/"
+              aria-label="Ir para início"
+              className="flex items-center gap-3 min-w-0 group cursor-pointer select-none pr-4 mr-auto -ml-1 sm:-ml-2"
+            >
+              <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0 transition-transform group-hover:scale-105" />
               <div className="leading-tight min-w-0">
-                <h1 className="font-bold text-primary text-lg sm:text-xl">Nexus System</h1>
-                <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px]">
-                  {company?.name}
+                <h1 className="font-bold text-primary text-lg sm:text-xl tracking-tight group-hover:opacity-90">Nexus System</h1>
+                <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px] group-hover:text-primary/80 transition-colors">
+                  {company?.name || 'Início'}
                 </p>
               </div>
-            </div>
+            </Link>
 
             {/* Ações / usuário */}
             <div className="flex items-center flex-wrap gap-1 sm:gap-2 justify-end">
@@ -156,20 +160,14 @@ export function NexusProtectedHeader() {
                 </Badge>
               </div>
 
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                aria-label="Editar perfil"
-                onClick={() => {
-                  setFirstName(profile?.first_name || '');
-                  setPhone(profile?.phone || '');
-                  setEmail(profile?.email || '');
-                  setOpenProfile(true);
-                }}
-              >
-                <User className="h-4 w-4" />
-              </Button>
+              {profile?.role === 'admin' && (
+                <Link
+                  to="/erp"
+                  className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted order-0"
+                  aria-label="ERP"
+                  title="ERP"
+                >ERP</Link>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -189,14 +187,20 @@ export function NexusProtectedHeader() {
               {profile?.role === 'pdv' && (
                 <Link to="/pdv" className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted">PDV</Link>
               )}
-              {profile?.role === 'admin' && (
-                <Link
-                  to="/erp"
-                  className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted"
-                  aria-label="ERP"
-                  title="ERP"
-                >ERP</Link>
-              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                aria-label="Editar perfil"
+                onClick={() => {
+                  setFirstName(profile?.first_name || '');
+                  setPhone(profile?.phone || '');
+                  setEmail(profile?.email || '');
+                  setOpenProfile(true);
+                }}
+              >
+                <User className="h-4 w-4" />
+              </Button>
               {profile?.role === 'admin' && (
                 <Button
                   variant="ghost"
