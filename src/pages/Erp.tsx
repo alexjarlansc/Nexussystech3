@@ -82,6 +82,15 @@ export default function Erp() {
   }, []);
 
   // Mantemos seção acessível mesmo sem orçamentos (apenas mostra vazio)
+  // Scroll para topo ao mudar de seção
+  useEffect(() => {
+    try {
+      const el = document.getElementById('erp-main-scroll');
+      if (el) el.scrollTo({ top: 0, behavior: 'smooth' });
+      // fallback janela
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (_) { /* noop */ }
+  }, [section]);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
@@ -92,19 +101,13 @@ export default function Erp() {
           <div className="px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Módulo ERP</div>
           <nav className="flex-1 px-2 space-y-1 text-sm">
             <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Visão Geral" active={section==='dashboard'} onClick={()=>setSection('dashboard')} />
-            <div className="mt-3 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <FolderTree className="h-3.5 w-3.5" />
-              <span>Cadastro</span>
-            </div>
+            <GroupTitle icon={<FolderTree className="h-3.5 w-3.5" />} label="Cadastro" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<Users className='h-4 w-4' />} label="Clientes" active={section==='clients'} onClick={()=>setSection('clients')} />
               <ErpNavItem icon={<Users className='h-4 w-4' />} label="Fornecedores" active={section==='suppliers'} onClick={()=>setSection('suppliers')} />
               <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transportadoras" active={section==='carriers'} onClick={()=>setSection('carriers')} />
             </div>
-            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <Package className="h-3.5 w-3.5" />
-              <span>Produtos</span>
-            </div>
+            <GroupTitle icon={<Package className="h-3.5 w-3.5" />} label="Produtos" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<Package className='h-4 w-4' />} label="Gerenciar Produtos" active={section==='products_manage'} onClick={()=>setSection('products_manage')} />
               <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Valores de Vendas" active={section==='products_pricing'} onClick={()=>setSection('products_pricing')} />
@@ -113,64 +116,42 @@ export default function Erp() {
               <ErpNavItem icon={<Layers className='h-4 w-4' />} label="Grades / Variações" active={section==='product_variations'} onClick={()=>setSection('product_variations')} />
               <ErpNavItem icon={<Tags className='h-4 w-4' />} label="Etiquetas / Códigos" active={section==='product_labels'} onClick={()=>setSection('product_labels')} />
             </div>
-            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <Settings2 className="h-3.5 w-3.5" />
-              <span>Operação</span>
-            </div>
+            <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Estoque" active={section==='stock'} onClick={()=>setSection('stock')} />
               <ErpNavItem icon={<Wrench className='h-4 w-4' />} label="Serviços" active={section==='services'} onClick={()=>setSection('services')} />
             </div>
-            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <Boxes className="h-3.5 w-3.5" />
-              <span>Estoque</span>
-            </div>
+            <GroupTitle icon={<Boxes className="h-3.5 w-3.5" />} label="Estoque" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Movimentações" active={section==='stock_movements'} onClick={()=>setSection('stock_movements')} />
               <ErpNavItem icon={<RefreshCcw className='h-4 w-4' />} label="Ajustes" active={section==='stock_adjustments'} onClick={()=>setSection('stock_adjustments')} />
               <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transferências" active={section==='stock_transfers'} onClick={()=>setSection('stock_transfers')} />
               <ErpNavItem icon={<RotateIcon /> as any} label="Trocas / Devoluções" active={section==='stock_returns'} onClick={()=>setSection('stock_returns')} />
             </div>
-            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <FileText className="h-3.5 w-3.5" />
-              <span>Orçamentos</span>
-              <span className="ml-auto text-[9px] font-normal text-slate-400">{quotesCount}</span>
-            </div>
+            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Orçamentos" count={quotesCount} />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Orçamentos" active={section==='budgets'} onClick={()=>setSection('budgets')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Ordens de Serviços" active={section==='service_orders'} onClick={()=>setSection('service_orders')} />
             </div>
-            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <ShoppingCart className="h-3.5 w-3.5" />
-              <span>Vendas</span>
-            </div>
+            <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Vendas" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Vendas" active={section==='sales_orders'} onClick={()=>setSection('sales_orders')} />
               <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Serviços" active={section==='service_sales_orders'} onClick={()=>setSection('service_sales_orders')} />
             </div>
-            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <ShoppingCart className="h-3.5 w-3.5" />
-              <span>Compras</span>
-            </div>
+            <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Compras" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Lançamento de Compra" active={section==='purchases_list'} onClick={()=>setSection('purchases_list')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Gerar via XML" active={section==='purchases_xml'} onClick={()=>setSection('purchases_xml')} />
               <ErpNavItem icon={<RotateIcon /> as any} label="Troca / Devolução" active={section==='purchases_returns'} onClick={()=>setSection('purchases_returns')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Histórico de Compras" active={section==='purchases_history'} onClick={()=>setSection('purchases_history')} />
             </div>
-            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <FileText className="h-3.5 w-3.5" />
-              <span>Financeiro</span>
-            </div>
+            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Financeiro" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Pagar" active={section==='fin_payables'} onClick={()=>setSection('fin_payables')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Receber" active={section==='fin_receivables'} onClick={()=>setSection('fin_receivables')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Folha de Pagamento" active={section==='fin_payroll'} onClick={()=>setSection('fin_payroll')} />
             </div>
-            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <FileText className="h-3.5 w-3.5" />
-              <span>Notas Fiscais</span>
-            </div>
+            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Notas Fiscais" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Emitir / Gerenciar" active={section==='fiscal_docs'} onClick={()=>setSection('fiscal_docs')} />
             </div>
@@ -182,7 +163,7 @@ export default function Erp() {
 
         {/* Main content */}
         <main className="flex-1 overflow-auto">
-          <ScrollArea className="h-full">
+          <ScrollArea id="erp-main-scroll" className="h-full">
             <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
               {section === 'dashboard' && <ErpDashboard />}
               {section === 'clients' && <ErpClients />}
@@ -370,6 +351,23 @@ function ErpNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; l
     >
       {icon}<span className="truncate">{label}</span>
     </button>
+  );
+}
+
+function GroupTitle({ icon, label, count }: { icon: React.ReactNode; label: string; count?: number }) {
+  return (
+    <div className="mt-5 first:mt-3 mb-1 flex items-center gap-2 px-2 py-1 rounded-md group relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent opacity-70 dark:from-primary/20 dark:via-primary/10 pointer-events-none" />
+      <div className="flex items-center gap-2 relative z-10">
+        <span className="inline-flex items-center justify-center h-5 w-5 rounded bg-primary/20 text-primary shadow-sm">
+          {icon}
+        </span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-primary drop-shadow-sm">
+          {label}
+        </span>
+      </div>
+      {typeof count === 'number' && <span className="ml-auto relative z-10 text-[10px] font-medium rounded px-1.5 py-0.5 bg-primary/20 text-primary/90">{count}</span>}
+    </div>
   );
 }
 
@@ -565,7 +563,14 @@ function FiscalDocsPlaceholder(){
     const numResp = await (supabase as any).rpc('next_nfe_number'); const nfe_number = numResp.data;
     // montar itens simples a partir de sale.items
     const saleItems = Array.isArray(selectedSale.items)? selectedSale.items : (typeof selectedSale.items==='object'? Object.values(selectedSale.items): []);
-    const mapped = saleItems.map((it:any,idx:number)=> ({ line_number: idx+1, description: it.name||it.description||'Item', quantity: it.quantity||it.qty||1, unit_price: it.price||it.unit_price||0, total: (it.quantity||it.qty||1)*(it.price||it.unit_price||0) }));
+    const mapped = saleItems.map((it:any,idx:number)=> ({
+      line_number: idx+1,
+      product_id: it.product_id || it.id || it.productId || null,
+      description: it.name||it.description||'Item',
+      quantity: it.quantity||it.qty||1,
+      unit_price: it.price||it.unit_price||0,
+      total: (it.quantity||it.qty||1) * (it.price||it.unit_price||0)
+    }));
     const totalProducts = mapped.reduce((s:any,i:any)=> s + Number(i.total||0),0);
     const payload = { nfe_number, sale_id: selectedSale.id, client_id: null, client_snapshot: selectedSale.client_snapshot||null, emit_snapshot:null, items: mapped, total_products: totalProducts, total_invoice: totalProducts, status:'DRAFT'};
     const { error } = await (supabase as any).from('nfe_invoices').insert(payload);
@@ -573,6 +578,11 @@ function FiscalDocsPlaceholder(){
   async function sign(inv:any){ const { data, error } = await (supabase as any).rpc('sign_nfe',{p_invoice_id: inv.id}); if(error || !data?.ok) return toast.error(error?.message||data?.error||'Erro'); toast.success('Assinada'); inv.status='SIGNED'; setRows(r=>[...r]); }
   async function transmit(inv:any){ const { data, error } = await (supabase as any).rpc('transmit_nfe',{p_invoice_id: inv.id}); if(error || !data?.ok) return toast.error(error?.message||data?.error||'Erro'); toast.success('Autorizada'); inv.status='AUTHORIZED'; setRows(r=>[...r]); }
   async function cancel(inv:any){ const reason='Cancelamento teste'; const { data, error } = await (supabase as any).rpc('cancel_nfe',{p_invoice_id: inv.id, p_reason: reason}); if(error || !data?.ok) return toast.error(error?.message||data?.error||'Erro'); toast.success('Cancelada'); inv.status='CANCELLED'; setRows(r=>[...r]); }
+  async function computeTaxes(inv:any){ const { data, error } = await (supabase as any).rpc('compute_nfe_taxes',{p_invoice_id: inv.id}); if(error || !data?.ok) return toast.error(error?.message||data?.error||'Falha impostos'); toast.success('Impostos calculados'); }
+  async function generateXml(inv:any){ const { data, error } = await (supabase as any).rpc('generate_nfe_xml',{p_invoice_id: inv.id}); if(error || !data?.ok) return toast.error(error?.message||data?.error||'Falha XML'); toast.success('XML gerado'); }
+  async function correction(inv:any){ const txt='Correção exemplo'; const { data, error } = await (supabase as any).rpc('add_nfe_correction',{p_invoice_id: inv.id, p_text: txt}); if(error || !data?.ok) return toast.error(error?.message||data?.error||'Falha CC-e'); toast.success('CC-e registrada'); }
+  async function danfe(inv:any){ const { data, error } = await (supabase as any).rpc('generate_danfe_html',{p_invoice_id: inv.id}); if(error) return toast.error(error.message); const w = window.open('about:blank','_blank'); if (w) { w.document.write(data); w.document.close(); }
+  }
   return <Card className="p-6 space-y-4">
     <div className="flex items-start gap-4 flex-wrap">
       <div>
@@ -596,9 +606,13 @@ function FiscalDocsPlaceholder(){
             <td className="px-2 py-1">{inv.status}</td>
             <td className="px-2 py-1">{Number(inv.total_invoice||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
             <td className="px-2 py-1 flex gap-1 flex-wrap">
+              {inv.status==='DRAFT' && <Button size="sm" variant="outline" onClick={()=>computeTaxes(inv)}>Impostos</Button>}
+              {inv.status==='DRAFT' && <Button size="sm" variant="outline" onClick={()=>generateXml(inv)}>XML</Button>}
               {inv.status==='DRAFT' && <Button size="sm" variant="outline" onClick={()=>sign(inv)}>Assinar</Button>}
               {['SIGNED','SENT'].includes(inv.status) && <Button size="sm" variant="outline" onClick={()=>transmit(inv)}>Transmitir</Button>}
               {inv.status==='AUTHORIZED' && <Button size="sm" variant="outline" onClick={()=>cancel(inv)}>Cancelar</Button>}
+              {['AUTHORIZED','REJECTED'].includes(inv.status) && <Button size="sm" variant="outline" onClick={()=>correction(inv)}>CC-e</Button>}
+              <Button size="sm" variant="outline" onClick={()=>danfe(inv)}>DANFe</Button>
             </td>
           </tr>)}
         </tbody>

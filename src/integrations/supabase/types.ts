@@ -637,6 +637,18 @@ export type AppDatabase = {
         Update: { id?:string; invoice_id?:string; event_type?:string; payload?:Json|null; created_at?:string; created_by?:string|null }
         Relationships: []
       }
+      ,nfe_config: {
+        Row: { id:string; company_id:string|null; environment:string; series:number; last_number:number; csc_id:string|null; csc_token:string|null; cert_pfx_base64:string|null; cert_password:string|null; updated_at:string }
+        Insert: { id?:string; company_id?:string|null; environment?:string; series?:number; last_number?:number; csc_id?:string|null; csc_token?:string|null; cert_pfx_base64?:string|null; cert_password?:string|null; updated_at?:string }
+        Update: { id?:string; company_id?:string|null; environment?:string; series?:number; last_number?:number; csc_id?:string|null; csc_token?:string|null; cert_pfx_base64?:string|null; cert_password?:string|null; updated_at?:string }
+        Relationships: []
+      }
+      ,nfe_audit: {
+        Row: { id:number; invoice_id:string; action:string; changed_at:string; old_data:Json|null; new_data:Json|null; user_id:string|null }
+        Insert: { id?:number; invoice_id:string; action:string; changed_at?:string; old_data?:Json|null; new_data?:Json|null; user_id?:string|null }
+        Update: { id?:number; invoice_id?:string; action?:string; changed_at?:string; old_data?:Json|null; new_data?:Json|null; user_id?:string|null }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -678,6 +690,12 @@ export type AppDatabase = {
   ,sign_nfe: { Args: { p_invoice_id: string }; Returns: Json }
   ,transmit_nfe: { Args: { p_invoice_id: string }; Returns: Json }
   ,cancel_nfe: { Args: { p_invoice_id: string; p_reason: string }; Returns: Json }
+  ,upsert_nfe_config: { Args: { p_environment: string; p_series: number; p_csc_id: string; p_csc_token: string; p_cert_pfx_base64: string; p_cert_password: string }; Returns: Json }
+  ,get_nfe_config: { Args: Record<string, never>; Returns: Json }
+  ,compute_nfe_taxes: { Args: { p_invoice_id: string }; Returns: Json }
+  ,generate_nfe_xml: { Args: { p_invoice_id: string }; Returns: Json }
+  ,add_nfe_correction: { Args: { p_invoice_id: string; p_text: string }; Returns: Json }
+  ,generate_danfe_html: { Args: { p_invoice_id: string }; Returns: string }
       ,next_purchase_number: {
         Args: Record<PropertyKey, never>
         Returns: string
