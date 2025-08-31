@@ -241,8 +241,10 @@ export default function PDV() {
   function buildNfeDraft(){
     if(!linkedQuote){ toast.error('Carregue um Pedido primeiro'); return; }
     if(items.length===0){ toast.error('Sem itens para NF-e'); return; }
-    const now = new Date();
-    const num = 'NFe' + now.toISOString().replace(/[-:TZ.]/g,'').slice(0,14);
+  const now = new Date();
+  // Timestamp compacto YYYYMMDDHHMMSS sem regex para evitar gerar padrões que viram classes inválidas
+  const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
+  const num = 'NFe' + ts;
     const emit: NFeParty = {
       nome: profile?.first_name || 'Emitente',
       // TODO: Recuperar CNPJ real da empresa (ex: tabela companies). Placeholder usado.

@@ -202,7 +202,9 @@ export const ErpServiceOrders: React.FC = () => {
                 const { data: numData, error: numErr } = await (supabase as any).rpc('next_service_order_number');
                 let number: string = typeof numData === 'string' ? numData : '';
                 if (numErr || !number) {
-                  const stamp = new Date().toISOString().replace(/[-:TZ.]/g,'').slice(2,10); // YYMMDDHH
+                  const d = new Date();
+                  // YYMMDDHH sem regex para evitar padrões inválidos no build CSS
+                  const stamp = `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}${String(d.getHours()).padStart(2,'0')}`; // YYMMDDHH
                   const rand = Math.random().toString().slice(2,7);
                   number = 'OS' + stamp + rand; // fallback
                 }
