@@ -40,7 +40,19 @@ export const ErpPurchasesList = () => {
       const { data, error, count } = await q;
       if (error) throw error;
       setRows(data||[]); setTotal(count||0);
-    } catch(e){ const msg=e instanceof Error?e.message:'Falha'; setError(msg);} finally { setLoading(false); }
+    } catch(e: unknown){
+      let msg = 'Falha';
+      if (e) {
+        if (typeof e === 'object' && 'message' in e) {
+          const m = (e as { message?: unknown }).message;
+          if (typeof m === 'string') msg = m;
+        }
+        else if (typeof e === 'string') msg = e;
+        else { try { msg = JSON.stringify(e); } catch { /* ignore */ } }
+      }
+      console.error('Erro ao carregar compras', e);
+      setError(msg);
+    } finally { setLoading(false); }
   },[search,status,type,page]);
 
   useEffect(()=>{ load(); },[load]);
@@ -127,8 +139,8 @@ export const ErpPurchasesList = () => {
       <table className='w-full text-xs'>
         <thead className='bg-muted/50'><tr><th className='px-2 py-1 text-left'>Data</th><th className='px-2 py-1 text-left'>Número</th><th className='px-2 py-1 text-left'>Tipo</th><th className='px-2 py-1 text-left'>Status</th><th className='px-2 py-1 text-right'>Total</th><th className='px-2 py-1 text-left'>Fornecedor</th><th className='px-2 py-1 text-right'>Ações</th></tr></thead>
         <tbody>
-          {loading && <tr><td colSpan={6} className='text-center py-6 text-muted-foreground'>Carregando...</td></tr>}
-          {!loading && rows.length===0 && <tr><td colSpan={6} className='text-center py-6 text-muted-foreground'>Sem compras</td></tr>}
+          {loading && <tr><td colSpan={7} className='text-center py-6 text-muted-foreground'>Carregando...</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={7} className='text-center py-6 text-muted-foreground'>Sem compras</td></tr>}
           {!loading && rows.map(r=> {
             let supName='-';
             if (r.supplier_snapshot && typeof r.supplier_snapshot==='object' && !Array.isArray(r.supplier_snapshot)){
@@ -145,17 +157,18 @@ export const ErpPurchasesList = () => {
               <td className='px-2 py-1 text-right'>
                 {r.status==='ABERTA' && <Button size='sm' variant='outline' disabled={closingId===r.id} onClick={async()=>{
                   setClosingId(r.id);
-                  interface FinalizeResp { ok?: boolean; error?: string }
-                  const rpcCall = supabase.rpc('finalize_purchase' as unknown as 'next_purchase_number', { p_purchase_id: r.id } as unknown as never) as unknown as Promise<{ data: FinalizeResp | null; error: { message: string } | null }>;
-                  const { data, error } = await rpcCall;
-                  const result = data as unknown as { ok?: boolean; error?: string } | null;
-                  if (error || !result?.ok) {
-                    toast.error(error?.message || result?.error || 'Falha ao fechar');
-                  } else {
-                    toast.success('Compra fechada');
-                    load();
-                  }
-                  setClosingId(null);
+                  interface FinalizePurchaseResp { ok?: boolean; error?: string }
+                  try {
+                    const rpcFinalize: (fn: string, args: { p_purchase_id: string }) => Promise<{ data: FinalizePurchaseResp | null; error: { message: string } | null }> = (fn, args) => (supabase.rpc as unknown as (fn:string, args:{ p_purchase_id: string })=>Promise<{ data: unknown; error: { message: string } | null }>)(fn,args).then(r=> ({ data: r.data as FinalizePurchaseResp | null, error: r.error }));
+                    const { data: resp, error } = await rpcFinalize('finalize_purchase', { p_purchase_id: r.id });
+                    if (error) throw error;
+                    if (!resp || resp.ok !== true) {
+                      toast.error(resp?.error || 'Falha ao fechar');
+                    } else {
+                      toast.success('Compra fechada');
+                      load();
+                    }
+                  } catch(e){ const msg = e instanceof Error? e.message : 'Erro'; toast.error(msg);} finally { setClosingId(null); }
                 }}>{closingId===r.id? '...':'Fechar'}</Button>}
               </td>
             </tr>})}
