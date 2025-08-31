@@ -22,6 +22,7 @@ export const ErpPurchasesList = () => {
   const [openNew,setOpenNew]=useState(false);
   const [saving,setSaving]=useState(false);
   const [suppliers,setSuppliers]=useState<SupplierOption[]>([]);
+  const [closingId,setClosingId]=useState<string|null>(null);
   const [products,setProducts]=useState<ProductOption[]>([]);
   const [items,setItems]=useState<{product_id:string; qty:string; unit_cost:string;}[]>([]);
   const [supplierId,setSupplierId]=useState('');
@@ -124,7 +125,7 @@ export const ErpPurchasesList = () => {
     {error && <div className='text-sm text-red-500'>{error}</div>}
     <div className='border rounded overflow-auto max-h-[500px]'>
       <table className='w-full text-xs'>
-        <thead className='bg-muted/50'><tr><th className='px-2 py-1 text-left'>Data</th><th className='px-2 py-1 text-left'>Número</th><th className='px-2 py-1 text-left'>Tipo</th><th className='px-2 py-1 text-left'>Status</th><th className='px-2 py-1 text-right'>Total</th><th className='px-2 py-1 text-left'>Fornecedor</th></tr></thead>
+        <thead className='bg-muted/50'><tr><th className='px-2 py-1 text-left'>Data</th><th className='px-2 py-1 text-left'>Número</th><th className='px-2 py-1 text-left'>Tipo</th><th className='px-2 py-1 text-left'>Status</th><th className='px-2 py-1 text-right'>Total</th><th className='px-2 py-1 text-left'>Fornecedor</th><th className='px-2 py-1 text-right'>Ações</th></tr></thead>
         <tbody>
           {loading && <tr><td colSpan={6} className='text-center py-6 text-muted-foreground'>Carregando...</td></tr>}
           {!loading && rows.length===0 && <tr><td colSpan={6} className='text-center py-6 text-muted-foreground'>Sem compras</td></tr>}
@@ -141,6 +142,22 @@ export const ErpPurchasesList = () => {
               <td className='px-2 py-1'>{r.status}</td>
               <td className='px-2 py-1 text-right'>{Number(r.total).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
               <td className='px-2 py-1 truncate max-w-[160px]' title={supName}>{supName}</td>
+              <td className='px-2 py-1 text-right'>
+                {r.status==='ABERTA' && <Button size='sm' variant='outline' disabled={closingId===r.id} onClick={async()=>{
+                  setClosingId(r.id);
+                  interface FinalizeResp { ok?: boolean; error?: string }
+                  const rpcCall = supabase.rpc('finalize_purchase' as unknown as 'next_purchase_number', { p_purchase_id: r.id } as unknown as never) as unknown as Promise<{ data: FinalizeResp | null; error: { message: string } | null }>;
+                  const { data, error } = await rpcCall;
+                  const result = data as unknown as { ok?: boolean; error?: string } | null;
+                  if (error || !result?.ok) {
+                    toast.error(error?.message || result?.error || 'Falha ao fechar');
+                  } else {
+                    toast.success('Compra fechada');
+                    load();
+                  }
+                  setClosingId(null);
+                }}>{closingId===r.id? '...':'Fechar'}</Button>}
+              </td>
             </tr>})}
         </tbody>
       </table>
