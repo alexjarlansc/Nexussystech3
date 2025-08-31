@@ -3,38 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/sonner';
 import { useNavigate } from 'react-router-dom';
-
-interface Profile {
-  id: string;
-  user_id: string;
-  company_id: string;
-  role: 'user' | 'admin' | 'pdv';
-  first_name?: string;
-  phone?: string;
-  email?: string;
-}
-
-interface Company {
-  id: string;
-  name: string;
-  cnpj_cpf?: string;
-  phone?: string;
-  email?: string;
-  address?: string;
-  logo_url?: string;
-}
-
-type BasicResult = { error: { message: string } | null };
-interface InviteCode {
-  id?: string;
-  code: string;
-  role: 'user' | 'admin' | 'pdv';
-  created_at?: string;
-  expires_at?: string;
-  used_by?: string | null;
-}
-interface InviteCodeResult { code?: string; error: { message: string } | null }
-interface CodesResult { data: InviteCode[]; error: { message: string } | null }
+import { Profile, Company, BasicResult, InviteCode, InviteCodeResult, CodesResult, AuthSignUpData } from './authTypes';
 
 interface AuthContextType {
   user: User | null;
@@ -44,16 +13,7 @@ interface AuthContextType {
   loading: boolean;
   error: string | null;
   signIn: (email: string, password: string) => Promise<BasicResult>;
-  signUp: (email: string, password: string, userData: {
-    firstName: string;
-    companyName: string;
-    cnpjCpf?: string;
-    phone?: string;
-    companyEmail?: string;
-    address?: string;
-    role?: 'user' | 'admin';
-    inviteCode?: string;
-  }) => Promise<BasicResult>;
+  signUp: (email: string, password: string, userData: AuthSignUpData) => Promise<BasicResult>;
   signOut: () => Promise<void>;
   updateProfile: (data: Partial<Profile>) => Promise<BasicResult>;
   updateCompany: (data: Partial<Company>) => Promise<BasicResult>;
@@ -242,16 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signUp = async (email: string, password: string, userData: {
-    firstName: string;
-    companyName: string;
-    cnpjCpf?: string;
-    phone?: string;
-    companyEmail?: string;
-    address?: string;
-    role?: 'user' | 'admin' | 'pdv';
-    inviteCode?: string;
-  }) => {
+  const signUp = async (email: string, password: string, userData: AuthSignUpData) => {
     try {
       // Check invite code if provided
       if (userData.inviteCode) {
