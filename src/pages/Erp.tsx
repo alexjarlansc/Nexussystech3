@@ -52,7 +52,8 @@ type SectionKey =
   | 'purchases_history'
   | 'fin_payables'
   | 'fin_receivables'
-  | 'fin_payroll';
+  | 'fin_payroll'
+  | 'fiscal_docs';
 
 export default function Erp() {
   const [section, setSection] = useState<SectionKey>('dashboard');
@@ -166,6 +167,13 @@ export default function Erp() {
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Receber" active={section==='fin_receivables'} onClick={()=>setSection('fin_receivables')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Folha de Pagamento" active={section==='fin_payroll'} onClick={()=>setSection('fin_payroll')} />
             </div>
+            <div className="mt-5 mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <FileText className="h-3.5 w-3.5" />
+              <span>Notas Fiscais</span>
+            </div>
+            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Emitir / Gerenciar" active={section==='fiscal_docs'} onClick={()=>setSection('fiscal_docs')} />
+            </div>
           </nav>
           <div className="p-3 border-t text-[10px] text-muted-foreground">
             MVP inicial do módulo ERP • Expandir funções posteriormente
@@ -203,6 +211,7 @@ export default function Erp() {
               {section === 'fin_payables' && <FinancePayablesPlaceholder />}
               {section === 'fin_receivables' && <FinanceReceivablesPlaceholder />}
               {section === 'fin_payroll' && <FinancePayrollPlaceholder />}
+              {section === 'fiscal_docs' && <FiscalDocsPlaceholder />}
             </div>
           </ScrollArea>
         </main>
@@ -545,6 +554,20 @@ function FinanceReceivablesPlaceholder(){
 function FinancePayrollPlaceholder(){
   return <FinanceGeneric kind="payroll" title="Folha de Pagamento" numberField="payroll_number" amountField="gross_amount" paidField="net_amount" payroll />;
 }
+function FiscalDocsPlaceholder(){
+  return <Card className="p-6 space-y-4">
+    <div>
+      <h2 className="text-xl font-semibold mb-1">Notas Fiscais (NFe)</h2>
+      <p className="text-sm text-muted-foreground">Central de emissão/consulta. Também disponível no PDV.</p>
+    </div>
+    <div className="grid gap-3 md:grid-cols-3 text-xs">
+      <Card className="p-3"><h3 className="font-medium mb-1 text-sm">Emitir NFe</h3><p className="text-muted-foreground">Gerar nota a partir de venda / pedido / orçamento convertido.</p><Button size="sm" className="mt-2" disabled>Nova (futuro)</Button></Card>
+      <Card className="p-3"><h3 className="font-medium mb-1 text-sm">Consultar Situação</h3><p className="text-muted-foreground">Status SEFAZ, protocolos, rejeições.</p><Button size="sm" variant="outline" className="mt-2" disabled>Atualizar</Button></Card>
+      <Card className="p-3"><h3 className="font-medium mb-1 text-sm">Configurações</h3><p className="text-muted-foreground">Certificado, série, numeração, CSC / token.</p><Button size="sm" variant="outline" className="mt-2" disabled>Abrir</Button></Card>
+    </div>
+    <div className="text-xs text-muted-foreground">Próximos passos: vincular tabela fiscal (nfe_headers / nfe_items), assinar XML, transmitir, armazenar protocolos, download PDF DANFe e cancelamento/carta de correção.</div>
+  </Card>;
+}
 
 interface FinanceGenericProps {
   kind:'payables'|'receivables'|'payroll';
@@ -669,8 +692,8 @@ function FinanceGeneric({ kind,title,numberField,amountField,paidField,supplierF
             <td className="px-2 py-1 text-right">{Number(r[paidField]||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
             <td className="px-2 py-1">{r.status}</td>
             <td className="px-2 py-1">
-              { !payroll && (r.status==='ABERTO' || r.status==='PARCIAL') && <Button size="xs" variant="outline" onClick={()=>setOpenPay({id:r.id, amount:Number(r[amountField]||0), paid:Number(r[paidField]||0), number:r[numberField]})}>Baixa</Button> }
-              { payroll && r.status==='ABERTA' && <Button size="xs" variant="outline" onClick={async()=>{
+              { !payroll && (r.status==='ABERTO' || r.status==='PARCIAL') && <Button size="sm" variant="outline" onClick={()=>setOpenPay({id:r.id, amount:Number(r[amountField]||0), paid:Number(r[paidField]||0), number:r[numberField]})}>Baixa</Button> }
+              { payroll && r.status==='ABERTA' && <Button size="sm" variant="outline" onClick={async()=>{
                 const { error } = await (supabase as any).from('payroll').update({ status:'PAGA', payment_date: new Date().toISOString() }).eq('id',r.id);
                 if (error) toast.error(error.message); else { toast.success('Folha paga'); setPage(p=>p); }
               }}>Pagar</Button> }
