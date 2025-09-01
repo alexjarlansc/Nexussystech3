@@ -1527,11 +1527,11 @@ function SearchProductModal({
           <button
             type="button"
             key={p.id}
-            className="flex items-center justify-between border rounded-lg p-3 bg-background hover:bg-accent/70 active:bg-accent/90 cursor-pointer w-full focus:outline-none focus:ring-2 focus:ring-primary gap-2 transition"
+            className="flex flex-col sm:flex-row items-start sm:items-center justify-between border rounded-lg p-3 bg-background hover:bg-accent/70 active:bg-accent/90 cursor-pointer w-full focus:outline-none focus:ring-2 focus:ring-primary gap-2 transition"
             onClick={() => onSelectProduct(p)}
             style={{ minHeight: 64 }}
           >
-            <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-start sm:items-center gap-3 min-w-0">
               {p.imageDataUrl || p.image_url ? (
                 <img
                   src={p.imageDataUrl || p.image_url}
@@ -1542,9 +1542,9 @@ function SearchProductModal({
               ) : (
                 <div className="h-14 w-14 rounded border bg-accent/60 grid place-items-center text-xs text-muted-foreground flex-shrink-0">IMG</div>
               )}
-              <div className="flex flex-col min-w-0">
-                <span className="font-medium text-sm leading-tight max-h-10 overflow-hidden">{p.name}</span>
-                <span className="text-xs text-muted-foreground truncate">Código: {p.code ? p.code : p.id.slice(-8)}</span>
+              <div className="flex flex-col min-w-0 text-left">
+                <span className="font-medium text-sm leading-tight max-h-12 overflow-hidden break-words">{p.name}</span>
+                <span className="text-xs text-muted-foreground">Código: {p.code ? p.code : p.id.slice(-8)}</span>
                 <div className="text-xs text-muted-foreground flex gap-3 mt-1">
                   <span>Preço: {currencyBRL(p.sale_price ?? p.price)}</span>
                   <span> Custo: {p.cost_price != null ? currencyBRL(p.cost_price) : '—'}</span>
@@ -1552,9 +1552,8 @@ function SearchProductModal({
                 </div>
               </div>
             </div>
-            <div className="ml-2 flex gap-2">
+            <div className="ml-0 sm:ml-2 mt-2 sm:mt-0 flex gap-2">
               <Button size="sm" variant="secondary" className="px-3 py-1 text-xs">Adicionar</Button>
-              {/* Botão 'Registrar Movimento' removido conforme solicitado */}
             </div>
           </button>
         ))}
