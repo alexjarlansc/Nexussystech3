@@ -900,19 +900,7 @@ export default function QuoteBuilder() {
                 <h3 className="font-semibold">Itens</h3>
                 <div className="flex flex-col sm:flex-row gap-2 w-full">
                   <Button size="sm" variant="secondary" onClick={() => setOpenSearchProduct(true)}>Buscar Produto</Button>
-                  <Button 
-                    size="sm" 
-                    variant="secondary" 
-                    onClick={() => {
-                      if (profile?.role !== 'admin') {
-                        toast.error('Apenas administradores podem cadastrar produtos');
-                        return;
-                      }
-                      setOpenProduct(true);
-                    }}
-                  >
-                    Cadastrar Produto
-                  </Button>
+                  {/* botão de cadastrar produto removido por solicitação: opção escondida nesta tela */}
                   <Button size="sm" variant="outline" onClick={() => setOpenManageProducts(true)}>Gerenciar Produtos</Button>
                 </div>
               </div>
@@ -1367,7 +1355,7 @@ export default function QuoteBuilder() {
             {profile?.role === 'admin' && (
               <div className="mb-4 p-3 bg-accent/50 rounded-lg">
                 <p className="text-sm text-muted-foreground">
-                  <strong>Administrador:</strong> Você pode editar, criar novos produtos e excluir produtos existentes.
+                  <strong>Administrador:</strong> Acesso a detalhes avançados dos produtos.
                 </p>
               </div>
             )}
@@ -1385,24 +1373,21 @@ export default function QuoteBuilder() {
               </div>
             )}
             {products.map((p) => (
-              <div key={p.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between border rounded-md p-3">
-                <div className="flex items-start sm:items-center gap-3 w-full">
+              <div key={p.id} className="border rounded-md p-3">
+                <div className="flex items-start gap-3">
                   {p.imageDataUrl ? (
-                    <img src={p.imageDataUrl} alt={p.name} className="h-12 w-12 rounded object-cover border" />
+                    <img src={p.imageDataUrl} alt={p.name} className="h-12 w-12 rounded object-cover border flex-shrink-0" />
                   ) : (
-                    <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-xs">IMG</div>
+                    <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-xs flex-shrink-0">IMG</div>
                   )}
-                  <div className="flex-1">
-                    <div className="font-medium text-sm leading-tight mb-1 max-h-8 overflow-hidden break-words text-[13px]">{p.name}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm mb-1 text-[13px] truncate">{p.name}</div>
                     <div className="text-xs text-muted-foreground">{currencyBRL(p.price)}</div>
-                    {/* Mostrar apenas resumo; detalhes via expand */}
                     {p.description && (
-                      <div className="text-xs text-muted-foreground mt-1 break-words">{String(p.description).slice(0,80)}{String(p.description).length > 80 ? '...' : ''}</div>
+                      <div className="text-xs text-muted-foreground mt-1 max-h-10 overflow-hidden">{String(p.description).slice(0,80)}{String(p.description).length > 80 ? '...' : ''}</div>
                     )}
                   </div>
-                </div>
-                <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2 mt-2 sm:mt-0">
-                  <div className="flex items-center gap-2">
+                  <div className="ml-2 flex-shrink-0">
                     <button
                       type="button"
                       className="text-xs text-muted-foreground underline-offset-1 hover:underline"
@@ -1411,38 +1396,9 @@ export default function QuoteBuilder() {
                       {expandedProducts?.[p.id] ? 'Ocultar' : 'Detalhes'}
                     </button>
                   </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setOpenEditProduct(p)}>Editar</Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => {
-                        if (profile?.role !== 'admin') {
-                          toast.error('Apenas administradores podem cadastrar produtos');
-                          return;
-                        }
-                        setOpenProduct(true);
-                      }}
-                    >
-                      Novo
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="destructive" 
-                      onClick={() => {
-                        if (profile?.role !== 'admin') {
-                          toast.error('Apenas administradores podem excluir produtos');
-                          return;
-                        }
-                        deleteProduct(p.id);
-                      }}
-                    >
-                      Excluir
-                    </Button>
-                  </div>
                 </div>
                 {expandedProducts?.[p.id] && (
-                  <div className="w-full mt-3 sm:mt-2 text-xs text-muted-foreground">
+                  <div className="mt-3 text-xs text-muted-foreground border-t pt-2">
                     {String(p.description).split('•').filter(Boolean).map((line, idx) => (
                       <div key={idx} className="py-0.5">{line.trim()}</div>
                     ))}

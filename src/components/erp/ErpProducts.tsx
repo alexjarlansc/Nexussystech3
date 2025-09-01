@@ -53,8 +53,8 @@ export function ErpProducts(){
   const [saving,setSaving]=useState(false);
   const [suppliers,setSuppliers]=useState<Supplier[]>([]);
   const [editing,setEditing]=useState<Product|null>(null);
-  const empty:ProductForm={ name:'', unit:'UN', status:'ATIVO'};
-  const [form,setForm]=useState<ProductForm>(empty);
+  const makeEmpty = (): ProductForm => ({ name: '', unit: 'UN', status: 'ATIVO' });
+  const [form,setForm]=useState<ProductForm>(makeEmpty());
   const [imageFile,setImageFile]=useState<File|null>(null);
   const [confirmDelete,setConfirmDelete]=useState<null|Product>(null);
   const [extendedCols,setExtendedCols]=useState(true); // se false não enviar campos novos
@@ -234,7 +234,8 @@ export function ErpProducts(){
       }
       if(resp.error) throw resp.error;
       toast.success(editing?'Produto atualizado':'Produto criado');
-      setOpen(false); setEditing(null); setForm(empty); load();
+  setOpen(false); setEditing(null); setForm(makeEmpty()); load();
+    setOpen(false); setEditing(null); setForm(makeEmpty()); load();
     } catch(e:unknown){ toast.error(extractErr(e)); if(import.meta.env.DEV) console.error('save product error', e); }
     setSaving(false);
   }
@@ -245,7 +246,7 @@ export function ErpProducts(){
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  function startNew(){ setEditing(null); setForm(empty); setOpen(true); }
+  function startNew(){ setEditing(null); setForm(makeEmpty()); setOpen(true); }
   function normalizeNumber(v: unknown): number|undefined {
     if(v === null || v === undefined || v === '') return undefined;
     if(typeof v === 'number') return v;
@@ -280,7 +281,8 @@ export function ErpProducts(){
   // Se código legado placeholder, limpar para forçar geração nova
   if(scrubbed.code === 'sample_code') scrubbed.code = '';
   if(import.meta.env.DEV) console.log('Editar produto raw:', p);
-  setEditing(p);
+  // clonar para evitar mutação por referência direta ao objeto listado em `rows`
+  setEditing({ ...p });
     setForm(scrubbed);
     setOpen(true);
   }
@@ -521,7 +523,8 @@ export function ErpProducts(){
             let uploadedUrl: string | undefined;
             if(imageFile){
               try {
-                const path = `produtos/${Date.now()}-${imageFile.name}`;
+                const identifier = editing?.id ? String(editing.id) : String(Date.now());
+                const path = `produtos/${identifier}-${Date.now()}-${imageFile.name}`;
                 // tenta bucket específico de imagens do produto
                 let bucket = 'product-images';
                 let upErr: any = null;
@@ -531,7 +534,9 @@ export function ErpProducts(){
                   if(!upErr){
                     const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path) as any;
                     uploadedUrl = pub?.publicUrl;
+                    // aplicar apenas ao form e ao produto em edição
                     setForm(f=>({...f, image_url: uploadedUrl }));
+                    if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
                   }
                 } catch(errInner) {
                   upErr = errInner;
@@ -547,6 +552,7 @@ export function ErpProducts(){
                       const { data: pub2 } = supabase.storage.from(bucket).getPublicUrl(path) as any;
                       uploadedUrl = pub2?.publicUrl;
                       setForm(f=>({...f, image_url: uploadedUrl }));
+                      if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
                     } catch(err2) {
                       // Se o fallback também falhar por bucket não encontrado, converter para data URL e salvar direto no campo image_url
                       const errMsg = extractErr(err2 || upErr).toLowerCase();
@@ -555,11 +561,12 @@ export function ErpProducts(){
                         const dataUrl = await new Promise<string>((resolve, reject) => {
                           const reader = new FileReader();
                           reader.onload = () => resolve(String(reader.result));
-                          reader.onerror = () => reject(new Error('Falha ao ler arquivo')); 
+                          reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
                           reader.readAsDataURL(imageFile);
                         });
                         uploadedUrl = dataUrl;
                         setForm(f=>({...f, image_url: uploadedUrl, imageDataUrl: uploadedUrl }));
+                        if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
                       } else {
                         throw err2 || upErr;
                       }
@@ -573,10 +580,14 @@ export function ErpProducts(){
             // Se não houver novo upload mas já existe image_url no form, manter
             if(!uploadedUrl && form.image_url) uploadedUrl = form.image_url;
             if(uploadedUrl) {
-              form.image_url = uploadedUrl;
               setForm(f=>({...f, image_url: uploadedUrl}));
             }
-            save();
+            // salvar e atualizar apenas a linha alterada em memória
+            await save();
+            // garantir que rows reflitam a alteração (caso backend não retorne a URL imediatamente)
+            if(editing && (editing.id)){
+              setRows(prev => prev.map(r => r.id === editing.id ? { ...r, image_url: form.image_url || uploadedUrl } : r));
+            }
           }} disabled={saving}>{saving? 'Salvando...':'Salvar'}</Button>
         </DialogFooter>
       </DialogContent>
