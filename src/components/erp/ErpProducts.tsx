@@ -46,6 +46,9 @@ export function ErpProducts(){
   const [rows,setRows]=useState<(Product & { stock?: number, reserved?: number })[]>([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState('');
+  // Sugestões leves para autocomplete (não precisa do objeto Product completo)
+  type ProdSuggestion = { id: string; name: string; code?: string };
+  const [prodSearchSuggestions, setProdSearchSuggestions] = useState<ProdSuggestion[]>([]);
   const [open,setOpen]=useState(false);
   const [saving,setSaving]=useState(false);
   const [suppliers,setSuppliers]=useState<Supplier[]>([]);
@@ -87,6 +90,21 @@ export function ErpProducts(){
   }
   useEffect(()=>{ load(); loadSuppliers(); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+  // Autocomplete de produto na busca
+  useEffect(() => {
+    if (!search) { setProdSearchSuggestions([]); return; }
+    (async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id,name,code')
+        .or(`name.ilike.%${search}%,code.ilike.%${search}%`)
+        .limit(10);
+      if (!error && Array.isArray(data)) {
+        // Garante que cada item tenha os campos mínimos
+        setProdSearchSuggestions(data.map((p: any) => ({ id: String(p.id), name: String(p.name || ''), code: p.code ? String(p.code) : undefined })));
+      } else setProdSearchSuggestions([]);
+    })();
+  }, [search]);
   // Carregar companyId do profile do usuário autenticado (evita pegar outro profile)
   useEffect(()=>{(async()=>{
     try {
@@ -116,6 +134,23 @@ export function ErpProducts(){
 
   async function save(){
     if(!form.name.trim()){ toast.error('Nome obrigatório'); return; }
+    if(!form.code || !form.code.trim()){
+      toast.error('Código obrigatório');
+      return;
+    }
+    // Verificar unicidade do código
+  // cast to any to avoid deep generic instantiation in TS when selecting minimal fields
+  const { data: codeExists } = await (supabase as any)
+      .from('products')
+      .select('id')
+      .eq('code', form.code.trim())
+      .neq('id', editing?.id || '')
+      .limit(1)
+      .single();
+    if(codeExists){
+      toast.error('Já existe um produto com este código!');
+      return;
+    }
     const salePrice = Number(form.sale_price||form.price||0);
     if(isNaN(salePrice)){ toast.error('Preço inválido'); return; }
     setSaving(true);
@@ -230,7 +265,7 @@ export function ErpProducts(){
       cofins_rate: normalizeNumber((p as any).cofins_rate)
     };
     // Sanitizar qualquer objeto inesperado (evitar [object Object] em inputs)
-    const scrubbed: ProductForm = Object.fromEntries(
+  const scrubbed: ProductForm = Object.fromEntries(
       Object.entries(norm).map(([k,v])=> {
         if(v && typeof v === 'object') {
           if (v instanceof Date) return [k, v.toISOString().slice(0,10)];
@@ -239,6 +274,9 @@ export function ErpProducts(){
         return [k,v];
       })
     ) as ProductForm;
+  // Se a linha passada contém stock (vinda da listagem), popular stock_qty para exibição
+  const maybeStock = (p as any).stock;
+  if(typeof maybeStock === 'number') scrubbed.stock_qty = maybeStock;
   // Se código legado placeholder, limpar para forçar geração nova
   if(scrubbed.code === 'sample_code') scrubbed.code = '';
   if(import.meta.env.DEV) console.log('Editar produto raw:', p);
@@ -268,7 +306,31 @@ export function ErpProducts(){
         <p className="text-sm text-muted-foreground">Cadastro completo de itens para estoque, vendas e fiscal.</p>
       </div>
       <div className="flex gap-2 ml-auto flex-wrap">
-  <Input placeholder="Buscar nome" value={search} onChange={e=>setSearch(e.target.value)} className="w-48" />
+  <div className="relative">
+    <Input
+      placeholder="Buscar nome ou código"
+      value={search}
+      onChange={e=>setSearch(e.target.value)}
+      className="w-48"
+      autoComplete="off"
+    />
+    {prodSearchSuggestions.length > 0 && (
+      <ul className="absolute z-10 bg-white border rounded w-48 mt-1 shadow-lg max-h-40 overflow-auto text-xs">
+        {prodSearchSuggestions.map(p => (
+          <li
+            key={p.id}
+            className="px-2 py-1 cursor-pointer hover:bg-muted/30"
+            onClick={() => {
+              setSearch(p.code ? `${p.code} - ${p.name}` : p.name);
+              setProdSearchSuggestions([]);
+            }}
+          >
+            {p.code ? <span className="font-mono text-slate-600">{p.code}</span> : null} {p.name}
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
   <Button size="sm" onClick={load} disabled={loading}>{loading?'Carregando...':'Filtrar'}</Button>
   <Button size="sm" onClick={startNew}>Novo</Button>
       </div>
@@ -315,7 +377,7 @@ export function ErpProducts(){
             <h3 className="font-semibold text-sm">Básico</h3>
             <div className="grid md:grid-cols-4 gap-2">
               <div className="flex gap-2">
-                <Input placeholder="Código (gerar)" value={form.code||''} onChange={e=>setForm(f=>({...f,code:e.target.value}))} />
+                <Input placeholder="Código *" value={form.code||''} onChange={e=>setForm(f=>({...f,code:e.target.value}))} required />
                 <Button type="button" variant="outline" size="sm" onClick={()=>{
                   const code = generateLocalCode();
                   setForm(f=>({...f, code }));
@@ -349,7 +411,7 @@ export function ErpProducts(){
                 <div className="flex items-center gap-2">
                   {imageFile && <img src={URL.createObjectURL(imageFile)} alt="preview" className="h-16 w-16 object-cover rounded border" />}
                   {!imageFile && editing?.image_url && <img src={editing.image_url} alt="img" className="h-16 w-16 object-cover rounded border" />}
-                  {(imageFile || editing?.image_url) && <Button size="sm" variant="outline" onClick={()=>{setImageFile(null); if(editing) editing.image_url=undefined;}}>Remover</Button>}
+                  {(imageFile || editing?.image_url || editing?.imageDataUrl) && <Button size="sm" variant="outline" onClick={()=>{setImageFile(null); setForm(f=>({...f, image_url: undefined, imageDataUrl: undefined})); if(editing) setEditing({...editing, image_url: undefined, imageDataUrl: undefined} as Product);}}>Remover</Button>}
                 </div>
               )}
             </div>
@@ -386,7 +448,8 @@ export function ErpProducts(){
             {extendedCols && <section className="space-y-2">
               <h3 className="font-semibold text-sm">Estoque</h3>
               <div className="grid md:grid-cols-4 gap-2">
-                <Input placeholder="Quantidade em Estoque" value={form.stock_qty ?? ''} onChange={e=>setForm(f=>({...f,stock_qty:e.target.value? Number(e.target.value):undefined}))} />
+                <Input placeholder="Quantidade em Estoque" value={form.stock_qty ?? ''} readOnly disabled className="bg-gray-50/60" />
+                <div className="text-[11px] text-muted-foreground">Controlado por Movimentações de Estoque — para alterar, registre um movimento.</div>
                 <Input placeholder="Estoque Mínimo" value={form.stock_min||''} onChange={e=>setForm(f=>({...f,stock_min:e.target.value? Number(e.target.value):undefined}))} />
                 <Input placeholder="Estoque Máximo" value={form.stock_max||''} onChange={e=>setForm(f=>({...f,stock_max:e.target.value? Number(e.target.value):undefined}))} />
                 <Input placeholder="Lote" value={form.lot_number||''} onChange={e=>setForm(f=>({...f,lot_number:e.target.value}))} />
@@ -459,16 +522,60 @@ export function ErpProducts(){
             if(imageFile){
               try {
                 const path = `produtos/${Date.now()}-${imageFile.name}`;
-                const { error:upErr } = await supabase.storage.from('product-images').upload(path, imageFile, { upsert:false });
-                if(upErr) throw upErr;
-                const { data:pub } = supabase.storage.from('product-images').getPublicUrl(path);
-                uploadedUrl = pub?.publicUrl;
-                setForm(f=>({...f, image_url: uploadedUrl }));
+                // tenta bucket específico de imagens do produto
+                let bucket = 'product-images';
+                let upErr: any = null;
+                try {
+                  const res = await supabase.storage.from(bucket).upload(path, imageFile, { upsert:false });
+                  upErr = (res as any).error;
+                  if(!upErr){
+                    const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path) as any;
+                    uploadedUrl = pub?.publicUrl;
+                    setForm(f=>({...f, image_url: uploadedUrl }));
+                  }
+                } catch(errInner) {
+                  upErr = errInner;
+                }
+                // Se bucket não existe ou upload falhar com esse erro, tenta bucket 'logos' como fallback
+                if(upErr) {
+                  const msg = extractErr(upErr);
+                  if(msg.toLowerCase().includes('bucket') || msg.toLowerCase().includes('not found')){
+                    bucket = 'logos';
+                    try {
+                      const res2 = await supabase.storage.from(bucket).upload(path, imageFile, { upsert:false });
+                      if((res2 as any).error) throw (res2 as any).error;
+                      const { data: pub2 } = supabase.storage.from(bucket).getPublicUrl(path) as any;
+                      uploadedUrl = pub2?.publicUrl;
+                      setForm(f=>({...f, image_url: uploadedUrl }));
+                    } catch(err2) {
+                      // Se o fallback também falhar por bucket não encontrado, converter para data URL e salvar direto no campo image_url
+                      const errMsg = extractErr(err2 || upErr).toLowerCase();
+                      if(errMsg.includes('bucket') || errMsg.includes('not found')){
+                        // converter arquivo em data URL
+                        const dataUrl = await new Promise<string>((resolve, reject) => {
+                          const reader = new FileReader();
+                          reader.onload = () => resolve(String(reader.result));
+                          reader.onerror = () => reject(new Error('Falha ao ler arquivo')); 
+                          reader.readAsDataURL(imageFile);
+                        });
+                        uploadedUrl = dataUrl;
+                        setForm(f=>({...f, image_url: uploadedUrl, imageDataUrl: uploadedUrl }));
+                      } else {
+                        throw err2 || upErr;
+                      }
+                    }
+                  } else {
+                    throw upErr;
+                  }
+                }
               } catch(e:unknown){ toast.error('Upload falhou: '+ extractErr(e)); if(import.meta.env.DEV) console.error('upload error', e); }
             }
             // Se não houver novo upload mas já existe image_url no form, manter
             if(!uploadedUrl && form.image_url) uploadedUrl = form.image_url;
-            if(uploadedUrl) form.image_url = uploadedUrl;
+            if(uploadedUrl) {
+              form.image_url = uploadedUrl;
+              setForm(f=>({...f, image_url: uploadedUrl}));
+            }
             save();
           }} disabled={saving}>{saving? 'Salvando...':'Salvar'}</Button>
         </DialogFooter>

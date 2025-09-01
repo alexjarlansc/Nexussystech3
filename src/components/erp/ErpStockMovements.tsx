@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { toast } from '@/components/ui/sonner';
 import type { Tables } from '@/integrations/supabase/types';
 
-interface ProductOption { id: string; name: string; }
+interface ProductOption { id: string; name: string; code?: string }
 
 const movementTypes = [
   { value: 'IN', label: 'Entrada' },
@@ -28,7 +28,9 @@ export const ErpStockMovements = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ product_id: '', qty: '', type: 'IN', reason: '', loc_from: '', loc_to: '' });
+  const [productInput, setProductInput] = useState('');
   const [companyId, setCompanyId] = useState<string|undefined>(undefined);
+  const [productSuggestions, setProductSuggestions] = useState<ProductOption[]>([]);
   // Carregar companyId do profile do usuário autenticado
   useEffect(()=>{(async()=>{
     try {
@@ -45,8 +47,12 @@ export const ErpStockMovements = () => {
   const [products, setProducts] = useState<ProductOption[]>([]);
 
   async function loadProducts() {
-    const { data, error } = await supabase.from('products').select('id,name').limit(500);
-    if (!error && data) setProducts(data as ProductOption[]);
+  const { data, error } = await supabase.from('products').select('id,name,code').limit(500);
+  if (!error && Array.isArray(data)) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const safe = (data as any[]).map(d => ({ id: String(d.id), name: String(d.name || ''), code: d.code ? String(d.code) : undefined }));
+    setProducts(safe);
+  }
   }
 
   const load = useCallback(async () => {
@@ -58,11 +64,11 @@ export const ErpStockMovements = () => {
       if (typeFilter) query = query.eq('type', typeFilter);
       if (search) query = query.ilike('reason', `%${search}%`);
       if (productSearch) {
-        // Buscar produtos que batem com o termo
-        const { data: prodData } = await supabase.from('products').select('id').or(`name.ilike.%${productSearch}%,code.ilike.%${productSearch}%`);
-        const prodIds = prodData?.map((p:any)=>p.id) || [];
-        if(prodIds.length) query = query.in('product_id', prodIds);
-        else query = query.in('product_id', ['']); // força vazio se não encontrar
+  // Buscar produtos que batem com o termo
+  const { data: prodData } = await supabase.from('products').select('id').or(`name.ilike.%${productSearch}%,code.ilike.%${productSearch}%`);
+  const prodIds = prodData?.map((p: { id: string }) => p.id) || [];
+  if(prodIds.length) query = query.in('product_id', prodIds);
+  else query = query.in('product_id', ['']); // força vazio se não encontrar
       }
       const { data, error, count } = await query;
       if (error) throw error;
@@ -74,8 +80,56 @@ export const ErpStockMovements = () => {
     } finally { setLoading(false); }
   }, [typeFilter, search, page, companyId, productSearch]);
 
-  useEffect(() => { load(); }, [typeFilter, search, page, companyId, productSearch]);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => { loadProducts(); }, []);
+  // Ouvir evento global para abrir modal de novo movimento com produto pré-selecionado
+  useEffect(() => {
+    function handler(e: Event) {
+      try {
+        const ev = e as CustomEvent;
+        const product = ev.detail?.product;
+        if(product && product.id) {
+          setForm(f=>({ ...f, product_id: product.id }));
+          setProductInput(product.code ? `${product.code} - ${product.name}` : product.name);
+          setCreateOpen(true);
+        }
+      } catch (err) { if(import.meta.env.DEV) console.warn('open-stock-movement handler err', err); }
+    }
+    window.addEventListener('open-stock-movement', handler as EventListener);
+    return () => window.removeEventListener('open-stock-movement', handler as EventListener);
+  }, []);
+  // Autocomplete para campo de produto no novo movimento
+  useEffect(() => {
+    if (!productInput) { setProductSuggestions([]); return; }
+    (async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id,name,code')
+        .or(`name.ilike.%${productInput}%,code.ilike.%${productInput}%`)
+        .limit(10);
+      if (!error && Array.isArray(data)) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const safe = (data as any[]).map(d => ({ id: String(d.id), name: String(d.name || ''), code: d.code ? String(d.code) : undefined }));
+        setProductSuggestions(safe);
+      } else setProductSuggestions([]);
+    })();
+  }, [productInput]);
+  // Autocomplete de produto
+  useEffect(() => {
+    if (!productSearch) { setProductSuggestions([]); return; }
+    (async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id,name,code')
+        .or(`name.ilike.%${productSearch}%,code.ilike.%${productSearch}%`)
+        .limit(10);
+      if (!error && Array.isArray(data)) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const safe = (data as any[]).map(d => ({ id: String(d.id), name: String(d.name || ''), code: d.code ? String(d.code) : undefined }));
+        setProductSuggestions(safe);
+      } else setProductSuggestions([]);
+    })();
+  }, [productSearch]);
 
   async function submit() {
     if (!form.product_id) { toast.error('Selecione produto'); return; }
@@ -83,10 +137,11 @@ export const ErpStockMovements = () => {
     if (!qtyNum || qtyNum <= 0) { toast.error('Qtd inválida'); return; }
     setCreating(true);
     try {
+      // Forçar qty negativo para movimentos de saída para garantir redução
       const payload = {
         p_product_id: form.product_id,
-        p_qty: qtyNum,
-        p_type: form.type, // agora já está no padrão correto
+        p_qty: form.type === 'OUT' ? -qtyNum : qtyNum,
+        p_type: form.type, // já no padrão (IN/OUT/ADJUSTMENT/TRANSFER/RETURN/EXCHANGE)
         p_reason: form.reason || null,
         p_location_from: form.loc_from || null,
         p_location_to: form.loc_to || null,
@@ -140,7 +195,31 @@ export const ErpStockMovements = () => {
         </div>
         <div className='flex flex-col'>
           <span className='text-[11px] uppercase text-slate-500'>Buscar Produto</span>
-          <Input value={productSearch} onChange={e=>setProductSearch(e.target.value)} placeholder='Nome ou código do produto...' className='h-9 w-52' />
+          <div className='relative'>
+            <Input
+              value={productSearch}
+              onChange={e=>setProductSearch(e.target.value)}
+              placeholder='Nome ou código do produto...'
+              className='h-9 w-52'
+              autoComplete='off'
+            />
+            {productSuggestions.length > 0 && (
+              <ul className='absolute z-10 bg-white border rounded w-52 mt-1 shadow-lg max-h-40 overflow-auto text-xs'>
+                {productSuggestions.map(p => (
+                  <li
+                    key={p.id}
+                    className='px-2 py-1 cursor-pointer hover:bg-muted/30'
+                    onClick={() => {
+                      setProductSearch(p.code ? `${p.code} - ${p.name}` : p.name);
+                      setProductSuggestions([]);
+                    }}
+                  >
+                    {p.code ? <span className='font-mono text-slate-600'>{p.code}</span> : null} {p.name}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
   </div>
         <div className='flex flex-col'>
           <span className='text-[11px] uppercase text-slate-500'>Tipo</span>
@@ -196,14 +275,35 @@ export const ErpStockMovements = () => {
           <div className='space-y-3 text-sm'>
             <div>
               <label className='text-[11px] uppercase text-slate-500'>Produto</label>
-              <select value={form.product_id} onChange={e=>setForm(f=>({...f, product_id:e.target.value}))} className='mt-1 w-full border rounded h-9 px-2'>
-                <option value=''>Selecione...</option>
-                {products.map(p => (
-                  <option key={p.id} value={p.id} title={p.name}>
-                    {p.name.length > 40 ? p.name.slice(0, 40) + '...' : p.name}
-                  </option>
-                ))}
-              </select>
+              <div className='relative'>
+                <Input
+                  value={productInput}
+                  onChange={e => {
+                    setProductInput(e.target.value);
+                    setForm(f => ({ ...f, product_id: '' }));
+                  }}
+                  placeholder='Nome ou código do produto...'
+                  className='mt-1 h-9 w-full'
+                  autoComplete='off'
+                />
+                {productSuggestions.length > 0 && (
+                  <ul className='absolute z-10 bg-white border rounded w-full mt-1 shadow-lg max-h-40 overflow-auto text-xs'>
+                    {productSuggestions.map(p => (
+                      <li
+                        key={p.id}
+                        className='px-2 py-1 cursor-pointer hover:bg-muted/30'
+                        onClick={() => {
+                          setProductInput(p.code ? `${p.code} - ${p.name}` : p.name);
+                          setForm(f => ({ ...f, product_id: p.id }));
+                          setProductSuggestions([]);
+                        }}
+                      >
+                        {p.code ? <span className='font-mono text-slate-600'>{p.code}</span> : null} {p.name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
             <div className='flex gap-3'>
               <div className='flex-1'>

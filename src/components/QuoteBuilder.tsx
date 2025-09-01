@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,21 @@ import { hashSHA256 } from '@/utils/crypto';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/integrations/supabase/types';
+
+// Tipos usados no módulo
+type ProdRow = {
+  id: string;
+  code?: string | null;
+  name: string;
+  description?: string | null;
+  options?: string | null;
+  image_url?: string | null;
+  price?: number | string | null;
+  cost_price?: number | string | null;
+  sale_price?: number | string | null;
+};
+
+type ProductWithStock = Product & { stock?: number };
 
 function currencyBRL(n: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -106,7 +121,8 @@ export default function QuoteBuilder() {
   useEffect(() => {
     fetchClients();
   }, []);
-  const [products, setProducts] = useState<Product[]>([]);
+  // (types declared at module scope)
+  const [products, setProducts] = useState<ProductWithStock[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
 
   const [clientId, setClientId] = useState<string>('');
@@ -227,10 +243,6 @@ export default function QuoteBuilder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, profile]);
 
-  // Carregar produtos do banco de dados
-  useEffect(() => {
-    loadProducts();
-  }, []);
 
   // Atualizar dados do vendedor quando o perfil mudar
   useEffect(() => {
@@ -243,27 +255,46 @@ export default function QuoteBuilder() {
     }
   }, [profile]);
 
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('products')
-        .select('*')
+        .select('id,code,name,description,options,image_url,price,cost_price,sale_price')
         .order('name');
       if (error) throw error;
-      const formattedProducts: Product[] = data.map(p => ({
+  const rows = (data as unknown as ProdRow[]) || [];
+      const ids = rows.map(r => r.id).filter(Boolean) as string[];
+      // buscar estoque para cada produto via view product_stock (view pode não estar no client types)
+      let stocks: { product_id: string; stock: number }[] = [];
+      if (ids.length) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: sdata } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
+        stocks = (sdata as { product_id: string; stock: number }[]) || [];
+      }
+      const formattedProducts: ProductWithStock[] = rows.map(p => ({
         id: p.id,
+        code: p.code || undefined,
         name: p.name,
         description: p.description || '',
         options: p.options || '',
         imageDataUrl: p.image_url || '',
-        price: Number(p.price)
+        price: Number(p.price),
+        cost_price: p.cost_price != null ? Number(p.cost_price) : undefined,
+        sale_price: p.sale_price != null ? Number(p.sale_price) : undefined,
+        // attach stock if available (transient)
+        stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? undefined
       }));
       setProducts(formattedProducts);
     } catch (error) {
       console.error('Erro ao carregar produtos:', error);
       toast.error('Erro ao carregar produtos');
     }
-  };
+  }, []);
+
+  // Carregar produtos do banco de dados (executa após definição de loadProducts)
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
 
   function addItemFromProduct(prod: Product, quantity = 1) {
     const snapshot: QuoteItemSnapshot = {
@@ -1416,6 +1447,11 @@ export default function QuoteBuilder() {
               addItemFromProduct(product);
               setOpenSearchProduct(false);
             }}
+            onRegisterMovement={(product) => {
+              // envia evento global para abrir modal de Movimentações com produto selecionado
+              window.dispatchEvent(new CustomEvent('open-stock-movement', { detail: { product } }));
+              setOpenSearchProduct(false);
+            }}
           />
         </DialogContent>
       </Dialog>
@@ -1461,10 +1497,12 @@ export default function QuoteBuilder() {
 
 function SearchProductModal({ 
   products, 
-  onSelectProduct 
+  onSelectProduct,
+  onRegisterMovement
 }: { 
-  products: Product[]; 
-  onSelectProduct: (product: Product) => void; 
+  products: ProductWithStock[]; 
+  onSelectProduct: (product: ProductWithStock) => void; 
+  onRegisterMovement?: (product: ProductWithStock) => void;
 }) {
   const [search, setSearch] = useState('');
   
@@ -1485,7 +1523,7 @@ function SearchProductModal({
         {filteredProducts.length === 0 && (
           <div className="text-sm text-muted-foreground">Nenhum produto encontrado.</div>
         )}
-        {filteredProducts.map((p) => (
+  {filteredProducts.map((p: ProductWithStock) => (
           <button
             type="button"
             key={p.id}
@@ -1506,13 +1544,20 @@ function SearchProductModal({
               )}
               <div className="flex flex-col min-w-0">
                 <span className="font-medium truncate max-w-[120px] sm:max-w-[200px]">{p.name}</span>
-                <span className="text-xs text-muted-foreground truncate">Código: {p.id.slice(-8)}</span>
-                <span className="text-xs text-muted-foreground">{currencyBRL(p.price)}</span>
+                <span className="text-xs text-muted-foreground truncate">Código: {p.code ? p.code : p.id.slice(-8)}</span>
+                <div className="text-xs text-muted-foreground flex gap-3 mt-1">
+                  <span>Preço: {currencyBRL(p.sale_price ?? p.price)}</span>
+                  <span> Custo: {p.cost_price != null ? currencyBRL(p.cost_price) : '—'}</span>
+                  <span> Estoque: {p.stock != null ? String(p.stock) : '—'}</span>
+                </div>
               </div>
             </div>
-            <span className="ml-2">
+            <div className="ml-2 flex gap-2">
               <Button size="sm" variant="secondary" className="px-3 py-1 text-xs">Adicionar</Button>
-            </span>
+              {onRegisterMovement && (
+                <Button size="sm" variant="outline" className="px-3 py-1 text-xs" onClick={(e)=>{ e.stopPropagation(); onRegisterMovement(p); }}>Registrar Movimento</Button>
+              )}
+            </div>
           </button>
         ))}
       </div>
