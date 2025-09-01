@@ -397,30 +397,34 @@ export function NexusProtectedHeader() {
               <DialogTitle>Códigos de Convite</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => handleGenerateInvite('user')}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Gerar Código Usuário
-                </Button>
-                <Button
-                  onClick={() => handleGenerateInvite('admin')}
-                  className="flex-1"
-                >
-                  Gerar Código Admin
-                </Button>
-                <Button
-                  onClick={() => handleGenerateInvite('pdv')}
-                  className="flex-1"
-                  variant="secondary"
-                >
-                  Gerar Código PDV
-                </Button>
+              {/* Tabs estilizadas para geração rápida */}
+              <div className="flex w-full rounded-lg overflow-hidden border bg-muted/40">
+                {(['user','admin','pdv'] as const).map(role => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => handleGenerateInvite(role)}
+                    className={"flex-1 px-3 py-2 text-sm font-medium focus:outline-none transition-colors " +
+                      (role==='user' ? 'data-[role=user]' : role==='admin' ? 'data-[role=admin]' : 'data-[role=pdv]') + ' '}
+                    data-active={false}
+                    data-role={role}
+                  >
+                    {role==='user' && 'Gerar Código Usuário'}
+                    {role==='admin' && 'Gerar Código Admin'}
+                    {role==='pdv' && 'Gerar Código PDV'}
+                  </button>
+                ))}
               </div>
-
-              <div className="max-h-[60vh] overflow-auto space-y-2">
+              <style>{`
+                [data-role] { background:transparent; }
+                [data-role]:hover { background:rgba(0,0,0,0.04); }
+                [data-role=user] { color:#0a3d40; }
+                [data-role=admin] { background:#0d5c61; color:#fff; }
+                [data-role=admin]:hover { background:#0b4f53; }
+                [data-role=pdv] { color:#0a3d40; }
+                @media (max-width:640px){ [data-role] { font-size:11px; padding:8px 6px; } }
+              `}</style>
+              <div className="max-h-[60vh] overflow-auto space-y-2 pr-1">
                 {inviteCodes.length === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     Nenhum código gerado ainda
@@ -429,40 +433,34 @@ export function NexusProtectedHeader() {
                 {inviteCodes.map((invite) => {
                   const expiresDate = invite.expires_at ? new Date(invite.expires_at) : null;
                   const isExpired = expiresDate ? expiresDate < new Date() : false;
+                  const statusColor = invite.used_by ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : isExpired ? 'bg-red-100 text-red-700 border-red-300' : 'bg-blue-100 text-blue-700 border-blue-300';
+                  const statusLabel = invite.used_by ? 'Usado' : isExpired ? 'Expirado' : 'Disponível';
                   return (
-                  <Card key={invite.id} className="p-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-muted px-2 py-1 rounded text-sm font-mono">
-                            {invite.code}
-                          </code>
-                          <Badge variant={invite.role === 'admin' ? 'default' : invite.role === 'pdv' ? 'outline' : 'secondary'}>
-                            {invite.role === 'admin' ? 'Admin' : invite.role === 'pdv' ? 'PDV' : 'Usuário'}
-                          </Badge>
+                    <div key={invite.id} className="rounded-lg border p-2.5 bg-white shadow-sm flex items-center gap-3">
+                      <div className="flex flex-col gap-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <code className="px-2 py-1 rounded bg-muted text-xs font-mono tracking-wide">{invite.code}</code>
+                          <span className={`text-[10px] uppercase px-2 py-0.5 rounded-full border font-medium ${invite.role==='admin' ? 'bg-primary text-primary-foreground border-primary/70' : invite.role==='pdv' ? 'bg-secondary text-secondary-foreground border-secondary/60' : 'bg-slate-200 text-slate-700 border-slate-300'}`}>{invite.role==='admin'?'Admin': invite.role==='pdv'?'PDV':'Usuário'}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${statusColor}`}>{statusLabel}</span>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {invite.used_by ? (
-                            <span className="text-green-600">✓ Usado</span>
-                          ) : isExpired ? (
-                            <span className="text-red-600">✗ Expirado</span>
-                          ) : (
-                            <span className="text-blue-600">◯ Disponível</span>
-                          )}
-                          {' | '}
-                          Expira: {expiresDate ? expiresDate.toLocaleDateString('pt-BR') : '—'}
+                        <div className="text-[10px] text-muted-foreground flex gap-2 flex-wrap">
+                          <span>Expira: {expiresDate ? expiresDate.toLocaleDateString('pt-BR') : '—'}</span>
+                          {invite.used_by && <span>Usuário: {invite.used_by.slice(0,8)}…</span>}
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => copyToClipboard(invite.code)}
-                        disabled={!!invite.used_by || isExpired}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
+                      <div className="flex flex-col gap-1 items-end">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={() => copyToClipboard(invite.code)}
+                          disabled={!!invite.used_by || isExpired}
+                          aria-label="Copiar código"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </Card>
                   );
                 })}
               </div>
