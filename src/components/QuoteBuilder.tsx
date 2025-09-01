@@ -278,13 +278,22 @@ export default function QuoteBuilder() {
         name: p.name,
         description: p.description || '',
         options: p.options || '',
-        imageDataUrl: p.image_url || '',
+        // NÃO forçar imageDataUrl se não existir; mantém undefined para não repetir fallback visual
+        imageDataUrl: p.image_url ? p.image_url : undefined,
         price: Number(p.price),
         cost_price: p.cost_price != null ? Number(p.cost_price) : undefined,
         sale_price: p.sale_price != null ? Number(p.sale_price) : undefined,
-        // attach stock if available (transient)
         stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? undefined
       }));
+      // Se todos os produtos possuem exatamente a mesma imageDataUrl, considerar isso um 'placeholder' e limpar para evitar exibição repetida enganosa
+      const uniqueImages = Array.from(new Set(formattedProducts.map(fp => fp.imageDataUrl).filter(Boolean)));
+      if(uniqueImages.length === 1 && formattedProducts.length > 1){
+        const single = uniqueImages[0];
+        // Heurística: se a URL contém "data:" ou termina em um nome de arquivo igual para todos, limpar
+        if(single?.startsWith('data:') || formattedProducts.every(p=>p.imageDataUrl===single)){
+          formattedProducts.forEach(p=>{ p.imageDataUrl = undefined; });
+        }
+      }
       setProducts(formattedProducts);
     } catch (error) {
       console.error('Erro ao carregar produtos:', error);
@@ -471,6 +480,18 @@ export default function QuoteBuilder() {
   const [pPrice, setPPrice] = useState('');
   const [pImg, setPImg] = useState<string | undefined>(undefined);
 
+  // Sempre que o modal de produto for aberto em modo "novo", limpar campos
+  useEffect(() => {
+    if (openProduct) {
+      // Se não estiver editando (nesta tela não há edição, somente criação), resetar estado
+      setPName('');
+      setPDesc('');
+      setPOpt('');
+      setPPrice('');
+      setPImg(undefined);
+    }
+  }, [openProduct]);
+
   function onPickImage(file?: File | null) {
     if (!file) return;
     const reader = new FileReader();
@@ -501,11 +522,33 @@ export default function QuoteBuilder() {
       const { error } = await supabase
         .from('products')
         .insert({
-          id: code, // apenas números
+          // deixa o banco gerar UUID em id; usamos "code" para o identificador numérico amigável
+          code, 
           name: pName,
           description: pDesc || null,
           options: pOpt || null,
-          image_url: pImg || null,
+          // se pImg for DataURL, tentar enviar para storage para evitar armazenar base64 longo no banco
+          image_url: await (async () => {
+            try {
+              if(!pImg) return null;
+              // Se já parece ser URL http(s) retorna direto
+              if(/^https?:\/\//.test(pImg)) return pImg;
+              // Caso seja data URL converter em arquivo e enviar
+              const bucket = 'product-images';
+              const base64Match = pImg.match(/^data:(.+);base64,(.*)$/);
+              if(!base64Match) return pImg; // fallback salva o que tiver
+              const ext = base64Match[1].includes('png') ? 'png' : base64Match[1].includes('jpeg') ? 'jpg' : 'bin';
+              const bin = atob(base64Match[2]);
+              const arr = new Uint8Array(bin.length);
+              for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+              const fileObj = new File([arr], `prod-${code}.${ext}`, { type: base64Match[1] });
+              const storagePath = `produtos/${code}-${Date.now()}.${ext}`;
+              const upRes = await supabase.storage.from(bucket).upload(storagePath, fileObj, { upsert: true });
+              if((upRes as any).error){ return pImg; }
+              const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storagePath) as any;
+              return pub?.publicUrl || pImg;
+            } catch(_e){ return pImg; }
+          })(),
           price,
           company_id: profile.company_id,
           created_by: user?.id
@@ -1508,9 +1551,9 @@ function SearchProductModal({
             style={{ minHeight: 64 }}
           >
             <div className="flex items-start sm:items-center gap-3 min-w-0">
-              {p.imageDataUrl || p.image_url ? (
+              {p.imageDataUrl ? (
                 <img
-                  src={p.imageDataUrl || p.image_url}
+                  src={p.imageDataUrl}
                   alt={p.name}
                   className="h-14 w-14 rounded object-cover border bg-white flex-shrink-0"
                   loading="lazy"

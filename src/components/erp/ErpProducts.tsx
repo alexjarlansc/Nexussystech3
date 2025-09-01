@@ -152,6 +152,11 @@ export function ErpProducts(){
       return;
     }
     const salePrice = Number(form.sale_price||form.price||0);
+    // Evitar herdar imagem de edição anterior ao criar novo (se usuário abriu 'Novo' após editar)
+    if(!editing && !imageFile && form.image_url){
+      // limpar imagem herdada silenciosamente
+      form.image_url = undefined;
+    }
     if(isNaN(salePrice)){ toast.error('Preço inválido'); return; }
     setSaving(true);
     try {
@@ -182,6 +187,8 @@ export function ErpProducts(){
         icms_rate: form.icms_rate? Number(form.icms_rate):null,
         pis_rate: form.pis_rate? Number(form.pis_rate):null,
         cofins_rate: form.cofins_rate? Number(form.cofins_rate):null,
+  // garantir persistência da imagem (antes não era enviada no payload)
+  image_url: form.image_url || null,
       };
       if(companyId) payload.company_id = companyId;
       if(!extendedCols){
@@ -246,7 +253,12 @@ export function ErpProducts(){
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  function startNew(){ setEditing(null); setForm(makeEmpty()); setOpen(true); }
+  function startNew(){
+    setEditing(null);
+    setImageFile(null);
+    setForm(makeEmpty());
+    setOpen(true);
+  }
   function normalizeNumber(v: unknown): number|undefined {
     if(v === null || v === undefined || v === '') return undefined;
     if(typeof v === 'number') return v;
