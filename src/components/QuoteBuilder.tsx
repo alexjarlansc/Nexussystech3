@@ -1538,53 +1538,53 @@ function SearchProductModal({
         onChange={(e) => setSearch(e.target.value)}
         className="w-full"
       />
-      <div className="max-h-[60vh] overflow-auto flex flex-col gap-2">
+      <div className="max-h-[60vh] overflow-auto flex flex-col gap-1">
         {filteredProducts.length === 0 && (
           <div className="text-sm text-muted-foreground">Nenhum produto encontrado.</div>
         )}
-  {filteredProducts.map((p: ProductWithStock) => (
-          <button
-            type="button"
-            key={p.id}
-            className="flex flex-col sm:flex-row items-start sm:items-center justify-between border rounded-lg p-3 bg-background hover:bg-accent/70 active:bg-accent/90 cursor-pointer w-full focus:outline-none focus:ring-2 focus:ring-primary gap-2 transition"
-            onClick={() => onSelectProduct(p)}
-            style={{ minHeight: 64 }}
-          >
-            <div className="flex items-start sm:items-center gap-3 min-w-0">
+        {filteredProducts.map((p: ProductWithStock) => {
+          const price = currencyBRL(p.sale_price ?? p.price);
+          const cost = p.cost_price != null ? currencyBRL(p.cost_price) : '—';
+          const stock = p.stock != null ? String(p.stock) : '—';
+          return (
+            <button
+              type="button"
+              key={p.id}
+              className="group flex items-center gap-3 border rounded-md px-2 py-2 bg-background hover:bg-accent/70 active:bg-accent/90 cursor-pointer w-full focus:outline-none focus:ring-2 focus:ring-primary transition text-left"
+              onClick={() => onSelectProduct(p)}
+              aria-label={`Adicionar produto ${p.name}`}
+            >
               {p.imageDataUrl ? (
                 <img
                   src={p.imageDataUrl}
                   alt={p.name}
-                  className="h-14 w-14 rounded object-cover border bg-white flex-shrink-0"
+                  className="h-12 w-12 rounded object-cover border bg-white flex-shrink-0"
                   loading="lazy"
                 />
               ) : (
-                <div className="h-14 w-14 rounded border bg-accent/60 grid place-items-center text-xs text-muted-foreground flex-shrink-0">IMG</div>
+                <div className="h-12 w-12 rounded border bg-accent/50 grid place-items-center text-[10px] text-muted-foreground flex-shrink-0">IMG</div>
               )}
-              <div className="flex flex-col min-w-0 text-left">
-                <span className="font-medium text-sm leading-tight max-h-12 overflow-hidden break-words">{p.name}</span>
-                <span className="text-xs text-muted-foreground">Código: {p.code ? p.code : p.id.slice(-8)}</span>
-                <div className="text-xs text-muted-foreground flex gap-3 mt-1">
-                  <span>Preço: {currencyBRL(p.sale_price ?? p.price)}</span>
-                  <span> Custo: {p.cost_price != null ? currencyBRL(p.cost_price) : '—'}</span>
-                  <span> Estoque: {p.stock != null ? String(p.stock) : '—'}</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-[13px] leading-snug line-clamp-2 break-words pr-4">
+                  {p.name}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] sm:text-[11px] text-muted-foreground">
+                  <span className="truncate">Cod {p.code ? p.code : p.id.slice(-6)}</span>
+                  <span>R$ {price.replace(/^R\$\s?/, '')}</span>
+                  <span className="hidden xs:inline">Cst {cost === '—' ? '—' : cost.replace(/^R\$\s?/, '')}</span>
+                  <span>Stk {stock}</span>
                 </div>
               </div>
-            </div>
-            <div className="ml-0 sm:ml-2 mt-2 sm:mt-0 flex gap-2">
-              <Button size="sm" variant="secondary" className="px-3 py-1 text-xs">Adicionar</Button>
-            </div>
-          </button>
-        ))}
+              <div className="ml-auto text-[10px] font-medium text-primary opacity-0 group-hover:opacity-100 transition-colors">Adicionar</div>
+            </button>
+          );
+        })}
       </div>
       <style>{`
         @media (max-width: 640px) {
-          .sm\\:max-w-lg, .sm\\:max-w-2xl {
-            max-width: 100vw !important;
-            width: 100vw !important;
-            border-radius: 0 !important;
-            margin: 0 !important;
-          }
+          .sm\\:max-w-lg, .sm\\:max-w-2xl { max-width:100vw!important; width:100vw!important; border-radius:0!important; margin:0!important; }
+          /* Reduzir poluição visual mobile: remove sombra extra se houver */
+          .group { -webkit-tap-highlight-color: transparent; }
         }
       `}</style>
     </div>
