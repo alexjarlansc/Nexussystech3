@@ -46,6 +46,10 @@ export function ErpProducts(){
   const [rows,setRows]=useState<(Product & { stock?: number, reserved?: number })[]>([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState('');
+  const [debouncedSearch,setDebouncedSearch]=useState('');
+  const [page,setPage]=useState(0);
+  const pageSize = 50; // menor lote para carregamento rápido
+  const [hasMore,setHasMore]=useState(false);
   // Sugestões leves para autocomplete (não precisa do objeto Product completo)
   type ProdSuggestion = { id: string; name: string; code?: string };
   const [prodSearchSuggestions, setProdSearchSuggestions] = useState<ProdSuggestion[]>([]);
@@ -61,35 +65,55 @@ export function ErpProducts(){
   const [companyId,setCompanyId]=useState<string|undefined>(undefined);
 
   type ProductRow = Product & { created_at?: string };
-  async function load(){
+  async function load(pageOverride?: number){
+    const currentPage = pageOverride ?? page;
     setLoading(true);
     try {
       try { await (supabase as any).rpc('ensure_profile'); } catch(err) { if(import.meta.env.DEV) console.warn('ensure_profile rpc indisponível', err); }
-      let q = (supabase as unknown as { select: any; ilike: any; order: any; limit: any; from?: any })
-        .from('products').select('*').order('created_at',{ascending:false}).limit(200);
-      if(search) q = q.ilike('name','%'+search+'%');
+      let q = (supabase as any)
+        .from('products')
+        .select('id,code,name,unit,sale_price,price,cost_price,status,created_at')
+        .order('created_at',{ascending:false});
+      if(debouncedSearch){
+        q = q.or(`name.ilike.%${debouncedSearch}%,code.ilike.%${debouncedSearch}%`);
+      }
+      const from = currentPage * pageSize;
+      const to = from + pageSize - 1;
+      q = q.range(from, to);
       const { data, error }:{ data: ProductRow[]|null; error: unknown } = await q;
       if(error) throw error;
       let products = (data as ProductRow[])||[];
-      // Buscar estoque e reservado para cada produto
+      setHasMore(products.length === pageSize);
       const ids = products.map(p=>p.id);
       if(ids.length) {
-        const { data: stocks } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
-        products = products.map(p=>{
-          const found = stocks?.find((s:any)=>s.product_id===p.id);
-          return { ...p, stock: found?.stock ?? 0 };
-        });
+        try {
+          const { data: stocks } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
+          products = products.map(p=>{
+            const found = stocks?.find((s:any)=>s.product_id===p.id);
+            return { ...p, stock: found?.stock ?? 0 };
+          });
+        } catch(stockErr){ if(import.meta.env.DEV) console.warn('Falha ao buscar estoque', stockErr); }
+      }
+      if(import.meta.env.DEV){
+        const sampleDebug = products.slice(0,10).map(p=>({id:p.id, img: (p as any).image_url}));
+        console.log('[DEBUG products images]', sampleDebug);
       }
       setRows(products);
     } catch(e:unknown){ const msg = e instanceof Error? e.message: String(e); toast.error('Falha ao carregar produtos: '+msg); }
-    setLoading(false);
+    finally { setLoading(false); }
   }
   async function loadSuppliers(){
     const { data, error }:{ data: Pick<Supplier,'id'|'name'>[]|null; error: unknown } = await (supabase as unknown as { from: any }).from('suppliers').select('id,name').eq('is_active', true).limit(200);
     if(!error) setSuppliers(data||[]);
   }
-  useEffect(()=>{ load(); loadSuppliers(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(()=>{ load(0); loadSuppliers(); setPage(0); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+  // Debounce da busca para evitar muitas requisições
+  useEffect(()=>{
+    const t = setTimeout(()=>{ setDebouncedSearch(search.trim()); setPage(0); load(0); }, 400);
+    return ()=> clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[search]);
   // Autocomplete de produto na busca
   useEffect(() => {
     if (!search) { setProdSearchSuggestions([]); return; }
@@ -132,34 +156,36 @@ export function ErpProducts(){
     })();
   },[]);
 
-  async function save(){
-    if(!form.name.trim()){ toast.error('Nome obrigatório'); return; }
+  async function save(imageUrlOverride?: string){
+  if(!form.name.trim()){ toast.error('Nome obrigatório'); return; }
     if(!form.code || !form.code.trim()){
       toast.error('Código obrigatório');
       return;
     }
     // Verificar unicidade do código
   // cast to any to avoid deep generic instantiation in TS when selecting minimal fields
-  const { data: codeExists } = await (supabase as any)
+  // Verificar código existente sem gerar filtro inválido quando não estiver editando
+  let codeQuery = (supabase as any)
       .from('products')
       .select('id')
       .eq('code', form.code.trim())
-      .neq('id', editing?.id || '')
-      .limit(1)
-      .single();
+      .limit(1);
+  if(editing?.id) codeQuery = codeQuery.neq('id', editing.id);
+  const { data: codeExists } = await codeQuery.single();
     if(codeExists){
       toast.error('Já existe um produto com este código!');
       return;
     }
-    const salePrice = Number(form.sale_price||form.price||0);
+  const salePrice = Number(form.sale_price||form.price||0);
     // Evitar herdar imagem de edição anterior ao criar novo (se usuário abriu 'Novo' após editar)
     if(!editing && !imageFile && form.image_url){
       // limpar imagem herdada silenciosamente
       form.image_url = undefined;
     }
     if(isNaN(salePrice)){ toast.error('Preço inválido'); return; }
-    setSaving(true);
+  setSaving(true);
     try {
+  const effectiveImageUrl = imageUrlOverride !== undefined ? imageUrlOverride : form.image_url;
   const payload: Record<string, unknown> = {
         name: form.name.trim(),
         description: form.description||null,
@@ -188,7 +214,7 @@ export function ErpProducts(){
         pis_rate: form.pis_rate? Number(form.pis_rate):null,
         cofins_rate: form.cofins_rate? Number(form.cofins_rate):null,
   // garantir persistência da imagem (antes não era enviada no payload)
-  image_url: form.image_url || null,
+  image_url: effectiveImageUrl || null,
       };
       if(companyId) payload.company_id = companyId;
       if(!extendedCols){
@@ -240,9 +266,9 @@ export function ErpProducts(){
         }
       }
       if(resp.error) throw resp.error;
-      toast.success(editing?'Produto atualizado':'Produto criado');
+  toast.success(editing?'Produto atualizado':'Produto criado');
+  // resetar somente após garantir que imagem persistiu
   setOpen(false); setEditing(null); setForm(makeEmpty()); load();
-    setOpen(false); setEditing(null); setForm(makeEmpty()); load();
     } catch(e:unknown){ toast.error(extractErr(e)); if(import.meta.env.DEV) console.error('save product error', e); }
     setSaving(false);
   }
@@ -345,18 +371,22 @@ export function ErpProducts(){
       </ul>
     )}
   </div>
-  <Button size="sm" onClick={load} disabled={loading}>{loading?'Carregando...':'Filtrar'}</Button>
+  <Button size="sm" onClick={()=>{ setPage(0); load(0); }} disabled={loading} className="relative">
+    Filtrar
+    {loading && <span className="ml-2 inline-block h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin align-middle" aria-label="Carregando" />}
+  </Button>
   <Button size="sm" onClick={startNew}>Novo</Button>
       </div>
     </header>
     <div className="border rounded max-h-[520px] overflow-auto">
       <table className="w-full text-xs">
-  <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1">Un</th><th className="px-2 py-1 text-right">Preço</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th><th className="px-2 py-1">Status</th><th className="px-2 py-1"/></tr></thead>
+  <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1">Un</th><th className="px-2 py-1 text-right">Custo Médio</th><th className="px-2 py-1 text-right">Preço Venda</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th><th className="px-2 py-1">Status</th><th className="px-2 py-1"/></tr></thead>
         <tbody>
-          {rows.filter(r=> !search || r.name.toLowerCase().includes(search.toLowerCase())).map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
+          {rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
             <td className="px-2 py-1 font-mono truncate max-w-[120px]" title={r.code||''}>{r.code||'-'}</td>
             <td className="px-2 py-1 truncate max-w-[240px]" title={r.name}>{r.name}</td>
             <td className="px-2 py-1 text-center">{r.unit||'-'}</td>
+            <td className="px-2 py-1 text-right">{r.cost_price != null ? r.cost_price.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '-'}</td>
             <td className="px-2 py-1 text-right">{(r.sale_price||r.price||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
             <td className="px-2 py-1 text-right">{r.stock ?? '-'}</td>
             <td className="px-2 py-1 text-right">{r.reserved ?? '-'}</td>
@@ -373,19 +403,27 @@ export function ErpProducts(){
               </button>
             </td>
           </tr>)}
-          {rows.length===0 && !loading && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Sem produtos</td></tr>}
-          {loading && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {rows.length===0 && !loading && <tr><td colSpan={9} className="text-center py-6 text-muted-foreground">Sem produtos</td></tr>}
+          {loading && <tr><td colSpan={9} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
         </tbody>
       </table>
     </div>
-    <div className="text-[10px] text-muted-foreground">Limite 200 resultados • adicionar paginação e importações futuras.</div>
+    <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
+      <div>Página {page+1} • {rows.length} itens {debouncedSearch? 'filtrados':''}</div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" disabled={loading || page===0} onClick={()=>{ const np = Math.max(0,page-1); setPage(np); load(np); }}>Anterior</Button>
+        <Button size="sm" variant="outline" disabled={loading || !hasMore} onClick={()=>{ const np = page+1; setPage(np); load(np); }}>Próxima</Button>
+      </div>
+    </div>
 
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>{editing? 'Editar Produto':'Novo Produto'}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-6 text-xs">
+        {/* descrição invisível para acessibilidade evitando warning */}
+        <p id="product-dialog-desc" className="sr-only">Formulário de cadastro e edição de produto.</p>
+        <div className="grid gap-6 text-xs" aria-describedby="product-dialog-desc">
           {/* Básico */}
           {extendedCols && <section className="space-y-2">
             <h3 className="font-semibold text-sm">Básico</h3>
@@ -533,19 +571,45 @@ export function ErpProducts(){
           <Button onClick={async()=>{
             // upload imagem antes de salvar se houver
             let uploadedUrl: string | undefined;
-            if(imageFile){
+            // Preparar arquivo para upload (pode vir de estado ou de uma dataURL existente)
+            let fileToUpload: File | null = imageFile;
+            if(!fileToUpload && typeof form.image_url === 'string' && form.image_url.startsWith('data:')){
+              try {
+                const m = form.image_url.match(/^data:(.+);base64,(.*)$/);
+                if(m){
+                  const mime = m[1];
+                  const b64 = m[2];
+                  const bin = atob(b64);
+                  const arr = new Uint8Array(bin.length);
+                  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+                  const ext = mime.includes('png')? 'png': mime.includes('jpeg')? 'jpg':'bin';
+                  fileToUpload = new File([arr], `inline-${Date.now()}.${ext}`, { type: mime });
+                }
+              } catch(err){ if(import.meta.env.DEV) console.warn('Falha converter dataURL inline em arquivo', err); }
+            }
+            if(fileToUpload){
               try {
                 const identifier = editing?.id ? String(editing.id) : String(Date.now());
-                const path = `produtos/${identifier}-${Date.now()}-${imageFile.name}`;
+                const randomSuffix = Math.random().toString(36).slice(2,8);
+                const path = `produtos/${identifier}-${Date.now()}-${randomSuffix}-${fileToUpload.name}`;
                 // tenta bucket específico de imagens do produto
                 let bucket = 'product-images';
                 let upErr: any = null;
                 try {
-                  const res = await supabase.storage.from(bucket).upload(path, imageFile, { upsert:false });
+                  const res = await supabase.storage.from(bucket).upload(path, fileToUpload, { upsert:false });
                   upErr = (res as any).error;
                   if(!upErr){
-                    const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path) as any;
-                    uploadedUrl = pub?.publicUrl;
+                    // Sempre tentar gerar signed URL (funciona para bucket privado e público)
+                    let signedUrl: string | undefined;
+                    try {
+                      const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 60*60*24*30);
+                      signedUrl = signed?.signedUrl;
+                    } catch(_e){ /* ignore */ }
+                    if(!signedUrl){
+                      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path) as any;
+                      signedUrl = pub?.publicUrl;
+                    }
+                    uploadedUrl = signedUrl;
                     // aplicar apenas ao form e ao produto em edição
                     setForm(f=>({...f, image_url: uploadedUrl }));
                     if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
@@ -559,10 +623,18 @@ export function ErpProducts(){
                   if(msg.toLowerCase().includes('bucket') || msg.toLowerCase().includes('not found')){
                     bucket = 'logos';
                     try {
-                      const res2 = await supabase.storage.from(bucket).upload(path, imageFile, { upsert:false });
+                      const res2 = await supabase.storage.from(bucket).upload(path, fileToUpload, { upsert:false });
                       if((res2 as any).error) throw (res2 as any).error;
-                      const { data: pub2 } = supabase.storage.from(bucket).getPublicUrl(path) as any;
-                      uploadedUrl = pub2?.publicUrl;
+                      let signedUrl2: string | undefined;
+                      try {
+                        const { data: signed2 } = await supabase.storage.from(bucket).createSignedUrl(path, 60*60*24*30);
+                        signedUrl2 = signed2?.signedUrl;
+                      } catch(_e){ /* ignore */ }
+                      if(!signedUrl2){
+                        const { data: pub2 } = supabase.storage.from(bucket).getPublicUrl(path) as any;
+                        signedUrl2 = pub2?.publicUrl;
+                      }
+                      uploadedUrl = signedUrl2;
                       setForm(f=>({...f, image_url: uploadedUrl }));
                       if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
                     } catch(err2) {
@@ -574,7 +646,7 @@ export function ErpProducts(){
                           const reader = new FileReader();
                           reader.onload = () => resolve(String(reader.result));
                           reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
-                          reader.readAsDataURL(imageFile);
+                          reader.readAsDataURL(fileToUpload!);
                         });
                         uploadedUrl = dataUrl;
                         setForm(f=>({...f, image_url: uploadedUrl, imageDataUrl: uploadedUrl }));
@@ -595,7 +667,7 @@ export function ErpProducts(){
               setForm(f=>({...f, image_url: uploadedUrl}));
             }
             // salvar e atualizar apenas a linha alterada em memória
-            await save();
+             await save(uploadedUrl);
             // garantir que rows reflitam a alteração (caso backend não retorne a URL imediatamente)
             if(editing && (editing.id)){
               setRows(prev => prev.map(r => r.id === editing.id ? { ...r, image_url: form.image_url || uploadedUrl } : r));

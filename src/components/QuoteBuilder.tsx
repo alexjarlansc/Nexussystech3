@@ -313,9 +313,11 @@ export default function QuoteBuilder() {
       description: prod.description,
       options: prod.options,
       imageDataUrl: prod.imageDataUrl,
-      unitPrice: prod.price,
+  // Prioriza sale_price se existir; fallback para price legacy
+  unitPrice: (prod as any).sale_price != null ? (prod as any).sale_price : prod.price,
+  costPrice: (prod as any).cost_price != null ? (prod as any).cost_price : undefined,
       quantity,
-      subtotal: prod.price * quantity,
+  subtotal: ((prod as any).sale_price != null ? (prod as any).sale_price : prod.price) * quantity,
     };
     setItems((it) => [...it, snapshot]);
   }
@@ -542,9 +544,15 @@ export default function QuoteBuilder() {
               const arr = new Uint8Array(bin.length);
               for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
               const fileObj = new File([arr], `prod-${code}.${ext}`, { type: base64Match[1] });
-              const storagePath = `produtos/${code}-${Date.now()}.${ext}`;
-              const upRes = await supabase.storage.from(bucket).upload(storagePath, fileObj, { upsert: true });
+              const rand = Math.random().toString(36).slice(2,8);
+              const storagePath = `produtos/${code}-${Date.now()}-${rand}.${ext}`; // força caminho único
+              const upRes = await supabase.storage.from(bucket).upload(storagePath, fileObj, { upsert: false });
               if((upRes as any).error){ return pImg; }
+              // tentar signed url (30 dias)
+              try {
+                const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 60*60*24*30);
+                if(signed?.signedUrl) return signed.signedUrl;
+              } catch(_e){ /* ignore */ }
               const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storagePath) as any;
               return pub?.publicUrl || pImg;
             } catch(_e){ return pImg; }
@@ -949,14 +957,15 @@ export default function QuoteBuilder() {
               </div>
               <div className="grid grid-cols-1 gap-2 md:gap-3">
                 <div className="grid grid-cols-12 gap-1 md:gap-2 text-[11px] md:text-xs text-muted-foreground font-medium">
-                  <div className="col-span-5 md:col-span-6">Produto</div>
+                  <div className="col-span-5 md:col-span-5 lg:col-span-5">Produto</div>
                   <div className="col-span-2 text-right">Qtd</div>
-                  <div className="col-span-2 text-right">Unitário</div>
-                  <div className="col-span-3 md:col-span-2 text-right">Subtotal</div>
+                  <div className="col-span-2 text-right">Preço</div>
+                  <div className="col-span-1 text-right hidden md:block">Custo</div>
+                  <div className="col-span-2 md:col-span-2 text-right">Subtotal</div>
                 </div>
                 {items.map((it, idx) => (
                   <div key={idx} className="grid grid-cols-12 gap-2 md:gap-2 items-center border rounded-md p-1 md:p-2">
-                    <div className="col-span-5 md:col-span-6 flex items-center gap-3">
+                    <div className="col-span-5 md:col-span-5 lg:col-span-5 flex items-center gap-3">
                       {it.imageDataUrl ? (
                         <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
                       ) : (
@@ -980,7 +989,10 @@ export default function QuoteBuilder() {
                       />
                     </div>
                     <div className="col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
-                    <div className="col-span-3 md:col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30">{currencyBRL(it.subtotal)}</div>
+                    <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] hidden md:block pr-1">
+                      {it.costPrice != null ? currencyBRL(it.costPrice) : '—'}
+                    </div>
+                    <div className="col-span-2 md:col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30">{currencyBRL(it.subtotal)}</div>
                     <div className="col-span-12 text-right">
                       <Button size="sm" variant="ghost" onClick={() => removeItem(idx)}>Remover</Button>
                     </div>

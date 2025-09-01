@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/sonner';
+import { Checkbox } from '@/components/ui/checkbox';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 type SectionKey =
@@ -502,7 +503,343 @@ function StockPlaceholder() {
 
 // ===== Placeholders Produtos =====
 function ProductsManagePlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Gerenciar Produtos</h2><p className="text-sm text-muted-foreground mb-4">CRUD completo, tributação, status e sincronização futura.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Produto')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Importação CSV')}>Importar</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Sincronizar Tributos')}>Sync Tributos</Button></div><div className="text-xs text-muted-foreground">Tabela de produtos será renderizada aqui...</div></Card>;}
-function ProductsPricingPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Valores de Vendas</h2><p className="text-sm text-muted-foreground mb-4">Gerir margens e listas de preço.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Cadastrar Margem')}>Margem</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Recalcular Preços')}>Recalcular</Button></div><div className="text-xs text-muted-foreground">Tabela de preços será exibida...</div></Card>;}
+function ProductsPricingPlaceholder(){
+  const [search,setSearch]=useState('');
+  const [loading,setLoading]=useState(false);
+  const [product,setProduct]=useState<any|null>(null);
+  const [cost,setCost]=useState<number|undefined>();
+  const [rawCost,setRawCost]=useState<string>('');
+  const [margin,setMargin]=useState<number|undefined>();
+  const [rawMargin,setRawMargin]=useState<string>('');
+  const [icms,setIcms]=useState<number|undefined>();
+  const [rawIcms,setRawIcms]=useState<string>('');
+  const [pis,setPis]=useState<number|undefined>();
+  const [rawPis,setRawPis]=useState<string>('');
+  const [cofins,setCofins]=useState<number|undefined>();
+  const [rawCofins,setRawCofins]=useState<string>('');
+  const [calcMode,setCalcMode]=useState<'forward'|'reverse'>('forward'); // forward: custo->preço ; reverse: preço->margem
+  const [sale,setSale]=useState<number|undefined>();
+  const [rawSale,setRawSale]=useState<string>('');
+  const [hasMarginCache,setHasMarginCache]=useState<boolean>(true);
+  // Detectar presença opcional da coluna margin_cache (após migration)
+  useEffect(()=>{(async()=>{
+    try { await (supabase as any).from('products').select('margin_cache').limit(1); } catch { setHasMarginCache(false); }
+  })();},[]);
+  const saleComputed = (()=>{
+    if(calcMode==='forward'){
+      if(cost===undefined) return undefined;
+      const base = cost * (1 + (margin||0)/100);
+  const totalRate = (icms||0)+(pis||0)+(cofins||0);
+  const taxVal = base * (totalRate/100);
+  return +(base + taxVal).toFixed(2);
+    } else {
+      if(sale===undefined || cost===undefined) return undefined;
+  // remover tributos agregados antes de calcular margem efetiva
+  const totalRate = (icms||0)+(pis||0)+(cofins||0);
+  const baseWithoutTax = sale / (1+ totalRate/100);
+      const effMargin = ((baseWithoutTax - cost)/cost)*100;
+      return +effMargin.toFixed(2); // retorna margem calculada
+    }
+  })();
+  async function fetchOne(){
+    if(!search.trim()) return; setLoading(true);
+    try {
+      let q = (supabase as any).from('products').select('*').or(`name.ilike.%${search}%,code.ilike.%${search}%`).limit(1);
+      const { data, error } = await q;
+      if(error) throw error;
+      if(data && data[0]){
+  const p = data[0]; setProduct(p);
+  const cVal = p.cost_price? Number(p.cost_price):undefined; setCost(cVal); setRawCost(cVal!==undefined? cVal.toFixed(2).replace('.',','):'');
+  const sVal = p.sale_price? Number(p.sale_price): (p.price? Number(p.price): undefined); setSale(sVal); setRawSale(sVal!==undefined? sVal.toFixed(2).replace('.',','):'');
+  setMargin(undefined); setRawMargin('');
+  const iVal = p.icms_rate? Number(p.icms_rate):undefined; setIcms(iVal); setRawIcms(iVal!==undefined? iVal.toFixed(2).replace('.',','):'');
+  const pisVal = p.pis_rate? Number(p.pis_rate):undefined; setPis(pisVal); setRawPis(pisVal!==undefined? pisVal.toFixed(2).replace('.',','):'');
+  const cofVal = p.cofins_rate? Number(p.cofins_rate):undefined; setCofins(cofVal); setRawCofins(cofVal!==undefined? cofVal.toFixed(2).replace('.',','):'');
+      } else { toast.error('Produto não encontrado'); }
+    } catch(e:any){ toast.error('Falha: '+e.message); } finally { setLoading(false); }
+  }
+  async function apply(){
+    if(!product){ toast.error('Busque um produto'); return; }
+    try {
+      const update: any = {};
+  if(calcMode==='forward'){
+    const finalSale = saleComputed; if(finalSale===undefined){ toast.error('Informe custo e/ou margem'); return; }
+	update.price = finalSale; update.sale_price = finalSale; if(cost!==undefined) update.cost_price = cost; if(margin!==undefined && hasMarginCache) update.margin_cache = margin; if(icms!==undefined) update.icms_rate = icms; if(pis!==undefined) update.pis_rate = pis; if(cofins!==undefined) update.cofins_rate = cofins;
+  } else { // reverse
+    if(sale===undefined){ toast.error('Informe preço de venda'); return; }
+	update.price = sale; update.sale_price = sale; if(cost!==undefined) update.cost_price = cost; if(saleComputed!==undefined && hasMarginCache) update.margin_cache = saleComputed; if(icms!==undefined) update.icms_rate = icms; if(pis!==undefined) update.pis_rate = pis; if(cofins!==undefined) update.cofins_rate = cofins;
+  }
+      // Validações
+      const targetPrice = update.sale_price;
+      if(update.cost_price!==undefined && targetPrice!==undefined && update.cost_price>targetPrice){ toast.error('Preço não pode ser menor que custo'); return; }
+      if(calcMode==='forward' && margin!==undefined && margin<0){ toast.error('Margem negativa'); return; }
+      if(calcMode==='reverse' && saleComputed!==undefined && saleComputed<0){ toast.error('Margem calculada negativa'); return; }
+      // Capturar estado antigo para histórico
+      const old = product;
+      let { error } = await (supabase as any).from('products').update(update).eq('id', product.id).select('*').single();
+      if(error){
+        if(String(error.message||'').includes("margin_cache")){
+          // remover campo e tentar novamente
+          delete update.margin_cache; setHasMarginCache(false);
+          ({ error } = await (supabase as any).from('products').update(update).eq('id', product.id).select('*').single());
+        }
+        if(error) throw error;
+      }
+      // Inserir histórico
+      try {
+        await (supabase as any).from('product_price_history').insert({
+          product_id: product.id,
+          old_price: old.sale_price||old.price,
+          new_price: update.sale_price,
+          old_cost: old.cost_price,
+	    new_cost: update.cost_price,
+          old_margin: old.margin_cache,
+          new_margin: update.margin_cache,
+          old_icms: old.icms_rate,
+          new_icms: update.icms_rate,
+          old_pis: old.pis_rate,
+          new_pis: update.pis_rate,
+          old_cofins: old.cofins_rate,
+          new_cofins: update.cofins_rate,
+          context: { mode: calcMode, retried_without_margin_cache: !hasMarginCache }
+        });
+      } catch(_) { /* silencioso */ }
+      toast.success('Valores aplicados');
+    } catch(e:any){ toast.error('Erro ao aplicar: '+e.message); }
+  }
+  return <Card className="p-6 space-y-4">
+    <header className="space-y-1">
+      <h2 className="text-xl font-semibold">Valores de Vendas</h2>
+      <p className="text-sm text-muted-foreground">Calcule preço final a partir de custo, margem e tributação ou derive margem a partir do preço.</p>
+    </header>
+    <div className="flex flex-wrap gap-2 items-end text-xs">
+      <Input placeholder="Nome ou código" value={search} onChange={e=>setSearch(e.target.value)} className="w-56 h-8" />
+      <Button size="sm" onClick={fetchOne} disabled={loading}>{loading?'...':'Buscar'}</Button>
+      {product && <span className="text-[11px] text-muted-foreground">{product.code? product.code+' • ':''}{product.name}</span>}
+      <div className="ml-auto flex gap-2 items-center">
+        <select value={calcMode} onChange={e=>setCalcMode(e.target.value as any)} className="h-8 border rounded px-2 bg-white">
+          <option value="forward">Custo ⇒ Preço</option>
+          <option value="reverse">Preço ⇒ Margem</option>
+        </select>
+  <Button size="sm" variant="outline" onClick={()=>{setProduct(null);setCost(undefined);setRawCost('');setMargin(undefined);setRawMargin('');setIcms(undefined);setRawIcms('');setPis(undefined);setRawPis('');setCofins(undefined);setRawCofins('');setSale(undefined);setRawSale('');}}>Limpar</Button>
+      </div>
+    </div>
+  {product && <div className="grid md:grid-cols-6 gap-3 text-xs">
+      <div>
+        <label className="block text-[10px] font-medium uppercase mb-1">Custo</label>
+        <Input value={rawCost} onChange={e=>{
+          const only = e.target.value.replace(/[^0-9,\.,]/g,'');
+          setRawCost(only);
+          const normalized = only.replace(',','.');
+          const num = Number(normalized);
+          if(!isNaN(num)) setCost(num); else if(only==='') setCost(undefined);
+        }} onBlur={()=>{ if(rawCost){ const n = Number(rawCost.replace(',','.')); if(!isNaN(n)) setRawCost(n.toFixed(2)); } }} placeholder="0,00" inputMode="decimal" className="h-8" />
+      </div>
+      {calcMode==='forward' && <div>
+        <label className="block text-[10px] font-medium uppercase mb-1">Margem %</label>
+        <Input
+          value={rawMargin}
+          onChange={e=>{
+            const only = e.target.value.replace(/[^0-9,.-]/g,'');
+            setRawMargin(only);
+            const norm = only.replace(',','.');
+            const num = Number(norm); if(!isNaN(num)) setMargin(num); else if(!only) setMargin(undefined);
+          }}
+          onBlur={()=>{ if(rawMargin){ const n=Number(rawMargin.replace(',','.')); if(!isNaN(n)) setRawMargin(n.toFixed(2).replace('.',',')); } }}
+          placeholder="%"
+          inputMode="decimal"
+          className="h-8"
+        />
+      </div>}
+      {calcMode==='reverse' && <div>
+        <label className="block text-[10px] font-medium uppercase mb-1">Preço Venda</label>
+        <Input value={rawSale} onChange={e=>{
+          const only = e.target.value.replace(/[^0-9,\.,]/g,'');
+          setRawSale(only);
+          const normalized = only.replace(',','.');
+          const num = Number(normalized); if(!isNaN(num)) setSale(num); else if(only==='') setSale(undefined);
+        }} onBlur={()=>{ if(rawSale){ const n = Number(rawSale.replace(',','.')); if(!isNaN(n)) setRawSale(n.toFixed(2)); } }} placeholder="0,00" inputMode="decimal" className="h-8" />
+      </div>}
+      <div>
+        <label className="block text-[10px] font-medium uppercase mb-1">ICMS %</label>
+        <Input
+          value={rawIcms}
+          onChange={e=>{
+            const only=e.target.value.replace(/[^0-9,.-]/g,'');
+            setRawIcms(only);
+            const n=Number(only.replace(',','.'));
+            if(!isNaN(n)) setIcms(n); else if(!only) setIcms(undefined);
+          }}
+          onBlur={()=>{
+            if(rawIcms){ const n=Number(rawIcms.replace(',','.')); if(!isNaN(n)) setRawIcms(n.toFixed(2).replace('.',',')); }
+          }}
+          placeholder="%"
+          inputMode="decimal"
+          className="h-8"
+        />
+      </div>
+      <div>
+        <label className="block text-[10px] font-medium uppercase mb-1">PIS %</label>
+        <Input
+          value={rawPis}
+          onChange={e=>{
+            const only=e.target.value.replace(/[^0-9,.-]/g,'');
+            setRawPis(only);
+            const n=Number(only.replace(',','.'));
+            if(!isNaN(n)) setPis(n); else if(!only) setPis(undefined);
+          }}
+          onBlur={()=>{
+            if(rawPis){ const n=Number(rawPis.replace(',','.')); if(!isNaN(n)) setRawPis(n.toFixed(2).replace('.',',')); }
+          }}
+          placeholder="%"
+          inputMode="decimal"
+          className="h-8"
+        />
+      </div>
+      <div>
+        <label className="block text-[10px] font-medium uppercase mb-1">COFINS %</label>
+        <Input
+          value={rawCofins}
+          onChange={e=>{
+            const only=e.target.value.replace(/[^0-9,.-]/g,'');
+            setRawCofins(only);
+            const n=Number(only.replace(',','.'));
+            if(!isNaN(n)) setCofins(n); else if(!only) setCofins(undefined);
+          }}
+          onBlur={()=>{
+            if(rawCofins){ const n=Number(rawCofins.replace(',','.')); if(!isNaN(n)) setRawCofins(n.toFixed(2).replace('.',',')); }
+          }}
+          placeholder="%"
+          inputMode="decimal"
+          className="h-8"
+        />
+      </div>
+      <div className="md:col-span-2 flex flex-col">
+        <label className="block text-[10px] font-medium uppercase mb-1">{calcMode==='forward'?'Preço Final':'Margem Calculada %'}</label>
+        <div className="h-8 border rounded px-2 flex items-center bg-white font-semibold">
+          {saleComputed!==undefined ? (calcMode==='forward'
+            ? saleComputed.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
+            : saleComputed.toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2})+' %') : '—'}
+        </div>
+      </div>
+      <div className="md:col-span-6 flex gap-2 items-center">
+        <Button size="sm" onClick={apply}>Aplicar ao Produto</Button>
+        {calcMode==='reverse' && saleComputed!==undefined && <span className="text-[11px] text-muted-foreground">Margem efetiva considerando que preço inclui tributo.</span>}
+      </div>
+    </div>}
+  {product && <Breakdown cost={cost} margin={margin} icms={icms} pis={pis} cofins={cofins} saleComputed={saleComputed} calcMode={calcMode} saleInput={sale} />}
+  <MassRecalcTool />
+    {!product && <div className="text-[11px] text-muted-foreground">Busque um produto para iniciar o cálculo.</div>}
+    <div className="text-[10px] text-muted-foreground">Modelo simples: Preço = Custo*(1+Margem%) + (Tributação% sobre base). Ajuste conforme regras fiscais específicas depois.</div>
+  </Card>;
+}
+// Breakdown de tributos e margem líquida
+function Breakdown({cost, margin, icms, pis, cofins, saleComputed, calcMode, saleInput}:{cost: number|undefined; margin: number|undefined; icms:number|undefined; pis:number|undefined; cofins:number|undefined; saleComputed:number|undefined; calcMode:'forward'|'reverse'; saleInput:number|undefined;}){
+  if(cost===undefined) return null;
+  const base = calcMode==='forward'
+    ? (cost * (1 + (margin||0)/100))
+    : (saleInput!==undefined && saleComputed!==undefined ? cost * (1 + saleComputed/100) : undefined);
+  if(base===undefined) return null;
+  const icmsVal = base * ((icms||0)/100);
+  const pisVal = base * ((pis||0)/100);
+  const cofinsVal = base * ((cofins||0)/100);
+  const totalTax = icmsVal+pisVal+cofinsVal;
+  const finalPrice = calcMode==='forward' ? saleComputed : (saleInput!==undefined? saleInput: undefined);
+  const grossMarginPct = calcMode==='forward' ? (margin||0) : (saleComputed||0);
+  const grossMarginValue = base - cost;
+  const netAfterTax = finalPrice!==undefined? finalPrice - totalTax: undefined;
+  const netMarginValue = netAfterTax!==undefined? netAfterTax - cost: undefined;
+  const netMarginPct = netMarginValue!==undefined? (netMarginValue/cost)*100: undefined;
+  // Markup sobre preço final (quanto a margem bruta representa do preço):
+  const markupOverPricePct = finalPrice? (grossMarginValue / finalPrice)*100 : undefined;
+  // Margem líquida sem ICMS (descontando apenas ICMS, mantendo PIS/COFINS)
+  const netWithoutICMSPrice = finalPrice!==undefined? finalPrice - icmsVal: undefined; // remove só ICMS
+  const netWithoutICMSMarginValue = netWithoutICMSPrice!==undefined? netWithoutICMSPrice - cost - (pisVal+cofinsVal): undefined; // remove também PIS/COFINS para margem pós todos exceto ICMS? (ajustado para remover só ICMS já que netWithoutICMSPrice ainda inclui PIS/COFINS)
+  const netWithoutICMSMarginPct = netWithoutICMSMarginValue!==undefined? (netWithoutICMSMarginValue/cost)*100: undefined;
+  const fmt = (v:number|undefined, pct=false)=> v===undefined? '—': pct? v.toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2})+' %' : v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+  return <div className="border rounded p-3 bg-muted/40 text-[11px] space-y-1">
+    <div className="font-semibold">Detalhamento</div>
+    <div className="grid md:grid-cols-6 gap-x-4 gap-y-1">
+      <div><span className="text-muted-foreground">Base s/ Tributos:</span><br/>{fmt(base)}</div>
+      <div><span className="text-muted-foreground">ICMS:</span><br/>{fmt(icmsVal)} {icms? '('+icms+'%)':''}</div>
+      <div><span className="text-muted-foreground">PIS:</span><br/>{fmt(pisVal)} {pis? '('+pis+'%)':''}</div>
+      <div><span className="text-muted-foreground">COFINS:</span><br/>{fmt(cofinsVal)} {cofins? '('+cofins+'%)':''}</div>
+      <div><span className="text-muted-foreground">Tributos Totais:</span><br/>{fmt(totalTax)}</div>
+      <div><span className="text-muted-foreground">Preço Final:</span><br/>{fmt(finalPrice)}</div>
+      <div><span className="text-muted-foreground">Margem Bruta:</span><br/>{fmt(grossMarginValue)} ({fmt(grossMarginPct, true)})</div>
+      <div><span className="text-muted-foreground">Preço Líq. (s/ Tributos):</span><br/>{fmt(netAfterTax)}</div>
+      <div><span className="text-muted-foreground">Margem Líquida:</span><br/>{fmt(netMarginValue)} ({fmt(netMarginPct, true)})</div>
+      <div><span className="text-muted-foreground">Markup sobre Preço:</span><br/>{markupOverPricePct!==undefined? markupOverPricePct.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+' %':'—'}</div>
+      <div><span className="text-muted-foreground">Preço s/ ICMS:</span><br/>{fmt(netWithoutICMSPrice)}</div>
+      <div><span className="text-muted-foreground">Margem s/ ICMS:</span><br/>{fmt(netWithoutICMSMarginValue)} ({fmt(netWithoutICMSMarginPct, true)})</div>
+    </div>
+  </div>;
+}
+// Ferramenta de recalcular em massa
+function MassRecalcTool(){
+  const [open,setOpen]=useState(false);
+  const [filter,setFilter]=useState('');
+  const [newMargin,setNewMargin]=useState<number|undefined>();
+  const [applyICMS,setApplyICMS]=useState(false); const [icms,setIcms]=useState<number|undefined>();
+  const [applyPIS,setApplyPIS]=useState(false); const [pis,setPis]=useState<number|undefined>();
+  const [applyCOFINS,setApplyCOFINS]=useState(false); const [cofins,setCofins]=useState<number|undefined>();
+  const [loading,setLoading]=useState(false);
+  async function run(){
+    if(newMargin===undefined){ toast.error('Informe margem'); return; }
+    setLoading(true);
+    try {
+      // Buscar lote de produtos pelo filtro (name/code ilike)
+      let q=(supabase as any).from('products').select('id,cost_price,price,sale_price,icms_rate,pis_rate,cofins_rate,margin_cache,name,code').limit(500);
+      if(filter.trim()) q = q.or(`name.ilike.%${filter}%,code.ilike.%${filter}%`);
+      const { data, error } = await q;
+      if(error) throw error;
+      if(!data || data.length===0){ toast.message('Nenhum produto'); return; }
+      const updates=[]; const history=[];
+      for(const p of data){
+        const cost = Number(p.cost_price)||0; if(cost<=0) continue; // pula sem custo
+        const base = cost * (1 + newMargin/100);
+        let rateSum=0; const newFields:any={};
+        if(applyICMS && icms!==undefined){ newFields.icms_rate = icms; rateSum+=icms; }
+        else if(p.icms_rate) rateSum+=Number(p.icms_rate);
+        if(applyPIS && pis!==undefined){ newFields.pis_rate = pis; rateSum+=pis; }
+        else if(p.pis_rate) rateSum+=Number(p.pis_rate);
+        if(applyCOFINS && cofins!==undefined){ newFields.cofins_rate = cofins; rateSum+=cofins; }
+        else if(p.cofins_rate) rateSum+=Number(p.cofins_rate);
+        const finalPrice = base + base*(rateSum/100);
+        updates.push({ id: p.id, price: finalPrice, sale_price: finalPrice, cost_price: cost, margin_cache: newMargin, ...newFields });
+        history.push({ product_id: p.id, old_price: p.sale_price||p.price, new_price: finalPrice, old_cost: p.cost_price, new_cost: cost, old_margin: p.margin_cache, new_margin: newMargin, old_icms: p.icms_rate, new_icms: newFields.icms_rate??p.icms_rate, old_pis: p.pis_rate, new_pis: newFields.pis_rate??p.pis_rate, old_cofins: p.cofins_rate, new_cofins: newFields.cofins_rate??p.cofins_rate, context:{ bulk:true, filter } });
+      }
+      if(updates.length===0){ toast.message('Sem produtos com custo válido'); return; }
+      // Chunk em lotes de 100
+      while(updates.length){
+        const chunk = updates.splice(0,100);
+        const { error:upErr } = await (supabase as any).from('products').upsert(chunk.map(c=>({id:c.id, ...c}))); if(upErr) throw upErr;
+      }
+      while(history.length){
+        const chunk = history.splice(0,100);
+        await (supabase as any).from('product_price_history').insert(chunk);
+      }
+      toast.success('Recalculo em massa concluído'); setOpen(false);
+    } catch(e:any){ toast.error('Falha recalculo: '+e.message); } finally { setLoading(false); }
+  }
+  return <div className="border rounded p-3 bg-muted/40 text-[11px]">
+    <div className="flex items-center justify-between"><div className="font-semibold">Recalcular em Massa</div><Button size="sm" variant="outline" onClick={()=>setOpen(o=>!o)}>{open?'Fechar':'Abrir'}</Button></div>
+    {open && <div className="mt-2 space-y-2">
+      <div className="grid md:grid-cols-6 gap-2">
+        <div className="col-span-2"><label className="block text-[10px] font-medium mb-1">Filtro (nome ou código)</label><Input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="ex: CAMISA" className="h-7" /></div>
+        <div><label className="block text-[10px] font-medium mb-1">Nova Margem %</label><Input value={newMargin??''} onChange={e=>setNewMargin(e.target.value? Number(e.target.value):undefined)} className="h-7" placeholder="%" /></div>
+        <div className="flex flex-col"><label className="block text-[10px] font-medium mb-1">ICMS %</label><div className="flex items-center gap-1"><Checkbox checked={applyICMS} onCheckedChange={v=>setApplyICMS(!!v)} /><Input disabled={!applyICMS} value={icms??''} onChange={e=>setIcms(e.target.value? Number(e.target.value):undefined)} className="h-7" placeholder="%" /></div></div>
+        <div className="flex flex-col"><label className="block text-[10px] font-medium mb-1">PIS %</label><div className="flex items-center gap-1"><Checkbox checked={applyPIS} onCheckedChange={v=>setApplyPIS(!!v)} /><Input disabled={!applyPIS} value={pis??''} onChange={e=>setPis(e.target.value? Number(e.target.value):undefined)} className="h-7" placeholder="%" /></div></div>
+        <div className="flex flex-col"><label className="block text-[10px] font-medium mb-1">COFINS %</label><div className="flex items-center gap-1"><Checkbox checked={applyCOFINS} onCheckedChange={v=>setApplyCOFINS(!!v)} /><Input disabled={!applyCOFINS} value={cofins??''} onChange={e=>setCofins(e.target.value? Number(e.target.value):undefined)} className="h-7" placeholder="%" /></div></div>
+      </div>
+      <div className="flex gap-2">
+  <Button size="sm" onClick={run} disabled={loading}>{loading?'Processando...':'Executar'}</Button>
+  <Button size="sm" variant="outline" onClick={()=>{setFilter('');setNewMargin(undefined);setApplyICMS(false);setApplyPIS(false);setApplyCOFINS(false);setIcms(undefined);setPis(undefined);setCofins(undefined);}}>Limpar</Button>
+      </div>
+      <div className="text-[10px] text-muted-foreground">Aplica nova margem sobre custo atual. Tributos somados somente se marcados. Limite 500 produtos por execução.</div>
+    </div>}
+  </div>;
+}
 function ProductGroupsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Grupos de Produtos</h2><p className="text-sm text-muted-foreground mb-4">Organize hierarquias.</p><Button size="sm" onClick={()=>toast.message('Novo Grupo')}>Novo Grupo</Button><div className="mt-4 text-xs text-muted-foreground">Lista/árvore de grupos...</div></Card>;}
 function ProductUnitsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Unidades</h2><p className="text-sm text-muted-foreground mb-4">Cadastro de unidades comerciais.</p><Button size="sm" onClick={()=>toast.message('Nova Unidade')}>Nova Unidade</Button><div className="mt-4 text-xs text-muted-foreground">Tabela de unidades...</div></Card>;}
 function ProductVariationsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Grades / Variações</h2><p className="text-sm text-muted-foreground mb-4">Gerencie SKUs por atributos.</p><Button size="sm" onClick={()=>toast.message('Nova Grade')}>Nova Grade</Button><div className="mt-4 text-xs text-muted-foreground">Configuração de atributos e geração de variações...</div></Card>;}

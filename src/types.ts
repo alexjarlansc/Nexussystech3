@@ -151,6 +151,8 @@ export interface QuoteItemSnapshot {
   options?: string;
   imageDataUrl?: string;
   unitPrice: number;
+  // Custo médio (opcional) para análise interna; não exibido ao cliente nos PDFs
+  costPrice?: number;
   quantity: number;
   subtotal: number;
 }
