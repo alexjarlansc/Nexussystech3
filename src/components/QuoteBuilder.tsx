@@ -103,6 +103,7 @@ export default function QuoteBuilder() {
     email: ''
   });
   const [clients, setClients] = useState<Client[]>([]);
+  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean> | null>(null);
   // Buscar clientes do banco de dados Supabase ao carregar
   // Função para buscar clientes do banco
   async function fetchClients() {
@@ -1384,50 +1385,69 @@ export default function QuoteBuilder() {
               </div>
             )}
             {products.map((p) => (
-              <div key={p.id} className="flex items-center justify-between border rounded-md p-3">
-                <div className="flex items-center gap-3">
+              <div key={p.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between border rounded-md p-3">
+                <div className="flex items-start sm:items-center gap-3 w-full">
                   {p.imageDataUrl ? (
                     <img src={p.imageDataUrl} alt={p.name} className="h-12 w-12 rounded object-cover border" />
                   ) : (
                     <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-xs">IMG</div>
                   )}
-                  <div>
-                    <div className="font-medium">{p.name}</div>
+                  <div className="flex-1">
+                    <div className="font-medium text-sm leading-tight mb-1 max-h-8 overflow-hidden break-words text-[13px]">{p.name}</div>
                     <div className="text-xs text-muted-foreground">{currencyBRL(p.price)}</div>
+                    {/* Mostrar apenas resumo; detalhes via expand */}
                     {p.description && (
-                      <div className="text-xs text-muted-foreground max-w-xs truncate">{p.description}</div>
+                      <div className="text-xs text-muted-foreground mt-1 break-words">{String(p.description).slice(0,80)}{String(p.description).length > 80 ? '...' : ''}</div>
                     )}
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setOpenEditProduct(p)}>Editar</Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => {
-                      if (profile?.role !== 'admin') {
-                        toast.error('Apenas administradores podem cadastrar produtos');
-                        return;
-                      }
-                      setOpenProduct(true);
-                    }}
-                  >
-                    Novo
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="destructive" 
-                    onClick={() => {
-                      if (profile?.role !== 'admin') {
-                        toast.error('Apenas administradores podem excluir produtos');
-                        return;
-                      }
-                      deleteProduct(p.id);
-                    }}
-                  >
-                    Excluir
-                  </Button>
+                <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2 mt-2 sm:mt-0">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground underline-offset-1 hover:underline"
+                      onClick={() => setExpandedProducts(prev => ({ ...(prev || {}), [p.id]: !prev?.[p.id] }))}
+                    >
+                      {expandedProducts?.[p.id] ? 'Ocultar' : 'Detalhes'}
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setOpenEditProduct(p)}>Editar</Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => {
+                        if (profile?.role !== 'admin') {
+                          toast.error('Apenas administradores podem cadastrar produtos');
+                          return;
+                        }
+                        setOpenProduct(true);
+                      }}
+                    >
+                      Novo
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="destructive" 
+                      onClick={() => {
+                        if (profile?.role !== 'admin') {
+                          toast.error('Apenas administradores podem excluir produtos');
+                          return;
+                        }
+                        deleteProduct(p.id);
+                      }}
+                    >
+                      Excluir
+                    </Button>
+                  </div>
                 </div>
+                {expandedProducts?.[p.id] && (
+                  <div className="w-full mt-3 sm:mt-2 text-xs text-muted-foreground">
+                    {String(p.description).split('•').filter(Boolean).map((line, idx) => (
+                      <div key={idx} className="py-0.5">{line.trim()}</div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
