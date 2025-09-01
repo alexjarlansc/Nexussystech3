@@ -1543,7 +1543,7 @@ function SearchProductModal({
                 <div className="h-14 w-14 rounded border bg-accent/60 grid place-items-center text-xs text-muted-foreground flex-shrink-0">IMG</div>
               )}
               <div className="flex flex-col min-w-0">
-                <span className="font-medium truncate max-w-[120px] sm:max-w-[200px]">{p.name}</span>
+                <span className="font-medium text-sm leading-tight max-h-10 overflow-hidden">{p.name}</span>
                 <span className="text-xs text-muted-foreground truncate">Código: {p.code ? p.code : p.id.slice(-8)}</span>
                 <div className="text-xs text-muted-foreground flex gap-3 mt-1">
                   <span>Preço: {currencyBRL(p.sale_price ?? p.price)}</span>
@@ -1554,9 +1554,7 @@ function SearchProductModal({
             </div>
             <div className="ml-2 flex gap-2">
               <Button size="sm" variant="secondary" className="px-3 py-1 text-xs">Adicionar</Button>
-              {onRegisterMovement && (
-                <Button size="sm" variant="outline" className="px-3 py-1 text-xs" onClick={(e)=>{ e.stopPropagation(); onRegisterMovement(p); }}>Registrar Movimento</Button>
-              )}
+              {/* Botão 'Registrar Movimento' removido conforme solicitado */}
             </div>
           </button>
         ))}
