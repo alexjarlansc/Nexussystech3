@@ -53,10 +53,27 @@ export function useAuthInternal() {
         return;
       }
       if (!profileData) {
-        console.warn('⚠️ Perfil não encontrado para o usuário');
-        setError('Perfil não encontrado. Entre em contato com o administrador.');
-        setLoading(false);
-        return;
+        console.warn('⚠️ Perfil não encontrado – tentando criar via ensure_profile()');
+        try {
+          const { data: ensured, error: ensureErr } = await (supabase as any).rpc('ensure_profile');
+          if (ensureErr) {
+            console.error('❌ Falha ensure_profile:', ensureErr);
+            setError('Perfil inexistente e não foi possível criar automaticamente. Contate suporte.');
+            setLoading(false);
+            return;
+          }
+          if (ensured) {
+            console.log('✅ Perfil criado automaticamente');
+            // Recarrega dados (evita duplicar lógica)
+            setTimeout(() => loadUserData(userId, retryCount + 1), 200);
+            return;
+          }
+        } catch (e) {
+          console.error('❌ Exceção ensure_profile', e);
+          setError('Falha ao criar perfil automaticamente');
+          setLoading(false);
+          return;
+        }
       }
       setProfile(profileData);
       console.log('✅ Perfil carregado:', profileData.role);
