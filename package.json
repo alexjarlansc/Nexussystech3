@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "db:push": "supabase db push"
+    "db:push": "supabase db push",
+    "fix:product-images": "node ./scripts/fix_product_images.mjs",
+    "bootstrap:inventory": "node ./scripts/bootstrap_inventory.mjs"
   },
   "engines": {
     "node": ">=18.18.0 <23",

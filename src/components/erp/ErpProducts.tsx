@@ -1,4 +1,4 @@
-  // Utilitário para formatar valores monetários (R$) apenas ao sair do campo
+// Utilitário para formatar valores monetários (R$) apenas ao sair do campo
   function formatBRL(value: number|string|undefined): string {
     if(value === undefined || value === null || value === '') return '';
   const num = typeof value === 'number' ? value : Number(String(value).replace(/[^\d,]/g, '').replace(/(\d{2})$/, ',$1'));
@@ -20,7 +20,7 @@
     return +(cost * (1 + margin/100)).toFixed(2);
   }
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +38,9 @@ interface ProductForm extends Partial<Product> {
   stock_qty?: number;
   margin?: number;
 }
+
+// Adicionar tipos leves para grupos
+type ProdGroup = { id:string; name:string; level:1|2|3; parent_id:string|null };
 
 const UNITS = ['UN','CX','KG','MT','LT','PC'];
 const STATUS = ['ATIVO','INATIVO'];
@@ -63,6 +66,32 @@ export function ErpProducts(){
   const [confirmDelete,setConfirmDelete]=useState<null|Product>(null);
   const [extendedCols,setExtendedCols]=useState(true); // se false não enviar campos novos
   const [companyId,setCompanyId]=useState<string|undefined>(undefined);
+  const [groups,setGroups]=useState<ProdGroup[]>([]);
+  // refs para foco automático na cascata
+  const sectorSelectRef = useRef<HTMLSelectElement|null>(null);
+  const sessionSelectRef = useRef<HTMLSelectElement|null>(null);
+  const catSelectRef = useRef<HTMLSelectElement|null>(null);
+
+  // Carrega grupos hierárquicos (categoria -> setor -> sessão)
+  async function loadGroups(){
+    try {
+      const q = (supabase as any).from('product_groups').select('id,name,level,parent_id').order('level').order('name');
+      const { data, error } = await q;
+      if(error) throw error;
+      setGroups(data||[]);
+    } catch(e:any){
+      const msg = String(e?.message||'');
+      if(msg.includes('product_groups')){
+        // Silencia se tabela não existir ainda
+        if(import.meta.env.DEV) console.warn('Tabela product_groups ausente para cascata de grupos.');
+      } else {
+        toast.error('Grupos: '+msg);
+      }
+    }
+  }
+  useEffect(()=>{ loadGroups(); },[]);
+  // Filtros de grupos removidos (categoria, setor, sessão)
+  // Reposição removida
 
   type ProductRow = Product & { created_at?: string };
   async function load(pageOverride?: number){
@@ -72,11 +101,13 @@ export function ErpProducts(){
       try { await (supabase as any).rpc('ensure_profile'); } catch(err) { if(import.meta.env.DEV) console.warn('ensure_profile rpc indisponível', err); }
       let q = (supabase as any)
         .from('products')
-        .select('id,code,name,unit,sale_price,price,cost_price,status,created_at')
+        .select('id,code,name,unit,sale_price,price,cost_price,status,created_at,image_url')
         .order('created_at',{ascending:false});
       if(debouncedSearch){
         q = q.or(`name.ilike.%${debouncedSearch}%,code.ilike.%${debouncedSearch}%`);
       }
+      // filtros por grupo textual
+  // Filtros de grupo removidos
       const from = currentPage * pageSize;
       const to = from + pageSize - 1;
       q = q.range(from, to);
@@ -98,10 +129,16 @@ export function ErpProducts(){
         const sampleDebug = products.slice(0,10).map(p=>({id:p.id, img: (p as any).image_url}));
         console.log('[DEBUG products images]', sampleDebug);
       }
-      setRows(products);
+  setRows(products.map(p=>({...p})));
+      // Checar se algum produto está abaixo do mínimo e notificar uma vez
+      const low = products.filter(p=> typeof (p as any).stock_min === 'number' && typeof (p as any).stock === 'number' && (p as any).stock_min>0 && (p as any).stock < (p as any).stock_min);
+      if(low.length){
+        toast.warning(low.length+ ' produto(s) abaixo do estoque mínimo');
+      }
     } catch(e:unknown){ const msg = e instanceof Error? e.message: String(e); toast.error('Falha ao carregar produtos: '+msg); }
     finally { setLoading(false); }
   }
+  // Funções de reposição removidas
   async function loadSuppliers(){
     const { data, error }:{ data: Pick<Supplier,'id'|'name'>[]|null; error: unknown } = await (supabase as unknown as { from: any }).from('suppliers').select('id,name').eq('is_active', true).limit(200);
     if(!error) setSuppliers(data||[]);
@@ -156,11 +193,12 @@ export function ErpProducts(){
     })();
   },[]);
 
-  async function save(imageUrlOverride?: string){
+  // save agora retorna id e se foi insert; não fecha modal
+  async function save(imageUrlOverride?: string, opts?: { suppressToast?: boolean }): Promise<{ id: string|null; wasInsert: boolean }>{
   if(!form.name.trim()){ toast.error('Nome obrigatório'); return; }
     if(!form.code || !form.code.trim()){
       toast.error('Código obrigatório');
-      return;
+      return { id:null, wasInsert:false };
     }
     // Verificar unicidade do código
   // cast to any to avoid deep generic instantiation in TS when selecting minimal fields
@@ -174,7 +212,7 @@ export function ErpProducts(){
   const { data: codeExists } = await codeQuery.single();
     if(codeExists){
       toast.error('Já existe um produto com este código!');
-      return;
+  return { id:null, wasInsert:false };
     }
   const salePrice = Number(form.sale_price||form.price||0);
     // Evitar herdar imagem de edição anterior ao criar novo (se usuário abriu 'Novo' após editar)
@@ -190,9 +228,7 @@ export function ErpProducts(){
         name: form.name.trim(),
         description: form.description||null,
   code: (form.code && form.code !== 'sample_code') ? form.code : null,
-        category: form.category||null,
-        brand: form.brand||null,
-        model: form.model||null,
+  // Campos removidos: category, brand, model
         unit: form.unit||null,
         stock_min: form.stock_min? Number(form.stock_min):null,
         stock_max: form.stock_max? Number(form.stock_max):null,
@@ -202,7 +238,7 @@ export function ErpProducts(){
         price: salePrice, // manter compatível
         status: form.status||'ATIVO',
         validity_date: form.validity_date||null,
-        lot_number: form.lot_number||null,
+  // Campo lot_number removido
         default_supplier_id: form.default_supplier_id||null,
         payment_terms: form.payment_terms||null,
         ncm: form.ncm||null,
@@ -215,10 +251,12 @@ export function ErpProducts(){
         cofins_rate: form.cofins_rate? Number(form.cofins_rate):null,
   // garantir persistência da imagem (antes não era enviada no payload)
   image_url: effectiveImageUrl || null,
+        product_group_id: (form as any).product_group_id||null,
       };
       if(companyId) payload.company_id = companyId;
       if(!extendedCols){
-        const allowed = ['name','description','price','sale_price','status'];
+        // Incluir image_url para permitir salvar imagem mesmo em modo reduzido
+        const allowed = ['name','description','price','sale_price','status','product_group_id','image_url'];
         Object.keys(payload).forEach(k=>{ if(!allowed.includes(k)) delete payload[k]; });
         if(companyId) payload.company_id = companyId; // garantir
       }
@@ -229,6 +267,11 @@ export function ErpProducts(){
         const { data: stockData } = await (supabase as any).from('product_stock').select('stock').eq('product_id', editing.id).single();
         oldStock = stockData?.stock ?? 0;
         resp = await (supabase as unknown as { from: any }).from('products').update(payload).eq('id', editing.id).select('*').single();
+        if((resp as any).error && String((resp as any).error.code||'')==='PGRST204' && String((resp as any).error.message||'').includes('product_group_id')){
+          if(import.meta.env.DEV) console.warn('Coluna product_group_id ausente (update) - reenviando sem o campo');
+          delete (payload as any).product_group_id;
+          resp = await (supabase as unknown as { from: any }).from('products').update(payload).eq('id', editing.id).select('*').single();
+        }
         // Se quantidade de estoque mudou, registrar ajuste
         if(resp.data && typeof form.stock_qty === 'number' && form.stock_qty !== oldStock) {
           const diff = form.stock_qty - oldStock;
@@ -249,6 +292,11 @@ export function ErpProducts(){
         }
       } else {
         resp = await (supabase as unknown as { from: any }).from('products').insert(payload).select('*').single();
+        if((resp as any).error && String((resp as any).error.code||'')==='PGRST204' && String((resp as any).error.message||'').includes('product_group_id')){
+          if(import.meta.env.DEV) console.warn('Coluna product_group_id ausente (insert) - reenviando sem o campo');
+          delete (payload as any).product_group_id;
+          resp = await (supabase as unknown as { from: any }).from('products').insert(payload).select('*').single();
+        }
         // Se estoque inicial informado, criar movimentação de entrada
         if(resp.data && form.stock_qty && form.stock_qty > 0) {
           try {
@@ -266,11 +314,44 @@ export function ErpProducts(){
         }
       }
       if(resp.error) throw resp.error;
-  toast.success(editing?'Produto atualizado':'Produto criado');
-  // resetar somente após garantir que imagem persistiu
-  setOpen(false); setEditing(null); setForm(makeEmpty()); load();
-    } catch(e:unknown){ toast.error(extractErr(e)); if(import.meta.env.DEV) console.error('save product error', e); }
-    setSaving(false);
+      if(!opts?.suppressToast) toast.success(editing?'Produto atualizado':'Produto criado');
+      const newId = resp.data?.id || (editing?.id ?? null);
+      const wasInsert = !editing;
+      return { id: newId, wasInsert };
+    } catch(e:unknown){ toast.error(extractErr(e)); if(import.meta.env.DEV) console.error('save product error', e); return { id:null, wasInsert: !editing }; }
+    finally { setSaving(false); }
+  }
+
+  // Helper: tenta enviar imagem para lista de buckets; se todos falharem por bucket inexistente, retorna dataURL embutida
+  async function uploadProductImage(productId: string, file: File): Promise<{ storedValue: string; previewUrl: string }>{
+    const buckets = ['product-images','logos'];
+    const ext = (file.name.split('.').pop()||'bin').toLowerCase();
+    const path = `produtos/${productId}/main-${Date.now()}.${ext}`;
+    for(const b of buckets){
+      try {
+        const up = await supabase.storage.from(b).upload(path, file, { upsert:true });
+        // supabase-js v2 retorna { data, error }
+        if((up as any).error){
+          const msg = extractErr((up as any).error).toLowerCase();
+          if(msg.includes('bucket')) continue; // tenta próximo bucket
+          else throw (up as any).error;
+        }
+        let pubUrl: string | undefined;
+        try { const { data:pub } = supabase.storage.from(b).getPublicUrl(path) as any; pubUrl = pub?.publicUrl; } catch{/* ignore */}
+        return { storedValue: path, previewUrl: pubUrl || path };
+      } catch(e){
+        const msg = extractErr(e).toLowerCase();
+        if(msg.includes('bucket')) continue; // tenta próximo
+        throw e; // erro diferente de bucket não encontrado
+      }
+    }
+    // Nenhum bucket disponível: fallback data URL
+    const dataUrl = await new Promise<string>((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('Falha ao ler arquivo')); reader.readAsDataURL(file);
+    });
+    return { storedValue: dataUrl, previewUrl: dataUrl };
   }
 
   // Utilitário unificado para gerar código evitando falso negativo de erro (agora com prefixo opcional)
@@ -282,7 +363,9 @@ export function ErpProducts(){
   function startNew(){
     setEditing(null);
     setImageFile(null);
-    setForm(makeEmpty());
+  setForm(makeEmpty());
+    // limpar associações
+    (makeEmpty() as any).product_group_id = undefined;
     setOpen(true);
   }
   function normalizeNumber(v: unknown): number|undefined {
@@ -303,6 +386,8 @@ export function ErpProducts(){
       pis_rate: normalizeNumber((p as any).pis_rate),
       cofins_rate: normalizeNumber((p as any).cofins_rate)
     };
+    // Garantir que image_url seja atualizado (ou limpo) ao entrar em edição para evitar ficar com imagem de produto anterior
+    if(!(p as any).image_url) (norm as any).image_url = undefined;
     // Sanitizar qualquer objeto inesperado (evitar [object Object] em inputs)
   const scrubbed: ProductForm = Object.fromEntries(
       Object.entries(norm).map(([k,v])=> {
@@ -321,8 +406,30 @@ export function ErpProducts(){
   if(import.meta.env.DEV) console.log('Editar produto raw:', p);
   // clonar para evitar mutação por referência direta ao objeto listado em `rows`
   setEditing({ ...p });
-    setForm(scrubbed);
-    setOpen(true);
+  setForm(scrubbed as any);
+  setOpen(true);
+  // Resolver preview da imagem (gera URL pública se só houver path)
+  (async ()=>{
+    try {
+      const currentId = p.id; // capturar id para evitar race
+      const raw = (p as any).image_url as string | undefined;
+      if(!raw) return;
+      // já é http ou data
+      if(raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:')){
+        setEditing(e=> e && e.id===currentId ? ({ ...e, imageDataUrl: raw } as any): e);
+        setForm(f=> ({ ...f, imageDataUrl: raw } as any));
+        return;
+      }
+      // tentar gerar public URL
+      let resolved = raw;
+      try {
+        const { data: pub } = supabase.storage.from('product-images').getPublicUrl(raw) as any;
+        if(pub?.publicUrl) resolved = pub.publicUrl;
+      } catch {/* ignore */}
+      setEditing(e=> e && e.id===currentId ? ({ ...e, imageDataUrl: resolved } as any): e);
+      setForm(f=> ({ ...f, imageDataUrl: resolved } as any));
+    } catch(err){ if(import.meta.env.DEV) console.warn('Falha resolver imagem para preview', err); }
+  })();
   }
   async function toggleStatus(p:Product){
     try {
@@ -346,49 +453,54 @@ export function ErpProducts(){
         <p className="text-sm text-muted-foreground">Cadastro completo de itens para estoque, vendas e fiscal.</p>
       </div>
       <div className="flex gap-2 ml-auto flex-wrap">
-  <div className="relative">
-    <Input
-      placeholder="Buscar nome ou código"
-      value={search}
-      onChange={e=>setSearch(e.target.value)}
-      className="w-48"
-      autoComplete="off"
-    />
-    {prodSearchSuggestions.length > 0 && (
-      <ul className="absolute z-10 bg-white border rounded w-48 mt-1 shadow-lg max-h-40 overflow-auto text-xs">
-        {prodSearchSuggestions.map(p => (
-          <li
-            key={p.id}
-            className="px-2 py-1 cursor-pointer hover:bg-muted/30"
-            onClick={() => {
-              setSearch(p.code ? `${p.code} - ${p.name}` : p.name);
-              setProdSearchSuggestions([]);
-            }}
-          >
-            {p.code ? <span className="font-mono text-slate-600">{p.code}</span> : null} {p.name}
-          </li>
-        ))}
-      </ul>
-    )}
-  </div>
-  <Button size="sm" onClick={()=>{ setPage(0); load(0); }} disabled={loading} className="relative">
-    Filtrar
-    {loading && <span className="ml-2 inline-block h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin align-middle" aria-label="Carregando" />}
-  </Button>
+  {/* Filtros de grupo removidos conforme solicitação */}
+        <div className="relative">
+          <Input
+            placeholder="Buscar nome ou código"
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            className="w-48"
+            autoComplete="off"
+          />
+          {prodSearchSuggestions.length > 0 && (
+            <ul className="absolute z-10 bg-white border rounded w-48 mt-1 shadow-lg max-h-40 overflow-auto text-xs">
+              {prodSearchSuggestions.map(p => (
+                <li
+                  key={p.id}
+                  className="px-2 py-1 cursor-pointer hover:bg-muted/30"
+                  onClick={() => {
+                    setSearch(p.code ? `${p.code} - ${p.name}` : p.name);
+                    setProdSearchSuggestions([]);
+                  }}
+                >
+                  {p.code ? <span className="font-mono text-slate-600">{p.code}</span> : null} {p.name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <Button size="sm" onClick={()=>{ setPage(0); load(0); }} disabled={loading} className="relative">
+          Filtrar
+          {loading && <span className="ml-2 inline-block h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin align-middle" aria-label="Carregando" />}
+        </Button>
   <Button size="sm" onClick={startNew}>Novo</Button>
+  {/* Botão de Reposição removido */}
       </div>
     </header>
     <div className="border rounded max-h-[520px] overflow-auto">
-      <table className="w-full text-xs">
-  <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1">Un</th><th className="px-2 py-1 text-right">Custo Médio</th><th className="px-2 py-1 text-right">Preço Venda</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th><th className="px-2 py-1">Status</th><th className="px-2 py-1"/></tr></thead>
+    <table className="w-full text-xs">
+  <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1" title="Imagem">Img</th><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1">Un</th><th className="px-2 py-1 text-right">Custo Médio</th><th className="px-2 py-1 text-right">Preço Venda</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th><th className="px-2 py-1">Status</th><th className="px-2 py-1"/></tr></thead>
         <tbody>
-          {rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
+          {rows.map(r=> {
+            const belowMin = (r as any).stock_min!=null && r.stock!=null && r.stock < (r as any).stock_min;
+            return <tr key={r.id} className={"border-t hover:bg-muted/40 "+(belowMin? 'bg-red-50/70 dark:bg-red-950/20':'' )}>
+            <td className="px-2 py-1">{r.image_url ? (()=>{ const val = r.image_url as any; const isUrl = typeof val==='string' && (val.startsWith('http')||val.startsWith('data:')); let resolved = val; if(!isUrl){ try { const { data:pub } = supabase.storage.from('product-images').getPublicUrl(val) as any; if(pub?.publicUrl) resolved = pub.publicUrl; } catch{/* ignore */} } return <img src={resolved} alt="" className="h-8 w-8 rounded object-cover border" />; })() : <span className="text-[10px] text-muted-foreground">-</span>}</td>
             <td className="px-2 py-1 font-mono truncate max-w-[120px]" title={r.code||''}>{r.code||'-'}</td>
             <td className="px-2 py-1 truncate max-w-[240px]" title={r.name}>{r.name}</td>
             <td className="px-2 py-1 text-center">{r.unit||'-'}</td>
             <td className="px-2 py-1 text-right">{r.cost_price != null ? r.cost_price.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '-'}</td>
             <td className="px-2 py-1 text-right">{(r.sale_price||r.price||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-            <td className="px-2 py-1 text-right">{r.stock ?? '-'}</td>
+            <td className="px-2 py-1 text-right" title={belowMin? 'Abaixo do mínimo': undefined}>{r.stock ?? '-'}</td>
             <td className="px-2 py-1 text-right">{r.reserved ?? '-'}</td>
             <td className="px-2 py-1 text-center"><button onClick={()=>toggleStatus(r)} className={"underline-offset-2 hover:underline "+(r.status==='INATIVO'? 'text-red-500':'text-green-600')}>{r.status||'ATIVO'}</button></td>
             <td className="px-2 py-1 text-right flex gap-1 justify-end">
@@ -402,9 +514,9 @@ export function ErpProducts(){
                 ×
               </button>
             </td>
-          </tr>)}
-          {rows.length===0 && !loading && <tr><td colSpan={9} className="text-center py-6 text-muted-foreground">Sem produtos</td></tr>}
-          {loading && <tr><td colSpan={9} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          </tr>;})}
+          {rows.length===0 && !loading && <tr><td colSpan={10} className="text-center py-6 text-muted-foreground">Sem produtos</td></tr>}
+          {loading && <tr><td colSpan={10} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
         </tbody>
       </table>
     </div>
@@ -448,11 +560,44 @@ export function ErpProducts(){
               </select>
             </div>
             <div className="grid md:grid-cols-5 gap-2">
-              <Input placeholder="Categoria" value={form.category||''} onChange={e=>setForm(f=>({...f,category:e.target.value}))} />
-              <Input placeholder="Marca" value={form.brand||''} onChange={e=>setForm(f=>({...f,brand:e.target.value}))} />
-              <Input placeholder="Modelo" value={form.model||''} onChange={e=>setForm(f=>({...f,model:e.target.value}))} />
-              <Input placeholder="Localização" value={form.location||''} onChange={e=>setForm(f=>({...f,location:e.target.value}))} />
-              <Input placeholder="Prefixo Código (opc)" value={(form as any).code_prefix||''} onChange={e=>setForm(f=>({...f, code_prefix:e.target.value||undefined}))} />
+              {/* Campo Categoria (livre) removido */}
+              {/* selects hierárquicos controlados */}
+              <select ref={catSelectRef} className="h-9 border rounded px-2" value={(form as any).cat_id||''} onChange={e=>{
+                const catId=e.target.value; setForm(f=>({...f, cat_id: catId||undefined, sector_id: undefined, product_group_id: undefined } as any));
+                // Selecione automaticamente próximo nível se houver somente um setor
+                setTimeout(()=>{
+                  if(!catId) return; const sectors = groups.filter(g=>g.level===2 && g.parent_id===catId);
+                  if(sectors.length===1){
+                    const only = sectors[0]; setForm(f=>({...f, sector_id: only.id, product_group_id: undefined } as any));
+                    const sessions = groups.filter(g=>g.level===3 && g.parent_id===only.id);
+                    if(sessions.length===1){ setForm(f=>({...f, product_group_id: sessions[0].id } as any)); }
+                    sessionSelectRef.current?.focus();
+                  } else {
+                    sectorSelectRef.current?.focus();
+                  }
+                },0);
+              }}>
+                <option value="">Cat (grupo)</option>
+                {groups.filter(g=>g.level===1).map(c=> <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <select ref={sectorSelectRef} className="h-9 border rounded px-2" value={(form as any).sector_id||''} onChange={e=>{
+                const sectorId=e.target.value; setForm(f=>({...f, sector_id: sectorId||undefined, product_group_id: undefined } as any));
+                setTimeout(()=>{
+                  if(!sectorId) return; const sessions = groups.filter(g=>g.level===3 && g.parent_id===sectorId);
+                  if(sessions.length===1){ setForm(f=>({...f, product_group_id: sessions[0].id } as any)); }
+                  sessionSelectRef.current?.focus();
+                },0);
+              }} disabled={!(form as any).cat_id}>
+                <option value="">Setor</option>
+                {groups.filter(g=>g.level===2 && g.parent_id===(form as any).cat_id).map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <select ref={sessionSelectRef} className="h-9 border rounded px-2" value={(form as any).product_group_id||''} onChange={e=>{
+                const sessionId=e.target.value; setForm(f=>({...f, product_group_id: sessionId||undefined } as any));
+              }} disabled={!(form as any).sector_id}>
+                <option value="">Sessão</option>
+                {groups.filter(g=>g.level===3 && g.parent_id===(form as any).sector_id).map(ss=> <option key={ss.id} value={ss.id}>{ss.name}</option>)}
+              </select>
+              {/* Campos Marca e Modelo removidos */}
             </div>
             <div className="flex items-center gap-3">
               <div className="flex flex-col gap-1">
@@ -462,7 +607,18 @@ export function ErpProducts(){
               {(editing?.image_url || imageFile) && (
                 <div className="flex items-center gap-2">
                   {imageFile && <img src={URL.createObjectURL(imageFile)} alt="preview" className="h-16 w-16 object-cover rounded border" />}
-                  {!imageFile && editing?.image_url && <img src={editing.image_url} alt="img" className="h-16 w-16 object-cover rounded border" />}
+                  {!imageFile && editing?.image_url && (()=>{
+                    const raw = (editing as any).imageDataUrl || editing.image_url;
+                    if(raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:')){
+                      return <img src={raw} alt="img" className="h-16 w-16 object-cover rounded border" />;
+                    }
+                    // tentar gerar public URL a partir do path armazenado
+                    try {
+                      const { data: pub } = supabase.storage.from('product-images').getPublicUrl(raw) as any;
+                      const finalUrl = pub?.publicUrl || raw;
+                      return <img src={finalUrl} alt="img" className="h-16 w-16 object-cover rounded border" />;
+                    } catch { return <span className="text-[10px]">(imagem)</span>; }
+                  })()}
                   {(imageFile || editing?.image_url || editing?.imageDataUrl) && <Button size="sm" variant="outline" onClick={()=>{setImageFile(null); setForm(f=>({...f, image_url: undefined, imageDataUrl: undefined})); if(editing) setEditing({...editing, image_url: undefined, imageDataUrl: undefined} as Product);}}>Remover</Button>}
                 </div>
               )}
@@ -504,7 +660,7 @@ export function ErpProducts(){
                 <div className="text-[11px] text-muted-foreground">Controlado por Movimentações de Estoque — para alterar, registre um movimento.</div>
                 <Input placeholder="Estoque Mínimo" value={form.stock_min||''} onChange={e=>setForm(f=>({...f,stock_min:e.target.value? Number(e.target.value):undefined}))} />
                 <Input placeholder="Estoque Máximo" value={form.stock_max||''} onChange={e=>setForm(f=>({...f,stock_max:e.target.value? Number(e.target.value):undefined}))} />
-                <Input placeholder="Lote" value={form.lot_number||''} onChange={e=>setForm(f=>({...f,lot_number:e.target.value}))} />
+                {/* Campo Lote removido */}
                 <Input type="date" placeholder="Validade" value={form.validity_date||''} onChange={e=>setForm(f=>({...f,validity_date:e.target.value}))} />
               </div>
             </section>}
@@ -569,9 +725,8 @@ export function ErpProducts(){
         <DialogFooter>
           <Button variant="outline" onClick={()=>setOpen(false)}>Cancelar</Button>
           <Button onClick={async()=>{
-            // upload imagem antes de salvar se houver
-            let uploadedUrl: string | undefined;
-            // Preparar arquivo para upload (pode vir de estado ou de uma dataURL existente)
+            if(saving) return;
+            // Preparar arquivo (imagem nova) se houver
             let fileToUpload: File | null = imageFile;
             if(!fileToUpload && typeof form.image_url === 'string' && form.image_url.startsWith('data:')){
               try {
@@ -585,93 +740,45 @@ export function ErpProducts(){
                   const ext = mime.includes('png')? 'png': mime.includes('jpeg')? 'jpg':'bin';
                   fileToUpload = new File([arr], `inline-${Date.now()}.${ext}`, { type: mime });
                 }
-              } catch(err){ if(import.meta.env.DEV) console.warn('Falha converter dataURL inline em arquivo', err); }
+              } catch(err){ if(import.meta.env.DEV) console.warn('Falha converter dataURL inline', err); }
             }
-            if(fileToUpload){
-              try {
-                const identifier = editing?.id ? String(editing.id) : String(Date.now());
-                const randomSuffix = Math.random().toString(36).slice(2,8);
-                const path = `produtos/${identifier}-${Date.now()}-${randomSuffix}-${fileToUpload.name}`;
-                // tenta bucket específico de imagens do produto
-                let bucket = 'product-images';
-                let upErr: any = null;
+            // Caso edição: upload primeiro (id conhecido), depois salvar
+            if(editing){
+              let uploadedStored: string | undefined;
+              if(fileToUpload){
                 try {
-                  const res = await supabase.storage.from(bucket).upload(path, fileToUpload, { upsert:false });
-                  upErr = (res as any).error;
-                  if(!upErr){
-                    // Sempre tentar gerar signed URL (funciona para bucket privado e público)
-                    let signedUrl: string | undefined;
-                    try {
-                      const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 60*60*24*30);
-                      signedUrl = signed?.signedUrl;
-                    } catch(_e){ /* ignore */ }
-                    if(!signedUrl){
-                      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path) as any;
-                      signedUrl = pub?.publicUrl;
-                    }
-                    uploadedUrl = signedUrl;
-                    // aplicar apenas ao form e ao produto em edição
-                    setForm(f=>({...f, image_url: uploadedUrl }));
-                    if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
-                  }
-                } catch(errInner) {
-                  upErr = errInner;
-                }
-                // Se bucket não existe ou upload falhar com esse erro, tenta bucket 'logos' como fallback
-                if(upErr) {
-                  const msg = extractErr(upErr);
-                  if(msg.toLowerCase().includes('bucket') || msg.toLowerCase().includes('not found')){
-                    bucket = 'logos';
-                    try {
-                      const res2 = await supabase.storage.from(bucket).upload(path, fileToUpload, { upsert:false });
-                      if((res2 as any).error) throw (res2 as any).error;
-                      let signedUrl2: string | undefined;
-                      try {
-                        const { data: signed2 } = await supabase.storage.from(bucket).createSignedUrl(path, 60*60*24*30);
-                        signedUrl2 = signed2?.signedUrl;
-                      } catch(_e){ /* ignore */ }
-                      if(!signedUrl2){
-                        const { data: pub2 } = supabase.storage.from(bucket).getPublicUrl(path) as any;
-                        signedUrl2 = pub2?.publicUrl;
-                      }
-                      uploadedUrl = signedUrl2;
-                      setForm(f=>({...f, image_url: uploadedUrl }));
-                      if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
-                    } catch(err2) {
-                      // Se o fallback também falhar por bucket não encontrado, converter para data URL e salvar direto no campo image_url
-                      const errMsg = extractErr(err2 || upErr).toLowerCase();
-                      if(errMsg.includes('bucket') || errMsg.includes('not found')){
-                        // converter arquivo em data URL
-                        const dataUrl = await new Promise<string>((resolve, reject) => {
-                          const reader = new FileReader();
-                          reader.onload = () => resolve(String(reader.result));
-                          reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
-                          reader.readAsDataURL(fileToUpload!);
-                        });
-                        uploadedUrl = dataUrl;
-                        setForm(f=>({...f, image_url: uploadedUrl, imageDataUrl: uploadedUrl }));
-                        if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
-                      } else {
-                        throw err2 || upErr;
-                      }
-                    }
-                  } else {
-                    throw upErr;
-                  }
-                }
-              } catch(e:unknown){ toast.error('Upload falhou: '+ extractErr(e)); if(import.meta.env.DEV) console.error('upload error', e); }
+                  const { storedValue, previewUrl } = await uploadProductImage(editing.id, fileToUpload);
+                  uploadedStored = storedValue;
+                  setForm(f=>({...f, image_url: storedValue, imageDataUrl: previewUrl } as any));
+                } catch(e){ toast.error('Upload falhou: '+extractErr(e)); }
+              }
+              await save(uploadedStored);
+              if(editing.id && uploadedStored){ setRows(prev=> prev.map(r=> r.id===editing.id ? {...r, image_url: uploadedStored}: r)); }
+              // fechar modal após término
+              setOpen(false); setEditing(null); setForm(makeEmpty()); load();
+              return;
             }
-            // Se não houver novo upload mas já existe image_url no form, manter
-            if(!uploadedUrl && form.image_url) uploadedUrl = form.image_url;
-            if(uploadedUrl) {
-              setForm(f=>({...f, image_url: uploadedUrl}));
+            // Novo produto: salvar primeiro sem imagem para obter ID
+            const originalImage = fileToUpload; // preservar
+            const hadInline = !fileToUpload && form.image_url && form.image_url.startsWith('data:');
+            if(hadInline) {
+              // impedimos que inline vá no primeiro insert
+              setForm(f=>({...f, image_url: undefined, imageDataUrl: undefined}));
             }
-            // salvar e atualizar apenas a linha alterada em memória
-             await save(uploadedUrl);
-            // garantir que rows reflitam a alteração (caso backend não retorne a URL imediatamente)
-            if(editing && (editing.id)){
-              setRows(prev => prev.map(r => r.id === editing.id ? { ...r, image_url: form.image_url || uploadedUrl } : r));
+            const { id: newId } = await save(undefined, { suppressToast: !!originalImage }); // cria produto
+            if(originalImage && newId){
+              try {
+                const { storedValue, previewUrl } = await uploadProductImage(newId, originalImage);
+                await (supabase as any).from('products').update({ image_url: storedValue }).eq('id', newId);
+                setRows(prev=> [{...prev.find(r=>r.id===newId)!, image_url: storedValue}, ...prev.filter(r=>r.id!==newId)]);
+                setForm(f=>({...f, image_url: storedValue, imageDataUrl: previewUrl } as any));
+                toast.success('Produto criado');
+              } catch(e){ toast.error('Upload pós-criação falhou: '+extractErr(e)); }
+            } else if(!originalImage) {
+              toast.success('Produto criado');
             }
+            // fechar modal ao final
+            setOpen(false); setEditing(null); setForm(makeEmpty()); load();
           }} disabled={saving}>{saving? 'Salvando...':'Salvar'}</Button>
         </DialogFooter>
       </DialogContent>
@@ -688,6 +795,7 @@ export function ErpProducts(){
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  {/* Modal de Reposição removido */}
   </Card>;
 }
 

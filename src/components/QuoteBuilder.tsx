@@ -963,41 +963,71 @@ export default function QuoteBuilder() {
                   <div className="col-span-1 text-right hidden md:block">Custo</div>
                   <div className="col-span-2 md:col-span-2 text-right">Subtotal</div>
                 </div>
-                {items.map((it, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 md:gap-2 items-center border rounded-md p-1 md:p-2">
-                    <div className="col-span-5 md:col-span-5 lg:col-span-5 flex items-center gap-3">
-                      {it.imageDataUrl ? (
-                        <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
-                      ) : (
-                        <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-[10px]">IMG</div>
-                      )}
-                      <div>
-                        <div className="font-semibold">{it.name}</div>
-                        {(it.description || it.options) && (
-                          <div className="text-xs text-muted-foreground">
-                            {it.description} {it.options ? `· ${it.options}` : ''}
-                          </div>
+                {items.map((it, idx) => {
+                  // Placeholder de reservado (integração futura); poderíamos buscar de um mapa productId->reserved
+                  const reserved = 0;
+                  return (
+                    <div key={idx} className="grid grid-cols-12 gap-2 md:gap-2 border rounded-md p-1 md:p-2">
+                      {/* Bloco imagem + info (mobile ocupa toda linha, desktop mantém colunas) */}
+                      <div className="col-span-12 md:col-span-5 lg:col-span-5 flex items-center gap-3">
+                        {it.imageDataUrl ? (
+                          <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
+                        ) : (
+                          <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-[10px]">IMG</div>
                         )}
+                        <div className="min-w-0">
+                          <div className="font-semibold leading-tight line-clamp-2 break-words text-[12px] md:text-sm">{it.name}</div>
+                          {/* Tokens venda/custo (mobile) */}
+                          <div className="mt-0.5 md:hidden flex flex-wrap gap-x-2 gap-y-1 text-[10px] leading-tight text-muted-foreground">
+                            <span><span className="font-medium text-foreground/80">Venda:</span> {currencyBRL(it.unitPrice)}</span>
+                            {it.costPrice!=null && <span><span className="font-medium text-foreground/60">Custo:</span> {currencyBRL(it.costPrice)}</span>}
+                            {reserved>0 && <span className="px-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">Reserv: {reserved}</span>}
+                          </div>
+                          {(it.description || it.options) && (
+                            <div className="text-[10px] md:text-xs text-muted-foreground mt-0.5 line-clamp-2 break-words">
+                              {it.description} {it.options ? `· ${it.options}` : ''}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Linha quantidade + preço (mobile). Oculta em desktop */}
+                      <div className="col-span-12 flex items-start justify-between gap-3 md:hidden mt-1">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            className="w-16 text-center"
+                            type="number"
+                            min={1}
+                            value={it.quantity}
+                            onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
+                          />
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Subtotal</div>
+                          <div className="text-[12px] font-semibold text-primary whitespace-nowrap">{currencyBRL(it.subtotal)}</div>
+                          {it.quantity>1 && (
+                            <div className="text-[10px] text-muted-foreground whitespace-nowrap">{it.quantity} x {currencyBRL(it.unitPrice)}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="hidden md:block md:col-span-2 text-right">
+                        <Input
+                          type="number"
+                          min={1}
+                          value={it.quantity}
+                          onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
+                        />
+                      </div>
+                      <div className="hidden md:block md:col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
+                      <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] hidden md:block pr-1">
+                        {it.costPrice != null ? currencyBRL(it.costPrice) : '—'}
+                      </div>
+                      <div className="col-span-2 md:col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30 hidden md:block">{currencyBRL(it.subtotal)}</div>
+                      <div className="col-span-12 text-right mt-1 md:mt-0">
+                        <Button size="sm" variant="ghost" onClick={() => removeItem(idx)}>Remover</Button>
                       </div>
                     </div>
-                    <div className="col-span-2 text-right">
-                      <Input
-                        type="number"
-                        min={1}
-                        value={it.quantity}
-                        onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
-                      />
-                    </div>
-                    <div className="col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
-                    <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] hidden md:block pr-1">
-                      {it.costPrice != null ? currencyBRL(it.costPrice) : '—'}
-                    </div>
-                    <div className="col-span-2 md:col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30">{currencyBRL(it.subtotal)}</div>
-                    <div className="col-span-12 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => removeItem(idx)}>Remover</Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
