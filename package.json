@@ -10,8 +10,10 @@
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "preview": "vite preview",
-        "db:push": "supabase db push",
-        "db:studio": "supabase studio",
+    "db:link": "npx supabase link --project-ref zjaqjxqtbwrkhijdlvyo",
+    "db:push": "npx supabase db push",
+    "db:reset": "npx supabase db reset --linked --force",
+    "db:studio": "npx supabase studio",
         "fix:product-images": "node ./scripts/fix_product_images.mjs",
         "bootstrap:inventory": "node ./scripts/bootstrap_inventory.mjs"
     },
