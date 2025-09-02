@@ -1315,9 +1315,13 @@ export default function QuoteBuilder() {
                         {q.originOrcNumber && q.pedNumberCache && (
                           <span className="ml-1 text-[10px] text-muted-foreground/70">(ORC: {q.originOrcNumber} ↔ PED: {collapseDoublePed(q.pedNumberCache)})</span>
                         )}
-                        {q.type==='PEDIDO' && q.status==='Rascunho' && (
-                          <span className="block text-[10px] text-amber-600 mt-0.5">Pedido em digitação/edição para o cliente: {q.clientSnapshot.name}.</span>
-                        )}
+                        {(() => {
+                          // Exibir nome do primeiro produto (tanto para ORC quanto PED), substituindo aviso
+                          const first = q.items?.[0];
+                          if (!first) return null;
+                          const extra = q.items.length > 1 ? ` (+${q.items.length - 1})` : '';
+                          return <span className="block text-[10px] text-muted-foreground mt-0.5">Produto: {first.name}{extra}</span>;
+                        })()}
                       </div>
                       <div className="text-xs">Cliente: {q.clientSnapshot.name}</div>
                       <div className="text-xs">Total: {currencyBRL(q.total)}</div>
@@ -1938,9 +1942,12 @@ function ReceiptView({ quote }: { quote: Quote }) {
       {/* Linha título orçamento */}
       <div className="mt-3 font-semibold text-sm border-b border-gray-300 pb-1 flex flex-wrap gap-x-8 gap-y-1">
         <span>{quote.type === 'ORCAMENTO' ? 'Orçamento' : 'Pedido'} Nº {quote.number}</span>
-        {quote.type==='PEDIDO' && quote.status==='Rascunho' && (
-          <span className="text-amber-600 text-[11px] font-normal">Pedido em digitação/edição para o cliente: {quote.clientSnapshot.name}.</span>
-        )}
+        {(() => {
+          const first = quote.items?.[0];
+          if (!first) return null;
+          const extra = quote.items.length > 1 ? ` (+${quote.items.length - 1})` : '';
+          return <span className="text-[11px] font-normal text-muted-foreground">Produto: {first.name}{extra}</span>;
+        })()}
         <span>Criado em {issueDate}</span>
         <span>Válido até {validade}</span>
       </div>
