@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
   "db:push": "supabase db push",
-  "db:ensure:carriers": "node scripts/ensure_carriers_table.mjs"
+  "db:ensure:carriers": "node scripts/ensure_carriers_table.mjs",
+  "db:ensure:erp": "node scripts/ensure_erp_tables.mjs"
   },
   "engines": {
     "node": ">=18.18.0 <23",
