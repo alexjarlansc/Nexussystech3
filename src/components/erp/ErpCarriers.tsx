@@ -23,16 +23,29 @@ export function ErpCarriers() {
   const [vehicleTypes, setVehicleTypes] = useState('');
   const [notes, setNotes] = useState('');
 
-  async function load() {
-  const { data, error } = await (supabase as any).from('carriers').select('*').order('name');
-    if (error) { toast.error('Erro ao carregar transportadoras'); return; }
-    setCarriers(data as Carrier[]);
+  const [companyId,setCompanyId] = useState<string|undefined>();
+  async function resolveCompany(){
+    try {
+      const { data: userRes } = await (supabase as any).auth.getUser();
+      const user = userRes?.user; if(!user) return;
+      const { data, error } = await (supabase as any).from('profiles').select('company_id').eq('user_id', user.id).maybeSingle();
+      if(!error && data?.company_id) setCompanyId(data.company_id);
+    } catch(e){ /* ignore */ }
   }
-  useEffect(()=>{ load(); },[]);
+  async function load() {
+    let q = (supabase as any).from('carriers').select('*').order('name');
+    if(companyId) q = q.eq('company_id', companyId);
+    const { data, error } = await q;
+    if (error) { toast.error('Erro ao carregar transportadoras'); return; }
+    setCarriers((data||[]) as Carrier[]);
+  }
+  useEffect(()=>{ resolveCompany(); },[]);
+  useEffect(()=>{ load(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[companyId]);
 
   async function save() {
     if (!name) { toast.error('Nome obrigatório'); return; }
-  const { error } = await (supabase as any).from('carriers').insert({ name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null });
+  const { error } = await (supabase as any).from('carriers').insert({ name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null, company_id: companyId||null });
     if (error) { toast.error('Erro ao salvar'); return; }
     toast.success('Transportadora cadastrada');
     setOpen(false); setName(''); setTaxid(''); setRntrc(''); setPhone(''); setEmail(''); setAddress(''); setVehicleTypes(''); setNotes('');
