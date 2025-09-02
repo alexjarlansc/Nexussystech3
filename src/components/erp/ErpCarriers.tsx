@@ -65,7 +65,18 @@ export function ErpCarriers() {
       const to = from + pageSize - 1;
       q = q.range(from,to);
       const { data, error, count } = await q;
-      if (error) { console.error('Erro carriers load', { error, companyId, debouncedSearch, page: currentPage }); setErrorMessage(error.message || 'Erro desconhecido'); toast.error('Erro ao carregar transportadoras'); return; }
+      if (error) {
+        console.error('Erro carriers load', { error, companyId, debouncedSearch, page: currentPage });
+        const raw = error.message || 'Erro desconhecido';
+        let friendly = raw;
+        if(/carriers/i.test(raw) && /tabela|table/i.test(raw)) {
+          friendly += '\n\nA tabela public.carriers não existe no banco atual. Aplique as migrações:'+
+          '\n1. supabase db push (local) ou executar migration 20250830120000_create_erp_tables.sql no painel.'+
+          '\n2. Verifique project_id em supabase/config.toml corresponde ao projeto correto.';
+        }
+        setErrorMessage(friendly);
+        toast.error('Erro ao carregar transportadoras');
+        return; }
       const rows = (data||[]) as Carrier[];
       if(typeof count === 'number') setTotalCount(count);
       setHasMore(typeof count === 'number' ? (from + rows.length) < count : rows.length === pageSize);
