@@ -15,6 +15,7 @@ import ErpStockMovements from '@/components/erp/ErpStockMovements';
 import ErpStockAdjustments from '@/components/erp/ErpStockAdjustments';
 import ErpStockTransfers from '@/components/erp/ErpStockTransfers';
 import ErpStockReturns from '@/components/erp/ErpStockReturns';
+import { StockLoader } from '@/components/erp/StockLoader';
 import { Tables } from '@/integrations/supabase/types';
 import { ErpPurchasesList } from '@/components/erp/ErpPurchasesList';
 import { ErpPurchaseXmlImport } from '@/components/erp/ErpPurchaseXmlImport';
@@ -450,6 +451,12 @@ function StockPlaceholder() {
         <UIButton size="sm" variant="outline" onClick={load}><RefreshCcw className="h-4 w-4 mr-1"/>Atualizar</UIButton>
         <div className="text-xs text-muted-foreground ml-auto">{movs.length} movs exibidas | {stock.length} produtos estoque</div>
       </div>
+      
+      <Card className="p-4 mb-4">
+        <h2 className="text-xl font-semibold mb-2">Diagnóstico do Estoque</h2>
+        <StockLoader />
+      </Card>
+      
       <Card className="p-4">
         <h2 className="text-xl font-semibold mb-2">Estoque (posição)</h2>
         <div className="max-h-56 overflow-auto border rounded">
