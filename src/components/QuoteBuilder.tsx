@@ -307,17 +307,18 @@ export default function QuoteBuilder() {
   }, [loadProducts]);
 
   function addItemFromProduct(prod: Product, quantity = 1) {
+    const unitPrice = prod.sale_price != null ? Number(prod.sale_price) : Number(prod.price);
+    const costPrice = prod.cost_price != null ? Number(prod.cost_price) : undefined;
     const snapshot: QuoteItemSnapshot = {
       productId: prod.id,
       name: prod.name,
       description: prod.description,
       options: prod.options,
       imageDataUrl: prod.imageDataUrl,
-  // Prioriza sale_price se existir; fallback para price legacy
-  unitPrice: (prod as any).sale_price != null ? (prod as any).sale_price : prod.price,
-  costPrice: (prod as any).cost_price != null ? (prod as any).cost_price : undefined,
+      unitPrice,
+      costPrice,
       quantity,
-  subtotal: ((prod as any).sale_price != null ? (prod as any).sale_price : prod.price) * quantity,
+      subtotal: unitPrice * quantity,
     };
     setItems((it) => [...it, snapshot]);
   }
@@ -547,14 +548,14 @@ export default function QuoteBuilder() {
               const rand = Math.random().toString(36).slice(2,8);
               const storagePath = `produtos/${code}-${Date.now()}-${rand}.${ext}`; // força caminho único
               const upRes = await supabase.storage.from(bucket).upload(storagePath, fileObj, { upsert: false });
-              if((upRes as any).error){ return pImg; }
+              if(upRes.error){ return pImg; }
               // tentar signed url (30 dias)
               try {
                 const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 60*60*24*30);
                 if(signed?.signedUrl) return signed.signedUrl;
               } catch(_e){ /* ignore */ }
-              const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storagePath) as any;
-              return pub?.publicUrl || pImg;
+              const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+              return pub.publicUrl || pImg;
             } catch(_e){ return pImg; }
           })(),
           price,
@@ -1295,13 +1296,34 @@ export default function QuoteBuilder() {
                       {/* Botão para gerar pedido de venda se for orçamento */}
                       {q.type === 'ORCAMENTO' && (
                         <Button size="sm" variant="default" onClick={async () => {
-                          // Atualiza o tipo para PEDIDO
-                          const { error } = await supabase.from('quotes').update({ type: 'PEDIDO' }).eq('id', q.id);
-                          if (!error) {
-                            toast.success('Pedido de venda gerado!');
+                          // Converter ORCAMENTO -> PEDIDO gerando novo número com prefixo PED
+                          try {
+                            let newNumber = '';
+                            let success = false;
+                            for (let attempt = 0; attempt < 5; attempt++) {
+                              newNumber = await generateNextNumber('PEDIDO');
+                              const { error: upErr } = await supabase
+                                .from('quotes')
+                                .update({ type: 'PEDIDO', number: newNumber })
+                                .eq('id', q.id);
+                              if (!upErr) { success = true; break; }
+                              // Se conflito unique (já existe número), tenta novamente
+                              if (upErr && typeof upErr === 'object' && 'code' in upErr && (upErr as { code?: string }).code === '23505') {
+                                continue;
+                              }
+                              // Erro diferente de conflito: aborta
+                              toast.error('Erro ao gerar pedido: ' + (upErr as { message?: string })?.message || 'desconhecido');
+                              return;
+                            }
+                            if (!success) {
+                              toast.error('Não foi possível gerar pedido (tentativas excedidas)');
+                              return;
+                            }
+                            toast.success('Pedido de venda gerado! Número ' + newNumber);
                             fetchQuotes();
-                          } else {
-                            toast.error('Erro ao gerar pedido');
+                          } catch (e) {
+                            const msg = (e && typeof e === 'object' && 'message' in e) ? (e as { message: string }).message : String(e);
+                            toast.error('Erro inesperado ao gerar pedido: ' + msg);
                           }
                         }}>Gerar Pedido de Venda</Button>
                       )}
