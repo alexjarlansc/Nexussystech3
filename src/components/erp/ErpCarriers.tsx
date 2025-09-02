@@ -22,6 +22,7 @@ export function ErpCarriers() {
   const pageSize = 25;
   const [hasMore,setHasMore] = useState(false);
   const [debouncedSearch,setDebouncedSearch] = useState('');
+  const [totalCount,setTotalCount] = useState<number>(0);
 
   const [name, setName] = useState('');
   const [taxid, setTaxid] = useState('');
@@ -45,7 +46,7 @@ export function ErpCarriers() {
     const currentPage = pageOverride ?? page;
     setLoading(true);
     try {
-      let q = (supabase as any).from('carriers').select('*').order('name');
+      let q = (supabase as any).from('carriers').select('*', { count: 'exact' }).order('name');
       if(companyId) q = q.eq('company_id', companyId);
       if(debouncedSearch){
         const like = debouncedSearch.replace(/%/g,'');
@@ -54,10 +55,11 @@ export function ErpCarriers() {
       const from = currentPage * pageSize;
       const to = from + pageSize - 1;
       q = q.range(from,to);
-      const { data, error } = await q;
+      const { data, error, count } = await q;
       if (error) { toast.error('Erro ao carregar transportadoras'); return; }
       const rows = (data||[]) as Carrier[];
-      setHasMore(rows.length === pageSize);
+      if(typeof count === 'number') setTotalCount(count);
+      setHasMore(typeof count === 'number' ? (from + rows.length) < count : rows.length === pageSize);
       setCarriers(rows);
     } finally { setLoading(false); }
   }
@@ -171,8 +173,19 @@ export function ErpCarriers() {
           </tbody>
         </table>
       </Card>
-      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-        <div>Página {page+1}</div>
+      <div className="flex flex-wrap gap-2 items-center justify-between text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span>Página {page+1}{totalCount>0 && ` de ${Math.max(1, Math.ceil(totalCount / pageSize))}`}</span>
+          {totalCount>0 && (
+            <span className="opacity-70">
+              {(() => {
+                const start = carriers.length ? page*pageSize + 1 : 0;
+                const end = page*pageSize + carriers.length;
+                return `Mostrando ${start}-${end} de ${totalCount}`;
+              })()}
+            </span>
+          )}
+        </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" disabled={loading || page===0} onClick={()=>{ const np = Math.max(0,page-1); setPage(np); load(np); }}>Anterior</Button>
           <Button size="sm" variant="outline" disabled={loading || !hasMore} onClick={()=>{ const np = page+1; setPage(np); load(np); }}>Próxima</Button>
