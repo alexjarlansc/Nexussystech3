@@ -7,12 +7,16 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { toast } from '@/components/ui/sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { Carrier } from '@/types';
+import { useAuth } from '@/hooks/useAuth';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export function ErpCarriers() {
+  const { profile } = useAuth();
   const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Carrier|null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Carrier|null>(null);
 
   const [name, setName] = useState('');
   const [taxid, setTaxid] = useState('');
@@ -45,18 +49,48 @@ export function ErpCarriers() {
 
   async function save() {
     if (!name) { toast.error('Nome obrigatório'); return; }
-  const { error } = await (supabase as any).from('carriers').insert({ name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null, company_id: companyId||null });
-    if (error) { toast.error('Erro ao salvar'); return; }
-    toast.success('Transportadora cadastrada');
-    setOpen(false); setName(''); setTaxid(''); setRntrc(''); setPhone(''); setEmail(''); setAddress(''); setVehicleTypes(''); setNotes('');
-    load();
+    try {
+      if(editing) {
+        const { error } = await (supabase as any).from('carriers').update({ name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null }).eq('id', editing.id);
+        if(error) throw error;
+        toast.success('Transportadora atualizada');
+      } else {
+        const { error } = await (supabase as any).from('carriers').insert({ name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null, company_id: companyId||null });
+        if(error) throw error;
+        toast.success('Transportadora cadastrada');
+      }
+      setOpen(false); resetForm(); load();
+    } catch(e:unknown){
+      const msg = e instanceof Error? e.message : String(e);
+      toast.error('Erro ao salvar: '+msg);
+    }
+  }
+
+  function resetForm(){
+    setEditing(null); setName(''); setTaxid(''); setRntrc(''); setPhone(''); setEmail(''); setAddress(''); setVehicleTypes(''); setNotes('');
+  }
+
+  function startNew(){ resetForm(); setOpen(true); }
+  function startEdit(c:Carrier){
+    setEditing(c);
+    setName(c.name); setTaxid(c.taxid||''); setRntrc(c.rntrc||''); setPhone(c.phone||''); setEmail(c.email||''); setAddress(c.address||''); setVehicleTypes(c.vehicle_types||''); setNotes(c.notes||'');
+    setOpen(true);
+  }
+  async function doDelete(){
+    if(!confirmDelete) return;
+    try {
+      const { error } = await (supabase as any).from('carriers').delete().eq('id', confirmDelete.id);
+      if(error) throw error;
+      toast.success('Transportadora removida');
+      setConfirmDelete(null); load();
+    } catch(e:unknown){ toast.error('Erro ao excluir'); }
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Input placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} className="h-8 w-56" />
-        <Button size="sm" onClick={()=>setOpen(true)}>Nova Transportadora</Button>
+        <Input placeholder="Buscar nome, CNPJ/CPF, RNTRC..." value={search} onChange={e=>setSearch(e.target.value)} className="h-8 w-72" />
+        <Button size="sm" onClick={startNew}>Nova Transportadora</Button>
       </div>
       <Card className="p-0 overflow-hidden">
         <table className="w-full text-sm">
@@ -69,12 +103,24 @@ export function ErpCarriers() {
             </tr>
           </thead>
           <tbody>
-            {carriers.filter(s=> s.name.toLowerCase().includes(search.toLowerCase())).map(s=> (
+            {carriers.filter(s=> {
+              const q = search.toLowerCase();
+              if(!q) return true;
+              return s.name.toLowerCase().includes(q) || (s.taxid||'').toLowerCase().includes(q) || (s.rntrc||'').toLowerCase().includes(q);
+            }).map(s=> (
               <tr key={s.id} className="border-t hover:bg-accent/30">
                 <td className="px-2 py-1">{s.name}</td>
                 <td className="px-2 py-1">{s.taxid||'-'}</td>
                 <td className="px-2 py-1">{s.rntrc||'-'}</td>
-                <td className="px-2 py-1">{s.phone||'-'}</td>
+                <td className="px-2 py-1 flex items-center gap-2">
+                  <span className="flex-1">{s.phone||'-'}</span>
+                  {profile?.role==='admin' && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={()=>startEdit(s)}>Editar</Button>
+                      <Button size="sm" variant="destructive" onClick={()=>setConfirmDelete(s)}>Excluir</Button>
+                    </>
+                  )}
+                </td>
               </tr>
             ))}
             {carriers.length===0 && (
@@ -84,9 +130,9 @@ export function ErpCarriers() {
         </table>
       </Card>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(o)=>{ setOpen(o); if(!o) resetForm(); }}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>Nova Transportadora</DialogTitle></DialogHeader>
+      <DialogHeader><DialogTitle>{editing? 'Editar Transportadora':'Nova Transportadora'}</DialogTitle></DialogHeader>
           <div className="grid gap-2 text-sm">
             <Input placeholder="Nome *" value={name} onChange={e=>setName(e.target.value)} />
             <div className="grid grid-cols-2 gap-2">
@@ -102,8 +148,18 @@ export function ErpCarriers() {
             <Textarea placeholder="Observações" value={notes} onChange={e=>setNotes(e.target.value)} rows={3} />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={()=>setOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={()=>{ setOpen(false); resetForm(); }}>Cancelar</Button>
             <Button onClick={save}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!confirmDelete} onOpenChange={(o)=>{ if(!o) setConfirmDelete(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Confirmar Exclusão</DialogTitle></DialogHeader>
+          <p className="text-sm">Remover transportadora <b>{confirmDelete?.name}</b>? Esta ação não pode ser desfeita.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={()=>setConfirmDelete(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={doDelete}>Excluir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
