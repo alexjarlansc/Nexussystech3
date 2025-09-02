@@ -51,6 +51,9 @@ function derivePedidoNumberFromOrc(orcn: string){
   const num = orcn.replace(/^ORC-?/,'');
   return `PED-${num}`;
 }
+function collapseDoublePed(n: string){
+  return n.replace(/^PED-PED-/,'PED-');
+}
 
 export default function QuoteBuilder() {
   // Token gerado pelo admin (deve ser o primeiro hook do componente)
@@ -1258,7 +1261,11 @@ export default function QuoteBuilder() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className={q.type === 'PEDIDO' ? 'font-semibold text-green-600' : 'font-semibold'}>
-                        {q.type === 'PEDIDO' ? derivePedidoNumberFromOrc(q.originOrcNumber || q.number) : q.number}
+                        {q.type === 'PEDIDO' 
+                          ? (q.originOrcNumber 
+                              ? derivePedidoNumberFromOrc(q.originOrcNumber) 
+                              : collapseDoublePed(q.number))
+                          : q.number}
                       </div>
                       <div className="text-xs text-muted-foreground">{q.type==='ORCAMENTO' ? 'Orçamento' : 'Pedido'} · {new Date(q.createdAt).toLocaleDateString('pt-BR')} · Validade {q.validityDays}d</div>
                       <div className="text-xs">Cliente: {q.clientSnapshot.name}</div>
