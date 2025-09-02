@@ -44,6 +44,7 @@ const STATUS = ['ATIVO','INATIVO'];
 
 export function ErpProducts(){
   const [rows,setRows]=useState<(Product & { stock?: number, reserved?: number, available?: number })[]>([]);
+  const [stockViewColumns, setStockViewColumns] = useState<string[]|null>(null);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState('');
   const [debouncedSearch,setDebouncedSearch]=useState('');
@@ -69,6 +70,22 @@ export function ErpProducts(){
     const currentPage = pageOverride ?? page;
     setLoading(true);
     try {
+      // Capturar colunas da view product_stock apenas uma vez (primeiro load) para debug
+      if(stockViewColumns === null){
+        try {
+          const { data: colsData } = await (supabase as any)
+            .rpc('debug_stock_overview');
+          if(colsData?.product_stock_columns){
+            setStockViewColumns(colsData.product_stock_columns as string[]);
+            if(import.meta.env.DEV){
+              const cols = colsData.product_stock_columns as string[];
+              if(!cols.includes('stock')) console.warn('[Estoque] View product_stock sem coluna stock');
+              if(!cols.includes('reserved')) console.warn('[Estoque] View product_stock sem coluna reserved');
+              if(!cols.includes('available')) console.warn('[Estoque] View product_stock sem coluna available');
+            }
+          }
+        } catch(err){ if(import.meta.env.DEV) console.warn('Não conseguiu obter colunas product_stock', err); }
+      }
       try { await (supabase as any).rpc('ensure_profile'); } catch(err) { if(import.meta.env.DEV) console.warn('ensure_profile rpc indisponível', err); }
       let q = (supabase as any)
         .from('products')
@@ -86,12 +103,34 @@ export function ErpProducts(){
       setHasMore(products.length === pageSize);
       const ids = products.map(p=>p.id);
       if(ids.length) {
-        // Primeiro buscar sempre stock
-        let baseStocks: { product_id: string; stock: number }[] = [];
+        // Buscar estoque pela lista de IDs (pode falhar se a view estiver usando códigos antigos ou outro identificador)
+        let baseStocks: { product_id: string; stock: number; reserved?: number; available?: number }[] = [];
         try {
-          const { data: s1 } = await (supabase as any).from('product_stock').select('product_id,stock,reserved,available').in('product_id', ids);
-          baseStocks = (s1 as { product_id: string; stock: number; reserved?: number; available?: number }[]) || [];
-        } catch(e1){ if(import.meta.env.DEV) console.warn('Falha stock base', e1); }
+          const { data: s1, error: s1err } = await (supabase as any)
+            .from('product_stock')
+            .select('product_id,stock,reserved,available')
+            .in('product_id', ids);
+          if(s1err) throw s1err;
+          baseStocks = (s1 as any[]) || [];
+        } catch(e1){ if(import.meta.env.DEV) console.warn('[Estoque] Falha ao buscar por ids em product_stock', e1); }
+
+        // Fallback: se não retornou nada, tentar por códigos (algumas migrações antigas usavam código como chave de estoque)
+        if(!baseStocks.length){
+          const codes = products.map(p=>p.code).filter(Boolean) as string[];
+          if(codes.length){
+            try {
+              const uniqueCodes = Array.from(new Set(codes));
+              const { data: s2, error: s2err } = await (supabase as any)
+                .from('product_stock')
+                .select('product_id,stock,reserved,available')
+                .in('product_id', uniqueCodes.slice(0, 1000)); // limitar por segurança
+              if(!s2err && s2 && s2.length){
+                if(import.meta.env.DEV) console.warn('[Estoque] Usando fallback por código para product_stock');
+                baseStocks = (s2 as any[]);
+              }
+            } catch(e2){ if(import.meta.env.DEV) console.warn('[Estoque] Fallback código falhou', e2); }
+          }
+        }
         // Tentar reserved (pode não existir)
         products = products.map(p=>{
           const base = baseStocks.find(s=>s.product_id===p.id);
@@ -103,6 +142,9 @@ export function ErpProducts(){
 
         // Fallback recalculado se não obtivemos dados
         const needsFallback = !baseStocks.length || baseStocks.every(b => b.stock == null);
+        if(needsFallback && import.meta.env.DEV){
+          console.warn('[Estoque] Nenhum dado direto da view product_stock (ids e fallback por código). Iniciando recomputação local.');
+        }
         if(needsFallback){
           if(import.meta.env.DEV) console.warn('[Fallback estoque ERP] Recalculando via inventory_movements + quotes');
           try {
@@ -433,6 +475,14 @@ export function ErpProducts(){
   <Button size="sm" onClick={startNew}>Novo</Button>
       </div>
     </header>
+    {stockViewColumns && (
+      <div className="text-xs flex flex-wrap gap-1 items-center">
+        <span className="font-medium">product_stock:</span>
+        {stockViewColumns.map(c => (
+          <span key={c} className={`px-1 py-0.5 rounded border ${c==='available' ? 'bg-green-50 border-green-300 text-green-700':'bg-gray-50 border-gray-300 text-slate-600'}`}>{c}</span>
+        ))}
+      </div>
+    )}
     <div className="border rounded max-h-[520px] overflow-auto">
       <table className="w-full text-xs">
   <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1">Un</th><th className="px-2 py-1 text-right">Custo Médio</th><th className="px-2 py-1 text-right">Preço Venda</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th><th className="px-2 py-1 text-right">Disp.</th><th className="px-2 py-1">Status</th><th className="px-2 py-1"/></tr></thead>
