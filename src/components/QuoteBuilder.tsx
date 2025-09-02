@@ -1249,6 +1249,9 @@ export default function QuoteBuilder() {
                         {q.originOrcNumber && q.pedNumberCache && (
                           <span className="ml-1 text-[10px] text-muted-foreground/70">(ORC: {q.originOrcNumber} ↔ PED: {collapseDoublePed(q.pedNumberCache)})</span>
                         )}
+                        {q.type==='PEDIDO' && q.status==='Rascunho' && (
+                          <span className="block text-[10px] text-amber-600 mt-0.5">Pedido ainda em digitação/edição. Consulte o vendedor: {(q.vendor && q.vendor.name) || '—'}.</span>
+                        )}
                       </div>
                       <div className="text-xs">Cliente: {q.clientSnapshot.name}</div>
                       <div className="text-xs">Total: {currencyBRL(q.total)}</div>
@@ -1838,6 +1841,9 @@ function ReceiptView({ quote }: { quote: Quote }) {
       {/* Linha título orçamento */}
       <div className="mt-3 font-semibold text-sm border-b border-gray-300 pb-1 flex flex-wrap gap-x-8 gap-y-1">
         <span>{quote.type === 'ORCAMENTO' ? 'Orçamento' : 'Pedido'} Nº {quote.number}</span>
+        {quote.type==='PEDIDO' && quote.status==='Rascunho' && (
+          <span className="text-amber-600 text-[11px] font-normal">Pedido ainda em digitação/edição. Consulte o vendedor: {(quote.vendor && quote.vendor.name) || '—'}.</span>
+        )}
         <span>Criado em {issueDate}</span>
         <span>Válido até {validade}</span>
       </div>
