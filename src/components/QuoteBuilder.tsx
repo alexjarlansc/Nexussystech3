@@ -1296,64 +1296,75 @@ export default function QuoteBuilder() {
                       {/* Botão para gerar pedido de venda se for orçamento */}
                       {q.type === 'ORCAMENTO' && (
                         <Button size="sm" variant="default" onClick={async () => {
-                          // Converter ORCAMENTO -> PEDIDO gerando novo número com prefixo PED
-                          try {
-                            let newNumber = '';
-                            let success = false;
-                            for (let attempt = 0; attempt < 5; attempt++) {
-                              newNumber = await generateNextNumber('PEDIDO');
-                              const { error: upErr } = await supabase
-                                .from('quotes')
-                                .update({ type: 'PEDIDO', number: newNumber })
-                                .eq('id', q.id);
-                              if (!upErr) { success = true; break; }
-                              // Se conflito unique (já existe número), tenta novamente
-                              if (upErr && typeof upErr === 'object' && 'code' in upErr && (upErr as { code?: string }).code === '23505') {
-                                continue;
-                              }
-                              // Erro diferente de conflito: aborta
-                              toast.error('Erro ao gerar pedido: ' + (upErr as { message?: string })?.message || 'desconhecido');
-                              return;
-                            }
-                            if (!success) {
-                              toast.error('Não foi possível gerar pedido (tentativas excedidas)');
-                              return;
-                            }
-                            toast.success('Pedido de venda gerado! Número ' + newNumber);
-                            fetchQuotes();
-                          } catch (e) {
-                            const msg = (e && typeof e === 'object' && 'message' in e) ? (e as { message: string }).message : String(e);
-                            toast.error('Erro inesperado ao gerar pedido: ' + msg);
+                          // Converter mantendo o MESMO sufixo do orçamento: ORC-XXXX -> PED-XXXX
+                          const original = q.number || '';
+                          const parts = original.split('-');
+                          let newNumber = original;
+                          if (parts.length > 1) {
+                            const suffix = parts.slice(1).join('-');
+                            newNumber = `PED-${suffix}`;
+                          } else if (original.startsWith('ORC')) {
+                            newNumber = original.replace(/^ORC/, 'PED');
+                          } else {
+                            // fallback: apenas prefixa
+                            newNumber = 'PED-' + original;
                           }
+                          // Tenta atualizar. Se conflito unique, cai para geração nova.
+                          const { error: upErr } = await supabase.from('quotes').update({ type: 'PEDIDO', number: newNumber }).eq('id', q.id);
+                          if (upErr && typeof upErr === 'object' && 'code' in upErr && (upErr as { code?: string }).code === '23505') {
+                            // Conflito: gera novo número sequencial como fallback
+                            let fallback = '';
+                            for (let attempt = 0; attempt < 5; attempt++) {
+                              fallback = await generateNextNumber('PEDIDO');
+                              const { error: retryErr } = await supabase.from('quotes').update({ type: 'PEDIDO', number: fallback }).eq('id', q.id);
+                              if (!retryErr) { toast.success('Pedido de venda gerado! Número ' + fallback + ' (fallback)'); fetchQuotes(); return; }
+                              if (!(retryErr && typeof retryErr === 'object' && 'code' in retryErr && (retryErr as { code?: string }).code === '23505')) {
+                                toast.error('Erro ao gerar pedido: ' + (retryErr as { message?: string })?.message || 'desconhecido'); return;
+                              }
+                            }
+                            toast.error('Não foi possível gerar pedido (conflitos)');
+                            return;
+                          } else if (upErr) {
+                            toast.error('Erro ao gerar pedido: ' + (upErr as { message?: string })?.message || 'desconhecido');
+                            return;
+                          }
+                          toast.success('Pedido de venda gerado! Número ' + newNumber + ' (mesmo sufixo)');
+                          fetchQuotes();
                         }}>Gerar Pedido de Venda</Button>
                       )}
                       {/* Botão para retornar para orçamento, só admin */}
                       {q.type === 'PEDIDO' && profile?.role === 'admin' && (
                         <Button size="sm" variant="outline" onClick={async () => {
-                          // Reverter PEDIDO -> ORCAMENTO gerando novo número ORC
-                          try {
-                            let newNumber = '';
-                            let success = false;
-                            for (let attempt = 0; attempt < 5; attempt++) {
-                              newNumber = await generateNextNumber('ORCAMENTO');
-                              const { error: upErr } = await supabase
-                                .from('quotes')
-                                .update({ type: 'ORCAMENTO', number: newNumber })
-                                .eq('id', q.id);
-                              if (!upErr) { success = true; break; }
-                              if (upErr && typeof upErr === 'object' && 'code' in upErr && (upErr as { code?: string }).code === '23505') {
-                                continue; // conflito unique -> tentar novo número
-                              }
-                              toast.error('Erro ao retornar para orçamento: ' + (upErr as { message?: string })?.message || 'desconhecido');
-                              return;
-                            }
-                            if (!success) { toast.error('Não foi possível reverter (tentativas excedidas)'); return; }
-                            toast.success('Retornado para orçamento! Número ' + newNumber);
-                            fetchQuotes();
-                          } catch (e) {
-                            const msg = (e && typeof e === 'object' && 'message' in e) ? (e as { message: string }).message : String(e);
-                            toast.error('Erro inesperado ao retornar: ' + msg);
+                          // Reverter mantendo mesmo sufixo: PED-XXXX -> ORC-XXXX
+                          const current = q.number || '';
+                          const parts = current.split('-');
+                          let newNumber = current;
+                          if (parts.length > 1) {
+                            const suffix = parts.slice(1).join('-');
+                            newNumber = `ORC-${suffix}`;
+                          } else if (current.startsWith('PED')) {
+                            newNumber = current.replace(/^PED/, 'ORC');
+                          } else {
+                            newNumber = 'ORC-' + current;
                           }
+                          const { error: upErr } = await supabase.from('quotes').update({ type: 'ORCAMENTO', number: newNumber }).eq('id', q.id);
+                          if (upErr && typeof upErr === 'object' && 'code' in upErr && (upErr as { code?: string }).code === '23505') {
+                            // Conflito: gerar novo ORC sequencial
+                            let fallback = '';
+                            for (let attempt = 0; attempt < 5; attempt++) {
+                              fallback = await generateNextNumber('ORCAMENTO');
+                              const { error: retryErr } = await supabase.from('quotes').update({ type: 'ORCAMENTO', number: fallback }).eq('id', q.id);
+                              if (!retryErr) { toast.success('Retornado para orçamento! Número ' + fallback + ' (fallback)'); fetchQuotes(); return; }
+                              if (!(retryErr && typeof retryErr === 'object' && 'code' in retryErr && (retryErr as { code?: string }).code === '23505')) {
+                                toast.error('Erro ao retornar para orçamento: ' + (retryErr as { message?: string })?.message || 'desconhecido'); return;
+                              }
+                            }
+                            toast.error('Não foi possível reverter (conflitos)'); return;
+                          } else if (upErr) {
+                            toast.error('Erro ao retornar para orçamento: ' + (upErr as { message?: string })?.message || 'desconhecido'); return;
+                          }
+                          toast.success('Retornado para orçamento! Número ' + newNumber + ' (mesmo sufixo)');
+                          fetchQuotes();
                         }}>Retornar para Orçamento</Button>
                       )}
                       {profile?.role === 'admin' ? (
