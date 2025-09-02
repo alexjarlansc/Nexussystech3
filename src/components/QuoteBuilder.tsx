@@ -257,8 +257,18 @@ export default function QuoteBuilder() {
       let stocks: { product_id: string; stock: number; reserved?: number }[] = [];
       if (ids.length) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: sdata } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
-  stocks = (sdata as { product_id: string; stock: number; reserved?: number }[]) || [];
+        try {
+          const { data: sdata } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
+          stocks = (sdata as { product_id: string; stock: number; reserved?: number }[]) || [];
+        } catch (err) {
+          // Fallback caso migration de reserved ainda não aplicada
+          try {
+            const { data: sdata2 } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
+            stocks = (sdata2 as { product_id: string; stock: number }[]) || [];
+          } catch (err2) {
+            if (import.meta.env.DEV) console.warn('Falha ao obter estoque (fallback):', err2);
+          }
+        }
       }
       const formattedProducts: ProductWithStock[] = rows.map(p => ({
         id: p.id,

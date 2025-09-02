@@ -92,7 +92,16 @@ export function ErpProducts(){
             const found = stocks?.find((s:any)=>s.product_id===p.id);
             return { ...p, stock: found?.stock ?? 0, reserved: found?.reserved ?? 0 };
           });
-        } catch(stockErr){ if(import.meta.env.DEV) console.warn('Falha ao buscar estoque', stockErr); }
+        } catch(stockErr){
+          if(import.meta.env.DEV) console.warn('Falha ao buscar estoque com reserved, tentando fallback', stockErr);
+          try {
+            const { data: stocks2 } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
+            products = products.map(p=>{
+              const found = stocks2?.find((s:any)=>s.product_id===p.id);
+              return { ...p, stock: found?.stock ?? 0 };
+            });
+          } catch(e2){ if(import.meta.env.DEV) console.warn('Fallback estoque sem reserved falhou', e2); }
+        }
       }
       if(import.meta.env.DEV){
         const sampleDebug = products.slice(0,10).map(p=>({id:p.id, img: (p as any).image_url}));
