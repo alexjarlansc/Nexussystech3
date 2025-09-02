@@ -43,7 +43,7 @@ const UNITS = ['UN','CX','KG','MT','LT','PC'];
 const STATUS = ['ATIVO','INATIVO'];
 
 export function ErpProducts(){
-  const [rows,setRows]=useState<(Product & { stock?: number, reserved?: number })[]>([]);
+  const [rows,setRows]=useState<(Product & { stock?: number, reserved?: number, available?: number })[]>([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState('');
   const [debouncedSearch,setDebouncedSearch]=useState('');
@@ -89,19 +89,13 @@ export function ErpProducts(){
         // Primeiro buscar sempre stock
         let baseStocks: { product_id: string; stock: number }[] = [];
         try {
-          const { data: s1 } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
-          baseStocks = (s1 as { product_id: string; stock: number }[]) || [];
+          const { data: s1 } = await (supabase as any).from('product_stock').select('product_id,stock,reserved,available').in('product_id', ids);
+          baseStocks = (s1 as { product_id: string; stock: number; reserved?: number; available?: number }[]) || [];
         } catch(e1){ if(import.meta.env.DEV) console.warn('Falha stock base', e1); }
         // Tentar reserved (pode não existir)
-        let reservedRows: { product_id: string; reserved?: number }[] = [];
-        try {
-          const { data: r1 } = await (supabase as any).from('product_stock').select('product_id,reserved').in('product_id', ids);
-          reservedRows = (r1 as { product_id: string; reserved?: number }[]) || [];
-        } catch(e2){ /* silencioso */ }
         products = products.map(p=>{
           const base = baseStocks.find(s=>s.product_id===p.id);
-          const res = reservedRows.find(r=>r.product_id===p.id);
-          return { ...p, stock: base?.stock ?? 0, reserved: res?.reserved };
+          return { ...p, stock: base?.stock ?? 0, reserved: (base as any)?.reserved, available: (base as any)?.available ?? ((base?.stock ?? 0) - ((base as any)?.reserved ?? 0)) };
         });
       }
       if(import.meta.env.DEV){
@@ -390,7 +384,7 @@ export function ErpProducts(){
     </header>
     <div className="border rounded max-h-[520px] overflow-auto">
       <table className="w-full text-xs">
-  <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1">Un</th><th className="px-2 py-1 text-right">Custo Médio</th><th className="px-2 py-1 text-right">Preço Venda</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th><th className="px-2 py-1">Status</th><th className="px-2 py-1"/></tr></thead>
+  <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1">Un</th><th className="px-2 py-1 text-right">Custo Médio</th><th className="px-2 py-1 text-right">Preço Venda</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th><th className="px-2 py-1 text-right">Disp.</th><th className="px-2 py-1">Status</th><th className="px-2 py-1"/></tr></thead>
         <tbody>
           {rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
             <td className="px-2 py-1 font-mono truncate max-w-[120px]" title={r.code||''}>{r.code||'-'}</td>
@@ -400,6 +394,7 @@ export function ErpProducts(){
             <td className="px-2 py-1 text-right">{(r.sale_price||r.price||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
             <td className="px-2 py-1 text-right">{r.stock ?? '-'}</td>
             <td className="px-2 py-1 text-right">{r.reserved ?? '-'}</td>
+            <td className="px-2 py-1 text-right">{r.available ?? ((r.stock ?? 0) - (r.reserved ?? 0))}</td>
             <td className="px-2 py-1 text-center"><button onClick={()=>toggleStatus(r)} className={"underline-offset-2 hover:underline "+(r.status==='INATIVO'? 'text-red-500':'text-green-600')}>{r.status||'ATIVO'}</button></td>
             <td className="px-2 py-1 text-right flex gap-1 justify-end">
               <Button size="sm" variant="outline" onClick={()=>startEdit(r)}>Editar</Button>

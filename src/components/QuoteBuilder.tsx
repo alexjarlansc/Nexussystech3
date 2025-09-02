@@ -32,7 +32,7 @@ type ProdRow = {
 };
 
 // Inclui reserved para futura expansão (pode vir de uma view ou cálculo posterior)
-type ProductWithStock = Product & { stock?: number; reserved?: number };
+type ProductWithStock = Product & { stock?: number; reserved?: number; available?: number };
 
 function currencyBRL(n: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -254,27 +254,17 @@ export default function QuoteBuilder() {
   const rows = (data as unknown as ProdRow[]) || [];
       const ids = rows.map(r => r.id).filter(Boolean) as string[];
       // buscar estoque para cada produto via view product_stock (view pode não estar no client types)
-      let stocks: { product_id: string; stock: number; reserved?: number }[] = [];
+  let stocks: { product_id: string; stock: number; reserved?: number; available?: number }[] = [];
       if (ids.length) {
         // 1) Sempre garantir estoque
         try {
-          const { data: baseStock } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
-          stocks = (baseStock as { product_id: string; stock: number }[]) || [];
+          const { data: baseStock } = await (supabase as any).from('product_stock').select('product_id,stock,reserved,available').in('product_id', ids);
+          stocks = (baseStock as { product_id: string; stock: number; reserved?: number; available?: number }[]) || [];
         } catch (err) {
           if (import.meta.env.DEV) console.warn('Falha obtendo stock base:', err);
         }
-        // 2) Tentar acrescentar reserved se coluna existir
-        try {
-          const { data: reservedRows } = await (supabase as any).from('product_stock').select('product_id,reserved').in('product_id', ids);
-          if (Array.isArray(reservedRows)) {
-            stocks = stocks.map(s => {
-              const found = (reservedRows as { product_id: string; reserved?: number }[]).find(r => r.product_id === s.product_id);
-              return { ...s, reserved: found?.reserved } as { product_id: string; stock: number; reserved?: number };
-            });
-          }
-        } catch (err) {
-          // Silencioso: coluna reserved ainda não criada
-        }
+        // Se available não veio (view antiga), calcula
+        stocks = stocks.map(s => ({ ...s, available: s.available ?? (s.stock - (s.reserved ?? 0)) }));
       }
       const formattedProducts: ProductWithStock[] = rows.map(p => ({
         id: p.id,
@@ -288,7 +278,8 @@ export default function QuoteBuilder() {
         cost_price: p.cost_price != null ? Number(p.cost_price) : undefined,
         sale_price: p.sale_price != null ? Number(p.sale_price) : undefined,
   stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? undefined,
-  reserved: (stocks.find(s => s.product_id === p.id)?.reserved) ?? undefined
+  reserved: (stocks.find(s => s.product_id === p.id)?.reserved) ?? undefined,
+  available: (stocks.find(s => s.product_id === p.id)?.available) ?? undefined
       }));
       // Se todos os produtos possuem exatamente a mesma imageDataUrl, considerar isso um 'placeholder' e limpar para evitar exibição repetida enganosa
       const uniqueImages = Array.from(new Set(formattedProducts.map(fp => fp.imageDataUrl).filter(Boolean)));
@@ -1741,6 +1732,7 @@ function SearchProductModal({
                       <span className="hidden xs:inline">Cst {costDisp}</span>
                       <span>Stk {stockDisp}</span>
                       <span>Res {reservedDisp}</span>
+                      {p.available != null && <span>Disp {(p.available).toString()}</span>}
                     </div>
                   </div>
                 </div>
