@@ -87,10 +87,10 @@ export function ErpProducts(){
       const ids = products.map(p=>p.id);
       if(ids.length) {
         try {
-          const { data: stocks } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
+          const { data: stocks } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
           products = products.map(p=>{
             const found = stocks?.find((s:any)=>s.product_id===p.id);
-            return { ...p, stock: found?.stock ?? 0 };
+            return { ...p, stock: found?.stock ?? 0, reserved: found?.reserved ?? 0 };
           });
         } catch(stockErr){ if(import.meta.env.DEV) console.warn('Falha ao buscar estoque', stockErr); }
       }

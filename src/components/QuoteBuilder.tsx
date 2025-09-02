@@ -257,8 +257,8 @@ export default function QuoteBuilder() {
       let stocks: { product_id: string; stock: number; reserved?: number }[] = [];
       if (ids.length) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: sdata } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
-        stocks = (sdata as { product_id: string; stock: number; reserved?: number }[]) || [];
+  const { data: sdata } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
+  stocks = (sdata as { product_id: string; stock: number; reserved?: number }[]) || [];
       }
       const formattedProducts: ProductWithStock[] = rows.map(p => ({
         id: p.id,
@@ -271,8 +271,8 @@ export default function QuoteBuilder() {
         price: Number(p.price),
         cost_price: p.cost_price != null ? Number(p.cost_price) : undefined,
         sale_price: p.sale_price != null ? Number(p.sale_price) : undefined,
-        stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? undefined,
-        reserved: (stocks.find(s => s.product_id === p.id)?.reserved) ?? undefined
+  stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? undefined,
+  reserved: (stocks.find(s => s.product_id === p.id)?.reserved) ?? undefined
       }));
       // Se todos os produtos possuem exatamente a mesma imageDataUrl, considerar isso um 'placeholder' e limpar para evitar exibição repetida enganosa
       const uniqueImages = Array.from(new Set(formattedProducts.map(fp => fp.imageDataUrl).filter(Boolean)));
