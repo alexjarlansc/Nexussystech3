@@ -23,6 +23,7 @@ export function ErpCarriers() {
   const [hasMore,setHasMore] = useState(false);
   const [debouncedSearch,setDebouncedSearch] = useState('');
   const [totalCount,setTotalCount] = useState<number>(0);
+  const [errorMessage,setErrorMessage] = useState('');
 
   const [name, setName] = useState('');
   const [taxid, setTaxid] = useState('');
@@ -45,6 +46,7 @@ export function ErpCarriers() {
   async function load(pageOverride?: number) {
     const currentPage = pageOverride ?? page;
     setLoading(true);
+    setErrorMessage('');
     try {
       // Evita consulta antes de termos o companyId (RLS pode bloquear e gerar erro genérico)
       if(!companyId){
@@ -63,7 +65,7 @@ export function ErpCarriers() {
       const to = from + pageSize - 1;
       q = q.range(from,to);
       const { data, error, count } = await q;
-      if (error) { console.error('Erro carriers load', error); toast.error('Erro ao carregar transportadoras'); return; }
+      if (error) { console.error('Erro carriers load', { error, companyId, debouncedSearch, page: currentPage }); setErrorMessage(error.message || 'Erro desconhecido'); toast.error('Erro ao carregar transportadoras'); return; }
       const rows = (data||[]) as Carrier[];
       if(typeof count === 'number') setTotalCount(count);
       setHasMore(typeof count === 'number' ? (from + rows.length) < count : rows.length === pageSize);
@@ -171,11 +173,22 @@ export function ErpCarriers() {
                 </td>
               </tr>
             ))}
-            {(!loading && carriers.length===0) && (
+            {(!loading && carriers.length===0 && !errorMessage) && (
               <tr><td colSpan={4} className="text-center text-xs text-muted-foreground py-6">Nenhuma transportadora</td></tr>
             )}
             {loading && (
               <tr><td colSpan={4} className="text-center text-xs text-muted-foreground py-6">Carregando...</td></tr>
+            )}
+            {!loading && errorMessage && (
+              <tr>
+                <td colSpan={4} className="px-2 py-4 text-center">
+                  <div className="text-xs text-red-600 mb-2">Erro ao carregar transportadoras</div>
+                  <div className="text-[10px] font-mono break-all max-h-20 overflow-auto bg-red-50 border border-red-200 rounded p-2 text-red-700">{errorMessage}</div>
+                  <div className="mt-2 flex justify-center">
+                    <Button size="sm" variant="outline" onClick={()=>load(page)} disabled={loading}>Tentar novamente</Button>
+                  </div>
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
