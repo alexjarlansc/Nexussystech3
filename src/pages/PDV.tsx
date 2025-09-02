@@ -571,56 +571,78 @@ export default function PDV() {
 
   async function finalizeSale() {
     if (items.length === 0) { toast.error('Sem itens'); return; }
-    // Agora permite finalizar sem receber entrada; status será calculado
     if (!cashSession && payments.some(p => p.method === 'Dinheiro' && !p.planned)) {
       toast.error('Abra o caixa para receber em dinheiro');
       return;
     }
-    try {
-      const saleNumber = await nextSaleNumber();
-      const payload = {
-        sale_number: saleNumber,
-        quote_id: linkedQuote?.id || null,
-        client_snapshot: linkedQuote?.clientSnapshot || { name: clientDisplay, id: 'consumidor-final', taxid: clientTaxId, phone: clientPhone, email: clientEmail, address },
-        vendor: linkedQuote?.vendor || { name: vendor, phone: '', email: '' },
-        operator_id: user?.id,
-        items: items.map(i => ({ ...i, total: i.quantity * i.unitPrice - (i.discount || 0) })),
-        payments: payments,
-        payment_plan: paymentPlan,
-        subtotal: subtotal,
-        discount: totalDiscount,
-        freight: freight,
-  total: referenceTotal,
-  status: 'FINALIZADA',
-  payment_status: remaining <= 0.009 ? 'PAGO' : 'PARCIAL',
-        company_id: profile?.company_id,
-        created_by: user?.id,
-      };
-      // @ts-expect-error tabela nova ainda não nos types
-      const { error } = await supabase.from('sales').insert(payload);
-      if (error) throw error;
-      if (cashSession) {
-        for (const p of payments) {
-          if (p.method === 'Dinheiro') {
-            await registerMovement(cashSession.id, 'VENDA', p.amount, `Venda ${saleNumber}`, undefined, user?.id);
+    // Sanitize helper
+    const clean = (n: number) => (Number.isFinite(n) ? Number((n||0).toFixed(2)) : 0);
+    const buildPayload = (saleNumber: string) => ({
+      sale_number: saleNumber,
+      quote_id: linkedQuote?.id || null,
+      client_snapshot: linkedQuote?.clientSnapshot || { name: clientDisplay, id: 'consumidor-final', taxid: clientTaxId, phone: clientPhone, email: clientEmail, address },
+      vendor: linkedQuote?.vendor || { name: vendor, phone: '', email: '' },
+      operator_id: user?.id,
+      items: items.map(i => {
+        const totalItem = (i.quantity * i.unitPrice) - (i.discount || 0);
+        return { ...i, total: clean(totalItem) };
+      }),
+      payments: payments.map(p => ({ ...p, amount: clean(p.amount) })),
+      payment_plan: paymentPlan,
+      subtotal: clean(subtotal),
+      discount: clean(totalDiscount),
+      freight: clean(freight),
+      total: clean(referenceTotal),
+      status: 'FINALIZADA',
+      payment_status: remaining <= 0.009 ? 'PAGO' : 'PARCIAL',
+      company_id: profile?.company_id,
+      created_by: user?.id,
+    });
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const saleNumber = await nextSaleNumber();
+        const payload = buildPayload(saleNumber);
+        // @ts-expect-error tabela nova ainda não nos types
+        const { error } = await supabase.from('sales').insert(payload);
+        if (error) {
+          // Conflito unique (sale_number), tenta novamente
+            if (typeof error === 'object' && error && 'code' in error && (error as { code?: string }).code === '23505') {
+              lastError = error; continue;
+            }
+            throw error;
+        }
+        if (cashSession) {
+          for (const p of payments) {
+            if (p.method === 'Dinheiro') {
+              try { await registerMovement(cashSession.id, 'VENDA', clean(p.amount), `Venda ${saleNumber}`, undefined, user?.id); } catch (mErr) { console.error('Movimento caixa erro', mErr); }
+            }
           }
         }
+        toast.success('Venda finalizada');
+        openSaleCupom({
+          sale_number: payload.sale_number,
+          items: payload.items.map(i=> ({ quantity: i.quantity, name: i.name, unitPrice: i.unitPrice, total: i.total })),
+          subtotal: payload.subtotal,
+          freight: payload.freight,
+          discount: payload.discount,
+          total: payload.total,
+          payments: payload.payments.map(p=> ({ method: p.method, amount: p.amount }))
+        });
+        setItems([]); setPayments([]); setLinkedQuote(null); setOrderNumber(''); setExtraDiscount(0);
+        return;
+      } catch (e) {
+        lastError = e;
+        // Erro não relacionado a conflito: aborta
+        if (!(typeof e === 'object' && e && 'code' in e && (e as { code?: string }).code === '23505')) {
+          console.error('Erro ao finalizar venda (fatal)', e);
+          break;
+        }
       }
-      toast.success('Venda finalizada');
-      openSaleCupom({
-        sale_number: payload.sale_number,
-        items: payload.items.map(i=> ({ quantity: i.quantity, name: i.name, unitPrice: i.unitPrice, total: i.total })),
-        subtotal: payload.subtotal,
-        freight: payload.freight,
-        discount: payload.discount,
-        total: payload.total,
-        payments: payload.payments.map(p=> ({ method: p.method, amount: p.amount }))
-      });
-  setItems([]); setPayments([]); setLinkedQuote(null); setOrderNumber(''); setExtraDiscount(0);
-    } catch (e) {
-      console.error(e);
-      toast.error('Erro ao finalizar venda');
     }
+    console.error('Falha ao finalizar venda após tentativas', lastError);
+    const errMsg = (lastError && typeof lastError === 'object' && 'message' in lastError) ? (lastError as { message: string }).message : '';
+    toast.error('Erro ao finalizar venda ' + (errMsg ? `(${errMsg})` : ''));
   }
 
   // Fluxo de verificação removido
