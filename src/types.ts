@@ -176,6 +176,8 @@ export interface Quote {
   total: number;
   // Número original do orçamento quando convertido em pedido
   originOrcNumber?: string;
+  // Número de pedido inicial gerado na primeira conversão (para manter ao reverter e reconverter)
+  pedNumberCache?: string;
 }
 
 // PDV / Venda Finalizada

@@ -4,7 +4,8 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ClientSearch } from '@/components/ClientSearch';
+import { AdvancedClientSelect } from '@/components/AdvancedClientSelect';
+import { ClientPicker } from '@/components/ClientPicker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
@@ -47,10 +48,6 @@ async function generateNextNumber(type: QuoteType): Promise<string> {
   return data as string;
 }
 
-function derivePedidoNumberFromOrc(orcn: string){
-  const num = orcn.replace(/^ORC-?/,'');
-  return `PED-${num}`;
-}
 function collapseDoublePed(n: string){
   return n.replace(/^PED-PED-/,'PED-');
 }
@@ -222,34 +219,14 @@ export default function QuoteBuilder() {
       clientSnapshot: q.client_snapshot,
       companyId: q.company_id,
       createdBy: q.created_by,
+  originOrcNumber: q.origin_orc_number,
+  pedNumberCache: q.ped_number_cache || (typeof q.notes === 'string' && /\[PEDCACHE:([^\]]+)\]/.test(q.notes) ? (q.notes.match(/\[PEDCACHE:([^\]]+)\]/) || [])[1] : undefined),
     }));
     setQuotes(mapped);
-  // Normalizar números antigos com "FALLBACK" (gera novos números únicos) - uma vez por sessão
-  scheduleNormalizeFallbackNumbers(mapped);
-  }
-
-  // Normalização de números com "FALLBACK" (executa uma vez)
-  const didNormalizeFallback = useRef(false);
-  async function scheduleNormalizeFallbackNumbers(currentQuotes: Quote[]) {
-    if (didNormalizeFallback.current) return;
-    const fallbackQuotes = currentQuotes.filter(q => q.number.includes('FALLBACK'));
-    if (fallbackQuotes.length === 0) { didNormalizeFallback.current = true; return; }
-    // Processar em série para simplicidade
-    for (const fq of fallbackQuotes) {
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const newNumber = await generateNextNumber(fq.type as QuoteType);
-        const { error: upErr } = await supabase.from('quotes').update({ number: newNumber }).eq('id', fq.id);
-        if (!upErr) break; // sucesso
-      }
-    }
-    didNormalizeFallback.current = true;
-    // Recarrega lista após normalização
-    fetchQuotes();
   }
 
   useEffect(() => {
     fetchQuotes();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, profile]);
 
 
@@ -939,10 +916,11 @@ export default function QuoteBuilder() {
               <div className="space-y-1 md:space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">Cliente</h3>
-                  <Button size="sm" variant="secondary" onClick={() => setOpenClient(true)}>Cadastrar Cliente</Button>
                 </div>
-                <ClientSearch
+                {/* Novo fluxo: botão para abrir modal de busca de cliente */}
+                <ClientPicker
                   clients={clients}
+                  value={clientId}
                   onSelect={c => {
                     if (!c || !c.id) {
                       toast.error('Selecione um cliente válido do banco de dados!');
@@ -950,6 +928,7 @@ export default function QuoteBuilder() {
                     }
                     setClientId(c.id);
                   }}
+                  onClear={() => setClientId('')}
                 />
               </div>
             </div>
@@ -1262,12 +1241,15 @@ export default function QuoteBuilder() {
                     <div>
                       <div className={q.type === 'PEDIDO' ? 'font-semibold text-green-600' : 'font-semibold'}>
                         {q.type === 'PEDIDO' 
-                          ? (q.originOrcNumber 
-                              ? derivePedidoNumberFromOrc(q.originOrcNumber) 
-                              : collapseDoublePed(q.number))
+                          ? collapseDoublePed(q.number)
                           : q.number}
                       </div>
-                      <div className="text-xs text-muted-foreground">{q.type==='ORCAMENTO' ? 'Orçamento' : 'Pedido'} · {new Date(q.createdAt).toLocaleDateString('pt-BR')} · Validade {q.validityDays}d</div>
+                      <div className="text-xs text-muted-foreground">
+                        {q.type==='ORCAMENTO' ? 'Orçamento' : 'Pedido'} · {new Date(q.createdAt).toLocaleDateString('pt-BR')} · Validade {q.validityDays}d
+                        {q.originOrcNumber && q.pedNumberCache && (
+                          <span className="ml-1 text-[10px] text-muted-foreground/70">(ORC: {q.originOrcNumber} ↔ PED: {collapseDoublePed(q.pedNumberCache)})</span>
+                        )}
+                      </div>
                       <div className="text-xs">Cliente: {q.clientSnapshot.name}</div>
                       <div className="text-xs">Total: {currencyBRL(q.total)}</div>
                       <div className="text-xs">Status: {q.status}</div>
@@ -1277,19 +1259,71 @@ export default function QuoteBuilder() {
                       {/* Botão para gerar pedido de venda se for orçamento */}
                       {q.type === 'ORCAMENTO' && (
                         <Button size="sm" variant="default" onClick={async () => {
-                          const newNumber = derivePedidoNumberFromOrc(q.number);
-                          let updatePayload: Record<string, unknown> = { type: 'PEDIDO', number: newNumber, origin_orc_number: q.number };
+                          if (import.meta.env.DEV) {
+                            console.log('[DEBUG ORC->PED] start', { id: q.id, number: q.number, originOrcNumber: q.originOrcNumber, pedNumberCache: q.pedNumberCache });
+                          }
+                          // Se já houve um pedido antes (pedNumberCache), reutiliza.
+                          // Caso contrário gera um novo número de PEDIDO e salva em ped_number_cache (assegurando dif numérica do ORC)
+                          let pedNumber: string | null = q.pedNumberCache || null;
+                          const baseOrc = (q.originOrcNumber || q.number).replace(/^ORC-?/,'');
+                          if (!pedNumber) {
+                            try {
+                              for (let attempt = 0; attempt < 6; attempt++) {
+                                const { data, error } = await supabase.rpc('next_quote_number', { p_type: 'PEDIDO' });
+                                if (error || !data) throw error || new Error('Falha gerar número');
+                                const cand = data as string;
+                                const candNum = cand.replace(/^PED-?/,'');
+                                if (candNum !== baseOrc) { pedNumber = cand; break; }
+                                if (attempt === 5) pedNumber = cand; // última tentativa aceita
+                              }
+                            } catch(err){
+                              const now = new Date();
+                              const stamp = `${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
+                              pedNumber = `PED-${stamp}`;
+                            }
+                          } else {
+                            // Se cache legado igual ao ORC, gera novo e substitui
+                            if (pedNumber.replace(/^PED-?/,'') === baseOrc) {
+                              try {
+                                const { data } = await supabase.rpc('next_quote_number', { p_type: 'PEDIDO' });
+                                if (data) {
+                                  const cand = data as string;
+                                  if (cand.replace(/^PED-?/,'') !== baseOrc) pedNumber = cand;
+                                }
+                              } catch {}
+                            }
+                          }
+                          let updatePayload: Record<string, unknown> = { type: 'PEDIDO', number: pedNumber, origin_orc_number: q.originOrcNumber || q.number, ped_number_cache: pedNumber };
+                          if (import.meta.env.DEV) console.log('[DEBUG ORC->PED] payload', updatePayload);
                           const attempt = async () => await supabase.from('quotes').update(updatePayload).eq('id', q.id);
                           let { error } = await attempt();
+                          if (error && /ped_number_cache/i.test(error.message)) {
+                            console.warn('ped_number_cache ausente, tentando sem a coluna. Usando fallback em notes.');
+                            const { ped_number_cache, ...rest } = updatePayload;
+                            updatePayload = rest;
+                            // Fallback: injeta token em notes
+                            let notesAppend = `[PEDCACHE:${pedNumber}]`;
+                            // Se já existe notes, preserva
+                            if (typeof q.notes === 'string' && q.notes.length) {
+                              if (!q.notes.includes('[PEDCACHE:')) {
+                                updatePayload.notes = q.notes + ' ' + notesAppend;
+                              } else {
+                                updatePayload.notes = q.notes; // já tem
+                              }
+                            } else {
+                              updatePayload.notes = notesAppend;
+                            }
+                            const retry = await attempt();
+                            error = retry.error;
+                          }
                           if (error && /origin_orc_number/i.test(error.message)) {
-                            // Coluna pode não existir no banco (migration não aplicada). Tenta sem ela.
                             console.warn('origin_orc_number ausente, tentando sem a coluna.');
-                            updatePayload = { type: 'PEDIDO', number: newNumber }; // remove origin
+                            updatePayload = { type: 'PEDIDO', number: pedNumber, ped_number_cache: pedNumber };
                             const retry = await attempt();
                             error = retry.error;
                           }
                           if (error && /unique|duplic/i.test(error.message)) {
-                            toast.error('Número já utilizado para um Pedido. Verifique se já foi convertido.');
+                            toast.error('Número já utilizado para um Pedido. Tente novamente.');
                             return;
                           }
                           if (error) {
@@ -1298,20 +1332,25 @@ export default function QuoteBuilder() {
                             return;
                           }
                           toast.success('Pedido de venda gerado!');
+                          if (import.meta.env.DEV) console.log('[DEBUG ORC->PED] success', { id: q.id, pedNumber });
                           fetchQuotes();
                         }}>Gerar Pedido de Venda</Button>
                       )}
                       {/* Botão para retornar para orçamento, só admin */}
-                      {q.type === 'PEDIDO' && profile?.role === 'admin' && (
+            {q.type === 'PEDIDO' && profile?.role === 'admin' && (
                         <Button size="sm" variant="outline" onClick={async () => {
-                          // Revertendo: volta para ORCAMENTO com mesmo número que estava em origin_orc_number (se existir) ou derivado
-                          const revertNumber = q.originOrcNumber || q.number.replace(/^PED-?/,'ORC-');
-                          const { error } = await supabase.from('quotes').update({ type: 'ORCAMENTO', number: revertNumber }).eq('id', q.id);
+              if (import.meta.env.DEV) console.log('[DEBUG PED->ORC] start', { id: q.id, number: q.number, originOrcNumber: q.originOrcNumber, pedNumberCache: q.pedNumberCache });
+              // Reverte mantendo número original de ORCAMENTO sempre igual ao primeiro ORC.
+              // originOrcNumber guarda o número do orçamento original.
+              const revertNumber = q.originOrcNumber || q.number.replace(/^PED-?/,'ORC-');
+              const { error } = await supabase.from('quotes').update({ type: 'ORCAMENTO', number: revertNumber }).eq('id', q.id);
                           if (!error) {
                             toast.success('Retornado para orçamento!');
+                            if (import.meta.env.DEV) console.log('[DEBUG PED->ORC] success', { id: q.id, revertNumber });
                             fetchQuotes();
                           } else {
                             toast.error('Erro ao retornar para orçamento');
+                            console.error('[DEBUG PED->ORC] error', error);
                           }
                         }}>Retornar para Orçamento</Button>
                       )}
@@ -1536,9 +1575,14 @@ export default function QuoteBuilder() {
             const currentQuote = quotes.find(q => q.id === openReceipt!);
             if (!currentQuote) return <div className="text-red-600 text-sm">Orçamento não encontrado.</div>;
             return <>
-              {currentQuote.type !== 'PEDIDO' && (
-                <DialogHeader><DialogTitle>Recibo</DialogTitle></DialogHeader>
-              )}
+              <DialogHeader>
+                <DialogTitle>
+                  {currentQuote.type === 'PEDIDO' ? 'Pedido' : 'Orçamento'} {currentQuote.number}
+                  {currentQuote.originOrcNumber && currentQuote.pedNumberCache && (
+                    <span className="block text-xs font-normal mt-1 text-muted-foreground">ORC: {currentQuote.originOrcNumber} · PED: {collapseDoublePed(currentQuote.pedNumberCache)}</span>
+                  )}
+                </DialogTitle>
+              </DialogHeader>
               <div className="mt-2 space-y-2 overflow-y-auto max-h-[65vh] pr-2">
                 <ReceiptView quote={currentQuote} />
               </div>
