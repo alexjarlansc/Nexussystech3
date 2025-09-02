@@ -47,6 +47,11 @@ async function generateNextNumber(type: QuoteType): Promise<string> {
   return data as string;
 }
 
+function derivePedidoNumberFromOrc(orcn: string){
+  const num = orcn.replace(/^ORC-?/,'');
+  return `PED-${num}`;
+}
+
 export default function QuoteBuilder() {
   // Token gerado pelo admin (deve ser o primeiro hook do componente)
   const [generatedToken, setGeneratedToken] = useState('');
@@ -307,18 +312,17 @@ export default function QuoteBuilder() {
   }, [loadProducts]);
 
   function addItemFromProduct(prod: Product, quantity = 1) {
-    const unitPrice = prod.sale_price != null ? Number(prod.sale_price) : Number(prod.price);
-    const costPrice = prod.cost_price != null ? Number(prod.cost_price) : undefined;
     const snapshot: QuoteItemSnapshot = {
       productId: prod.id,
       name: prod.name,
       description: prod.description,
       options: prod.options,
       imageDataUrl: prod.imageDataUrl,
-      unitPrice,
-      costPrice,
+  // Prioriza sale_price se existir; fallback para price legacy
+  unitPrice: (prod as any).sale_price != null ? (prod as any).sale_price : prod.price,
+  costPrice: (prod as any).cost_price != null ? (prod as any).cost_price : undefined,
       quantity,
-      subtotal: unitPrice * quantity,
+  subtotal: ((prod as any).sale_price != null ? (prod as any).sale_price : prod.price) * quantity,
     };
     setItems((it) => [...it, snapshot]);
   }
@@ -548,14 +552,14 @@ export default function QuoteBuilder() {
               const rand = Math.random().toString(36).slice(2,8);
               const storagePath = `produtos/${code}-${Date.now()}-${rand}.${ext}`; // força caminho único
               const upRes = await supabase.storage.from(bucket).upload(storagePath, fileObj, { upsert: false });
-              if(upRes.error){ return pImg; }
+              if((upRes as any).error){ return pImg; }
               // tentar signed url (30 dias)
               try {
                 const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 60*60*24*30);
                 if(signed?.signedUrl) return signed.signedUrl;
               } catch(_e){ /* ignore */ }
-              const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storagePath);
-              return pub.publicUrl || pImg;
+              const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storagePath) as any;
+              return pub?.publicUrl || pImg;
             } catch(_e){ return pImg; }
           })(),
           price,
@@ -964,71 +968,41 @@ export default function QuoteBuilder() {
                   <div className="col-span-1 text-right hidden md:block">Custo</div>
                   <div className="col-span-2 md:col-span-2 text-right">Subtotal</div>
                 </div>
-                {items.map((it, idx) => {
-                  // Placeholder de reservado (integração futura); poderíamos buscar de um mapa productId->reserved
-                  const reserved = 0;
-                  return (
-                    <div key={idx} className="grid grid-cols-12 gap-2 md:gap-2 border rounded-md p-1 md:p-2">
-                      {/* Bloco imagem + info (mobile ocupa toda linha, desktop mantém colunas) */}
-                      <div className="col-span-12 md:col-span-5 lg:col-span-5 flex items-center gap-3">
-                        {it.imageDataUrl ? (
-                          <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
-                        ) : (
-                          <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-[10px]">IMG</div>
-                        )}
-                        <div className="min-w-0">
-                          <div className="font-semibold leading-tight line-clamp-2 break-words text-[12px] md:text-sm">{it.name}</div>
-                          {/* Tokens venda/custo (mobile) */}
-                          <div className="mt-0.5 md:hidden flex flex-wrap gap-x-2 gap-y-1 text-[10px] leading-tight text-muted-foreground">
-                            <span><span className="font-medium text-foreground/80">Venda:</span> {currencyBRL(it.unitPrice)}</span>
-                            {it.costPrice!=null && <span><span className="font-medium text-foreground/60">Custo:</span> {currencyBRL(it.costPrice)}</span>}
-                            {reserved>0 && <span className="px-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">Reserv: {reserved}</span>}
+                {items.map((it, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 md:gap-2 items-center border rounded-md p-1 md:p-2">
+                    <div className="col-span-5 md:col-span-5 lg:col-span-5 flex items-center gap-3">
+                      {it.imageDataUrl ? (
+                        <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
+                      ) : (
+                        <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-[10px]">IMG</div>
+                      )}
+                      <div>
+                        <div className="font-semibold">{it.name}</div>
+                        {(it.description || it.options) && (
+                          <div className="text-xs text-muted-foreground">
+                            {it.description} {it.options ? `· ${it.options}` : ''}
                           </div>
-                          {(it.description || it.options) && (
-                            <div className="text-[10px] md:text-xs text-muted-foreground mt-0.5 line-clamp-2 break-words">
-                              {it.description} {it.options ? `· ${it.options}` : ''}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      {/* Linha quantidade + preço (mobile). Oculta em desktop */}
-                      <div className="col-span-12 flex items-start justify-between gap-3 md:hidden mt-1">
-                        <div className="flex items-center gap-2">
-                          <Input
-                            className="w-16 text-center"
-                            type="number"
-                            min={1}
-                            value={it.quantity}
-                            onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
-                          />
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Subtotal</div>
-                          <div className="text-[12px] font-semibold text-primary whitespace-nowrap">{currencyBRL(it.subtotal)}</div>
-                          {it.quantity>1 && (
-                            <div className="text-[10px] text-muted-foreground whitespace-nowrap">{it.quantity} x {currencyBRL(it.unitPrice)}</div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="hidden md:block md:col-span-2 text-right">
-                        <Input
-                          type="number"
-                          min={1}
-                          value={it.quantity}
-                          onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
-                        />
-                      </div>
-                      <div className="hidden md:block md:col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
-                      <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] hidden md:block pr-1">
-                        {it.costPrice != null ? currencyBRL(it.costPrice) : '—'}
-                      </div>
-                      <div className="col-span-2 md:col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30 hidden md:block">{currencyBRL(it.subtotal)}</div>
-                      <div className="col-span-12 text-right mt-1 md:mt-0">
-                        <Button size="sm" variant="ghost" onClick={() => removeItem(idx)}>Remover</Button>
+                        )}
                       </div>
                     </div>
-                  );
-                })}
+                    <div className="col-span-2 text-right">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={it.quantity}
+                        onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
+                      />
+                    </div>
+                    <div className="col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
+                    <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] hidden md:block pr-1">
+                      {it.costPrice != null ? currencyBRL(it.costPrice) : '—'}
+                    </div>
+                    <div className="col-span-2 md:col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30">{currencyBRL(it.subtotal)}</div>
+                    <div className="col-span-12 text-right">
+                      <Button size="sm" variant="ghost" onClick={() => removeItem(idx)}>Remover</Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1284,7 +1258,7 @@ export default function QuoteBuilder() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className={q.type === 'PEDIDO' ? 'font-semibold text-green-600' : 'font-semibold'}>
-                        {q.type === 'PEDIDO' ? 'Pedido' : q.number}
+                        {q.type === 'PEDIDO' ? derivePedidoNumberFromOrc(q.originOrcNumber || q.number) : q.number}
                       </div>
                       <div className="text-xs text-muted-foreground">{q.type==='ORCAMENTO' ? 'Orçamento' : 'Pedido'} · {new Date(q.createdAt).toLocaleDateString('pt-BR')} · Validade {q.validityDays}d</div>
                       <div className="text-xs">Cliente: {q.clientSnapshot.name}</div>
@@ -1296,75 +1270,32 @@ export default function QuoteBuilder() {
                       {/* Botão para gerar pedido de venda se for orçamento */}
                       {q.type === 'ORCAMENTO' && (
                         <Button size="sm" variant="default" onClick={async () => {
-                          // Converter mantendo o MESMO sufixo do orçamento: ORC-XXXX -> PED-XXXX
-                          const original = q.number || '';
-                          const parts = original.split('-');
-                          let newNumber = original;
-                          if (parts.length > 1) {
-                            const suffix = parts.slice(1).join('-');
-                            newNumber = `PED-${suffix}`;
-                          } else if (original.startsWith('ORC')) {
-                            newNumber = original.replace(/^ORC/, 'PED');
+                          // Converter preservando mesma parte numérica
+                          const newNumber = derivePedidoNumberFromOrc(q.number);
+                          const updatePayload: Record<string, unknown> = { type: 'PEDIDO', number: newNumber };
+                          // Marca origin_orc_number se ainda não presente
+                          (updatePayload as any).origin_orc_number = q.number;
+                          const { error } = await supabase.from('quotes').update(updatePayload).eq('id', q.id);
+                          if (!error) {
+                            toast.success('Pedido de venda gerado!');
+                            fetchQuotes();
                           } else {
-                            // fallback: apenas prefixa
-                            newNumber = 'PED-' + original;
+                            toast.error('Erro ao gerar pedido');
                           }
-                          // Tenta atualizar. Se conflito unique, cai para geração nova.
-                          const { error: upErr } = await supabase.from('quotes').update({ type: 'PEDIDO', number: newNumber }).eq('id', q.id);
-                          if (upErr && typeof upErr === 'object' && 'code' in upErr && (upErr as { code?: string }).code === '23505') {
-                            // Conflito: gera novo número sequencial como fallback
-                            let fallback = '';
-                            for (let attempt = 0; attempt < 5; attempt++) {
-                              fallback = await generateNextNumber('PEDIDO');
-                              const { error: retryErr } = await supabase.from('quotes').update({ type: 'PEDIDO', number: fallback }).eq('id', q.id);
-                              if (!retryErr) { toast.success('Pedido de venda gerado! Número ' + fallback + ' (fallback)'); fetchQuotes(); return; }
-                              if (!(retryErr && typeof retryErr === 'object' && 'code' in retryErr && (retryErr as { code?: string }).code === '23505')) {
-                                toast.error('Erro ao gerar pedido: ' + (retryErr as { message?: string })?.message || 'desconhecido'); return;
-                              }
-                            }
-                            toast.error('Não foi possível gerar pedido (conflitos)');
-                            return;
-                          } else if (upErr) {
-                            toast.error('Erro ao gerar pedido: ' + (upErr as { message?: string })?.message || 'desconhecido');
-                            return;
-                          }
-                          toast.success('Pedido de venda gerado! Número ' + newNumber + ' (mesmo sufixo)');
-                          fetchQuotes();
                         }}>Gerar Pedido de Venda</Button>
                       )}
                       {/* Botão para retornar para orçamento, só admin */}
                       {q.type === 'PEDIDO' && profile?.role === 'admin' && (
                         <Button size="sm" variant="outline" onClick={async () => {
-                          // Reverter mantendo mesmo sufixo: PED-XXXX -> ORC-XXXX
-                          const current = q.number || '';
-                          const parts = current.split('-');
-                          let newNumber = current;
-                          if (parts.length > 1) {
-                            const suffix = parts.slice(1).join('-');
-                            newNumber = `ORC-${suffix}`;
-                          } else if (current.startsWith('PED')) {
-                            newNumber = current.replace(/^PED/, 'ORC');
+                          // Revertendo: volta para ORCAMENTO com mesmo número que estava em origin_orc_number (se existir) ou derivado
+                          const revertNumber = q.originOrcNumber || q.number.replace(/^PED-?/,'ORC-');
+                          const { error } = await supabase.from('quotes').update({ type: 'ORCAMENTO', number: revertNumber }).eq('id', q.id);
+                          if (!error) {
+                            toast.success('Retornado para orçamento!');
+                            fetchQuotes();
                           } else {
-                            newNumber = 'ORC-' + current;
+                            toast.error('Erro ao retornar para orçamento');
                           }
-                          const { error: upErr } = await supabase.from('quotes').update({ type: 'ORCAMENTO', number: newNumber }).eq('id', q.id);
-                          if (upErr && typeof upErr === 'object' && 'code' in upErr && (upErr as { code?: string }).code === '23505') {
-                            // Conflito: gerar novo ORC sequencial
-                            let fallback = '';
-                            for (let attempt = 0; attempt < 5; attempt++) {
-                              fallback = await generateNextNumber('ORCAMENTO');
-                              const { error: retryErr } = await supabase.from('quotes').update({ type: 'ORCAMENTO', number: fallback }).eq('id', q.id);
-                              if (!retryErr) { toast.success('Retornado para orçamento! Número ' + fallback + ' (fallback)'); fetchQuotes(); return; }
-                              if (!(retryErr && typeof retryErr === 'object' && 'code' in retryErr && (retryErr as { code?: string }).code === '23505')) {
-                                toast.error('Erro ao retornar para orçamento: ' + (retryErr as { message?: string })?.message || 'desconhecido'); return;
-                              }
-                            }
-                            toast.error('Não foi possível reverter (conflitos)'); return;
-                          } else if (upErr) {
-                            toast.error('Erro ao retornar para orçamento: ' + (upErr as { message?: string })?.message || 'desconhecido'); return;
-                          }
-                          toast.success('Retornado para orçamento! Número ' + newNumber + ' (mesmo sufixo)');
-                          fetchQuotes();
                         }}>Retornar para Orçamento</Button>
                       )}
                       {profile?.role === 'admin' ? (

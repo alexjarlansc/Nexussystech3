@@ -174,6 +174,8 @@ export interface Quote {
   status: QuoteStatus;
   subtotal: number;
   total: number;
+  // Número original do orçamento quando convertido em pedido
+  originOrcNumber?: string;
 }
 
 // PDV / Venda Finalizada
