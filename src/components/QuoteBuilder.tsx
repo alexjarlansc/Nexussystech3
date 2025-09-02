@@ -1270,18 +1270,28 @@ export default function QuoteBuilder() {
                       {/* Botão para gerar pedido de venda se for orçamento */}
                       {q.type === 'ORCAMENTO' && (
                         <Button size="sm" variant="default" onClick={async () => {
-                          // Converter preservando mesma parte numérica
                           const newNumber = derivePedidoNumberFromOrc(q.number);
-                          const updatePayload: Record<string, unknown> = { type: 'PEDIDO', number: newNumber };
-                          // Marca origin_orc_number se ainda não presente
-                          (updatePayload as any).origin_orc_number = q.number;
-                          const { error } = await supabase.from('quotes').update(updatePayload).eq('id', q.id);
-                          if (!error) {
-                            toast.success('Pedido de venda gerado!');
-                            fetchQuotes();
-                          } else {
-                            toast.error('Erro ao gerar pedido');
+                          let updatePayload: Record<string, unknown> = { type: 'PEDIDO', number: newNumber, origin_orc_number: q.number };
+                          const attempt = async () => await supabase.from('quotes').update(updatePayload).eq('id', q.id);
+                          let { error } = await attempt();
+                          if (error && /origin_orc_number/i.test(error.message)) {
+                            // Coluna pode não existir no banco (migration não aplicada). Tenta sem ela.
+                            console.warn('origin_orc_number ausente, tentando sem a coluna.');
+                            updatePayload = { type: 'PEDIDO', number: newNumber }; // remove origin
+                            const retry = await attempt();
+                            error = retry.error;
                           }
+                          if (error && /unique|duplic/i.test(error.message)) {
+                            toast.error('Número já utilizado para um Pedido. Verifique se já foi convertido.');
+                            return;
+                          }
+                          if (error) {
+                            toast.error('Erro ao gerar pedido: '+ (error.message || 'desconhecido'));
+                            console.error('Erro conversão ORCAMENTO->PEDIDO', error);
+                            return;
+                          }
+                          toast.success('Pedido de venda gerado!');
+                          fetchQuotes();
                         }}>Gerar Pedido de Venda</Button>
                       )}
                       {/* Botão para retornar para orçamento, só admin */}
