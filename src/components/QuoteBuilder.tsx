@@ -1316,7 +1316,7 @@ export default function QuoteBuilder() {
                           <span className="ml-1 text-[10px] text-muted-foreground/70">(ORC: {q.originOrcNumber} ↔ PED: {collapseDoublePed(q.pedNumberCache)})</span>
                         )}
                         {q.type==='PEDIDO' && q.status==='Rascunho' && (
-                          <span className="block text-[10px] text-amber-600 mt-0.5">Pedido ainda em digitação/edição. Consulte o vendedor: {(q.vendor && q.vendor.name) || '—'}.</span>
+                          <span className="block text-[10px] text-amber-600 mt-0.5">Pedido em digitação/edição para o cliente: {q.clientSnapshot.name}.</span>
                         )}
                       </div>
                       <div className="text-xs">Cliente: {q.clientSnapshot.name}</div>
@@ -1401,7 +1401,7 @@ export default function QuoteBuilder() {
                             return;
                           }
                           const vendName = (q.vendor && q.vendor.name) ? q.vendor.name : 'vendedor responsável';
-                          toast.success(`Pedido ainda em digitação/edição. Consulte o vendedor: ${vendName}.`);
+                          toast.success('Pedido em digitação/edição.');
                           if (import.meta.env.DEV) console.log('[DEBUG ORC->PED] success', { id: q.id, pedNumber });
                           fetchQuotes();
                         }}>Gerar Pedido de Venda</Button>
@@ -1939,7 +1939,7 @@ function ReceiptView({ quote }: { quote: Quote }) {
       <div className="mt-3 font-semibold text-sm border-b border-gray-300 pb-1 flex flex-wrap gap-x-8 gap-y-1">
         <span>{quote.type === 'ORCAMENTO' ? 'Orçamento' : 'Pedido'} Nº {quote.number}</span>
         {quote.type==='PEDIDO' && quote.status==='Rascunho' && (
-          <span className="text-amber-600 text-[11px] font-normal">Pedido ainda em digitação/edição. Consulte o vendedor: {(quote.vendor && quote.vendor.name) || '—'}.</span>
+          <span className="text-amber-600 text-[11px] font-normal">Pedido em digitação/edição para o cliente: {quote.clientSnapshot.name}.</span>
         )}
         <span>Criado em {issueDate}</span>
         <span>Válido até {validade}</span>
