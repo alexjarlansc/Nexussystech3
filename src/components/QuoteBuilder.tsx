@@ -256,18 +256,24 @@ export default function QuoteBuilder() {
       // buscar estoque para cada produto via view product_stock (view pode não estar no client types)
       let stocks: { product_id: string; stock: number; reserved?: number }[] = [];
       if (ids.length) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // 1) Sempre garantir estoque
         try {
-          const { data: sdata } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
-          stocks = (sdata as { product_id: string; stock: number; reserved?: number }[]) || [];
+          const { data: baseStock } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
+          stocks = (baseStock as { product_id: string; stock: number }[]) || [];
         } catch (err) {
-          // Fallback caso migration de reserved ainda não aplicada
-          try {
-            const { data: sdata2 } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
-            stocks = (sdata2 as { product_id: string; stock: number }[]) || [];
-          } catch (err2) {
-            if (import.meta.env.DEV) console.warn('Falha ao obter estoque (fallback):', err2);
+          if (import.meta.env.DEV) console.warn('Falha obtendo stock base:', err);
+        }
+        // 2) Tentar acrescentar reserved se coluna existir
+        try {
+          const { data: reservedRows } = await (supabase as any).from('product_stock').select('product_id,reserved').in('product_id', ids);
+          if (Array.isArray(reservedRows)) {
+            stocks = stocks.map(s => {
+              const found = (reservedRows as { product_id: string; reserved?: number }[]).find(r => r.product_id === s.product_id);
+              return { ...s, reserved: found?.reserved } as { product_id: string; stock: number; reserved?: number };
+            });
           }
+        } catch (err) {
+          // Silencioso: coluna reserved ainda não criada
         }
       }
       const formattedProducts: ProductWithStock[] = rows.map(p => ({

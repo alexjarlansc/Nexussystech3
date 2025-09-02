@@ -86,22 +86,23 @@ export function ErpProducts(){
       setHasMore(products.length === pageSize);
       const ids = products.map(p=>p.id);
       if(ids.length) {
+        // Primeiro buscar sempre stock
+        let baseStocks: { product_id: string; stock: number }[] = [];
         try {
-          const { data: stocks } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
-          products = products.map(p=>{
-            const found = stocks?.find((s:any)=>s.product_id===p.id);
-            return { ...p, stock: found?.stock ?? 0, reserved: found?.reserved ?? 0 };
-          });
-        } catch(stockErr){
-          if(import.meta.env.DEV) console.warn('Falha ao buscar estoque com reserved, tentando fallback', stockErr);
-          try {
-            const { data: stocks2 } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
-            products = products.map(p=>{
-              const found = stocks2?.find((s:any)=>s.product_id===p.id);
-              return { ...p, stock: found?.stock ?? 0 };
-            });
-          } catch(e2){ if(import.meta.env.DEV) console.warn('Fallback estoque sem reserved falhou', e2); }
-        }
+          const { data: s1 } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
+          baseStocks = (s1 as { product_id: string; stock: number }[]) || [];
+        } catch(e1){ if(import.meta.env.DEV) console.warn('Falha stock base', e1); }
+        // Tentar reserved (pode não existir)
+        let reservedRows: { product_id: string; reserved?: number }[] = [];
+        try {
+          const { data: r1 } = await (supabase as any).from('product_stock').select('product_id,reserved').in('product_id', ids);
+          reservedRows = (r1 as { product_id: string; reserved?: number }[]) || [];
+        } catch(e2){ /* silencioso */ }
+        products = products.map(p=>{
+          const base = baseStocks.find(s=>s.product_id===p.id);
+          const res = reservedRows.find(r=>r.product_id===p.id);
+          return { ...p, stock: base?.stock ?? 0, reserved: res?.reserved };
+        });
       }
       if(import.meta.env.DEV){
         const sampleDebug = products.slice(0,10).map(p=>({id:p.id, img: (p as any).image_url}));
