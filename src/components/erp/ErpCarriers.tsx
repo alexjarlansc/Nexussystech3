@@ -17,6 +17,11 @@ export function ErpCarriers() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Carrier|null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Carrier|null>(null);
+  const [loading,setLoading] = useState(false);
+  const [page,setPage] = useState(0);
+  const pageSize = 25;
+  const [hasMore,setHasMore] = useState(false);
+  const [debouncedSearch,setDebouncedSearch] = useState('');
 
   const [name, setName] = useState('');
   const [taxid, setTaxid] = useState('');
@@ -36,16 +41,31 @@ export function ErpCarriers() {
       if(!error && data?.company_id) setCompanyId(data.company_id);
     } catch(e){ /* ignore */ }
   }
-  async function load() {
-    let q = (supabase as any).from('carriers').select('*').order('name');
-    if(companyId) q = q.eq('company_id', companyId);
-    const { data, error } = await q;
-    if (error) { toast.error('Erro ao carregar transportadoras'); return; }
-    setCarriers((data||[]) as Carrier[]);
+  async function load(pageOverride?: number) {
+    const currentPage = pageOverride ?? page;
+    setLoading(true);
+    try {
+      let q = (supabase as any).from('carriers').select('*').order('name');
+      if(companyId) q = q.eq('company_id', companyId);
+      if(debouncedSearch){
+        const like = debouncedSearch.replace(/%/g,'');
+        q = q.or(`name.ilike.%${like}%,taxid.ilike.%${like}%,rntrc.ilike.%${like}%`);
+      }
+      const from = currentPage * pageSize;
+      const to = from + pageSize - 1;
+      q = q.range(from,to);
+      const { data, error } = await q;
+      if (error) { toast.error('Erro ao carregar transportadoras'); return; }
+      const rows = (data||[]) as Carrier[];
+      setHasMore(rows.length === pageSize);
+      setCarriers(rows);
+    } finally { setLoading(false); }
   }
   useEffect(()=>{ resolveCompany(); },[]);
-  useEffect(()=>{ load(); // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[companyId]);
+  useEffect(()=>{ load(0); setPage(0); // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[companyId,debouncedSearch]);
+
+  useEffect(()=>{ const t = setTimeout(()=> setDebouncedSearch(search.trim()), 400); return ()=> clearTimeout(t); },[search]);
 
   async function save() {
     if (!name) { toast.error('Nome obrigatório'); return; }
@@ -59,7 +79,7 @@ export function ErpCarriers() {
         if(error) throw error;
         toast.success('Transportadora cadastrada');
       }
-      setOpen(false); resetForm(); load();
+  setOpen(false); resetForm(); load();
     } catch(e:unknown){
       const msg = e instanceof Error? e.message : String(e);
       toast.error('Erro ao salvar: '+msg);
@@ -81,15 +101,38 @@ export function ErpCarriers() {
     try {
       const { error } = await (supabase as any).from('carriers').delete().eq('id', confirmDelete.id);
       if(error) throw error;
-      toast.success('Transportadora removida');
-      setConfirmDelete(null); load();
+  toast.success('Transportadora removida');
+  setConfirmDelete(null); load();
     } catch(e:unknown){ toast.error('Erro ao excluir'); }
+  }
+
+  function exportCsv(){
+    if(!carriers.length){ toast.info('Nada para exportar'); return; }
+    const headers = ['Nome','TaxID','RNTRC','Telefone','Email','Endereço'];
+    const lines = carriers.map(c=>[
+      c.name,
+      c.taxid||'',
+      c.rntrc||'',
+      c.phone||'',
+      c.email||'',
+      (c.address||'').replace(/\n/g,' ')
+    ].map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(','));
+    const csv = [headers.join(','), ...lines].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'transportadoras.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input placeholder="Buscar nome, CNPJ/CPF, RNTRC..." value={search} onChange={e=>setSearch(e.target.value)} className="h-8 w-72" />
+        <Button size="sm" onClick={()=>{ setPage(0); load(0); }} disabled={loading} className="relative">Filtrar {loading && <span className="ml-1 h-3 w-3 inline-block border-2 border-current border-t-transparent rounded-full animate-spin" />}</Button>
+        <Button size="sm" variant="outline" onClick={exportCsv} disabled={loading || carriers.length===0}>Exportar CSV</Button>
         <Button size="sm" onClick={startNew}>Nova Transportadora</Button>
       </div>
       <Card className="p-0 overflow-hidden">
@@ -103,11 +146,7 @@ export function ErpCarriers() {
             </tr>
           </thead>
           <tbody>
-            {carriers.filter(s=> {
-              const q = search.toLowerCase();
-              if(!q) return true;
-              return s.name.toLowerCase().includes(q) || (s.taxid||'').toLowerCase().includes(q) || (s.rntrc||'').toLowerCase().includes(q);
-            }).map(s=> (
+            {carriers.map(s=> (
               <tr key={s.id} className="border-t hover:bg-accent/30">
                 <td className="px-2 py-1">{s.name}</td>
                 <td className="px-2 py-1">{s.taxid||'-'}</td>
@@ -123,12 +162,22 @@ export function ErpCarriers() {
                 </td>
               </tr>
             ))}
-            {carriers.length===0 && (
+            {(!loading && carriers.length===0) && (
               <tr><td colSpan={4} className="text-center text-xs text-muted-foreground py-6">Nenhuma transportadora</td></tr>
+            )}
+            {loading && (
+              <tr><td colSpan={4} className="text-center text-xs text-muted-foreground py-6">Carregando...</td></tr>
             )}
           </tbody>
         </table>
       </Card>
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <div>Página {page+1}</div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" disabled={loading || page===0} onClick={()=>{ const np = Math.max(0,page-1); setPage(np); load(np); }}>Anterior</Button>
+          <Button size="sm" variant="outline" disabled={loading || !hasMore} onClick={()=>{ const np = page+1; setPage(np); load(np); }}>Próxima</Button>
+        </div>
+      </div>
 
     <Dialog open={open} onOpenChange={(o)=>{ setOpen(o); if(!o) resetForm(); }}>
         <DialogContent className="sm:max-w-lg">
