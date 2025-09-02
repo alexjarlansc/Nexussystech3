@@ -947,45 +947,91 @@ export default function QuoteBuilder() {
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-2 md:gap-3">
-                <div className="grid grid-cols-12 gap-1 md:gap-2 text-[11px] md:text-xs text-muted-foreground font-medium">
-                  <div className="col-span-5 md:col-span-5 lg:col-span-5">Produto</div>
+                {/* Cabeçalho somente desktop */}
+                <div className="hidden md:grid grid-cols-12 gap-1 md:gap-2 text-[11px] md:text-xs text-muted-foreground font-medium">
+                  <div className="col-span-5">Produto</div>
                   <div className="col-span-2 text-right">Qtd</div>
                   <div className="col-span-2 text-right">Preço</div>
-                  <div className="col-span-1 text-right hidden md:block">Custo</div>
-                  <div className="col-span-2 md:col-span-2 text-right">Subtotal</div>
+                  <div className="col-span-1 text-right">Custo</div>
+                  <div className="col-span-2 text-right">Subtotal</div>
                 </div>
                 {items.map((it, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 md:gap-2 items-center border rounded-md p-1 md:p-2">
-                    <div className="col-span-5 md:col-span-5 lg:col-span-5 flex items-center gap-3">
+                  <div key={idx} className="border rounded-md p-2 md:p-2 bg-background/60">
+                    {/* Layout mobile (md:hidden) */}
+                    <div className="md:hidden flex gap-3">
                       {it.imageDataUrl ? (
-                        <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
+                        <img src={it.imageDataUrl} alt={it.name} className="h-14 w-14 rounded object-cover border flex-shrink-0" loading="lazy" />
                       ) : (
-                        <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-[10px]">IMG</div>
+                        <div className="h-14 w-14 rounded border bg-accent/60 grid place-items-center text-[10px] flex-shrink-0">IMG</div>
                       )}
-                      <div>
-                        <div className="font-semibold">{it.name}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-[13px] leading-snug line-clamp-3 break-words">{it.name}</div>
                         {(it.description || it.options) && (
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-3">
                             {it.description} {it.options ? `· ${it.options}` : ''}
                           </div>
                         )}
+                        <div className="mt-2 grid grid-cols-3 gap-2 items-end">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Qtd</div>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={it.quantity}
+                              onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
+                              className="h-8 text-center text-[13px]"
+                            />
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Preço</div>
+                            <div className="text-[12px] font-medium">{currencyBRL(it.unitPrice)}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Subtotal</div>
+                            <div className="text-[12px] font-semibold text-primary">{currencyBRL(it.subtotal)}</div>
+                          </div>
+                        </div>
+                        {it.costPrice != null && (
+                          <div className="mt-1 text-[10px] text-muted-foreground">Custo: {currencyBRL(it.costPrice)}</div>
+                        )}
+                        <div className="mt-2 flex justify-end">
+                          <Button size="sm" variant="ghost" onClick={() => removeItem(idx)} className="h-7 px-2 text-[12px]">Remover</Button>
+                        </div>
                       </div>
                     </div>
-                    <div className="col-span-2 text-right">
-                      <Input
-                        type="number"
-                        min={1}
-                        value={it.quantity}
-                        onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
-                      />
-                    </div>
-                    <div className="col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
-                    <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] hidden md:block pr-1">
-                      {it.costPrice != null ? currencyBRL(it.costPrice) : '—'}
-                    </div>
-                    <div className="col-span-2 md:col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30">{currencyBRL(it.subtotal)}</div>
-                    <div className="col-span-12 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => removeItem(idx)}>Remover</Button>
+                    {/* Layout desktop (hidden em mobile) */}
+                    <div className="hidden md:grid md:grid-cols-12 md:gap-2 items-center">
+                      <div className="col-span-5 flex items-center gap-3">
+                        {it.imageDataUrl ? (
+                          <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
+                        ) : (
+                          <div className="h-12 w-12 rounded border bg-accent/60 grid place-items-center text-[10px]">IMG</div>
+                        )}
+                        <div>
+                          <div className="font-semibold">{it.name}</div>
+                          {(it.description || it.options) && (
+                            <div className="text-xs text-muted-foreground">
+                              {it.description} {it.options ? `· ${it.options}` : ''}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="col-span-2 text-right">
+                        <Input
+                          type="number"
+                          min={1}
+                          value={it.quantity}
+                          onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
+                        />
+                      </div>
+                      <div className="col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
+                      <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] pr-1">
+                        {it.costPrice != null ? currencyBRL(it.costPrice) : '—'}
+                      </div>
+                      <div className="col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30">{currencyBRL(it.subtotal)}</div>
+                      <div className="col-span-12 text-right mt-1">
+                        <Button size="sm" variant="ghost" onClick={() => removeItem(idx)}>Remover</Button>
+                      </div>
                     </div>
                   </div>
                 ))}
