@@ -246,6 +246,8 @@ export default function QuoteBuilder() {
 
   const loadProducts = useCallback(async () => {
     try {
+  // Garante que profile exista para policies de company (evita RLS zerando estoque)
+  try { await (supabase as any).rpc('ensure_profile'); } catch(e) { if(import.meta.env.DEV) console.warn('ensure_profile falhou/indisponível', e); }
       const { data, error } = await supabase
         .from('products')
         .select('id,code,name,description,options,image_url,price,cost_price,sale_price')
