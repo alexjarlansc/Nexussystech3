@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
-    "lint": "eslint .",
+  "lint": "eslint .",
+  "lint:fix": "eslint . --fix",
     "preview": "vite preview",
     "db:push": "supabase db push",
+  "db:studio": "supabase studio",
     "fix:product-images": "node ./scripts/fix_product_images.mjs",
     "bootstrap:inventory": "node ./scripts/bootstrap_inventory.mjs"
   },
@@ -89,6 +91,9 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vite": "^5.4.19"
-  }
+    "vite": "^5.4.19",
+    "@supabase/cli": "^1.187.8",
+    "cross-env": "^7.0.3"
+  },
+  "packageManager": "npm@10.8.2"
 }
