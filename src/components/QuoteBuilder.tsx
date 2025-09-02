@@ -327,10 +327,16 @@ export default function QuoteBuilder() {
         price: Number(p.price),
         cost_price: p.cost_price != null ? Number(p.cost_price) : undefined,
         sale_price: p.sale_price != null ? Number(p.sale_price) : undefined,
-  stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? undefined,
-  reserved: (stocks.find(s => s.product_id === p.id)?.reserved) ?? undefined,
-  available: (stocks.find(s => s.product_id === p.id)?.available) ?? undefined
+  stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? 0,
+  reserved: (stocks.find(s => s.product_id === p.id)?.reserved) ?? 0,
+  available: (stocks.find(s => s.product_id === p.id)?.available) ?? ((stocks.find(s => s.product_id === p.id)?.stock ?? 0) - (stocks.find(s => s.product_id === p.id)?.reserved ?? 0))
       }));
+      if(import.meta.env.DEV){
+        const missing = formattedProducts.filter(fp=> fp.stock===0 && !stocks.find(s=>s.product_id===fp.id));
+        if(missing.length){
+          console.warn('[DEBUG estoque] Produtos sem linha na view/fallback, exibindo 0:', missing.slice(0,20).map(m=>m.id));
+        }
+      }
       // Se todos os produtos possuem exatamente a mesma imageDataUrl, considerar isso um 'placeholder' e limpar para evitar exibição repetida enganosa
       const uniqueImages = Array.from(new Set(formattedProducts.map(fp => fp.imageDataUrl).filter(Boolean)));
       if(uniqueImages.length === 1 && formattedProducts.length > 1){

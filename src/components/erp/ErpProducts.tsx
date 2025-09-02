@@ -95,7 +95,10 @@ export function ErpProducts(){
         // Tentar reserved (pode não existir)
         products = products.map(p=>{
           const base = baseStocks.find(s=>s.product_id===p.id);
-          return { ...p, stock: base?.stock ?? 0, reserved: (base as any)?.reserved, available: (base as any)?.available ?? ((base?.stock ?? 0) - ((base as any)?.reserved ?? 0)) };
+          const stock = base?.stock ?? 0;
+          const reserved = (base as any)?.reserved ?? 0;
+          const available = (base as any)?.available ?? (stock - reserved);
+          return { ...p, stock, reserved, available };
         });
 
         // Fallback recalculado se não obtivemos dados
@@ -137,6 +140,12 @@ export function ErpProducts(){
               const res = reservedAgg[p.id] ?? 0;
               return { ...p, stock: st, reserved: res, available: st - res };
             });
+            if(import.meta.env.DEV){
+              const missing = products.filter(pr=> (pr as any).stock===0 && !agg[(pr as any).id]);
+              if(missing.length){
+                console.warn('[DEBUG estoque ERP] Produtos sem movimentos agregados, exibindo 0:', missing.slice(0,20).map(m=>(m as any).id));
+              }
+            }
           } catch(fbErr){ if(import.meta.env.DEV) console.error('[Fallback estoque ERP] falhou', fbErr); }
         }
       }
