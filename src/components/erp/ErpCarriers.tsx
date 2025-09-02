@@ -46,6 +46,13 @@ export function ErpCarriers() {
     const currentPage = pageOverride ?? page;
     setLoading(true);
     try {
+      // Evita consulta antes de termos o companyId (RLS pode bloquear e gerar erro genérico)
+      if(!companyId){
+        setCarriers([]);
+        setHasMore(false);
+        setTotalCount(0);
+        return;
+      }
       let q = (supabase as any).from('carriers').select('*', { count: 'exact' }).order('name');
       if(companyId) q = q.eq('company_id', companyId);
       if(debouncedSearch){
@@ -56,7 +63,7 @@ export function ErpCarriers() {
       const to = from + pageSize - 1;
       q = q.range(from,to);
       const { data, error, count } = await q;
-      if (error) { toast.error('Erro ao carregar transportadoras'); return; }
+      if (error) { console.error('Erro carriers load', error); toast.error('Erro ao carregar transportadoras'); return; }
       const rows = (data||[]) as Carrier[];
       if(typeof count === 'number') setTotalCount(count);
       setHasMore(typeof count === 'number' ? (from + rows.length) < count : rows.length === pageSize);
