@@ -1,15 +1,14 @@
 import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2, Bell } from 'lucide-react';
+import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 // Ícone simples para trocas/devoluções (setas circulares)
 const RotateIcon = () => <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 6.76 5.36L1 10" /><path d="M3.51 15A9 9 0 0 0 17.24 18.64L23 14" /></svg>;
 import { ErpSuppliers } from '@/components/erp/ErpSuppliers';
 import { ErpProducts } from '@/components/erp/ErpProducts';
 import { ErpCarriers } from '@/components/erp/ErpCarriers';
-import ErpProductGroups from '@/components/erp/ErpProductGroups';
 import { ErpClients } from '@/components/erp/ErpClients';
 import ErpServiceOrders from '@/components/erp/ErpServiceOrders';
 import ErpStockMovements from '@/components/erp/ErpStockMovements';
@@ -42,9 +41,9 @@ type SectionKey =
   | 'products_manage'
   | 'products_pricing'
   | 'product_groups'
-  
+  | 'product_units'
+  | 'product_variations'
   | 'product_labels'
-  | 'replenishment_orders'
   | 'services'
   | 'budgets'
   | 'service_orders'
@@ -63,13 +62,9 @@ type SectionKey =
   | 'report_finance_full'
   | 'reports_dashboard';
 
-import ErpReplenishmentOrders from '@/components/erp/ErpReplenishmentOrders';
-import ErpProductLabels from '@/components/erp/ErpProductLabels';
-
 export default function Erp() {
   const [section, setSection] = useState<SectionKey>('dashboard');
   const [quotesCount, setQuotesCount] = useState<number>(0);
-  const [replOpenCount,setReplOpenCount]=useState<number>(0);
 
   // Carrega contagem inicial e assina mudanças de orçamentos
   useEffect(() => {
@@ -92,22 +87,6 @@ export default function Erp() {
       .subscribe();
     return () => { active = false; (supabase as any).removeChannel(channel); };
   }, []);
-
-  // Contagem de pedidos de reposição abertos
-  useEffect(()=>{
-    let active = true;
-    async function loadRepl(){
-      try {
-        const { count } = await (supabase as any).from('replenishment_orders').select('id',{count:'exact', head:true}).eq('status','ABERTO');
-        if(active) setReplOpenCount(count||0);
-      } catch{ /* ignore count error */ }
-    }
-    loadRepl();
-    const ch = (supabase as any).channel('replenishment-orders-count')
-      .on('postgres_changes',{event:'*', schema:'public', table:'replenishment_orders'}, ()=>loadRepl())
-      .subscribe();
-    return ()=>{ active=false; (supabase as any).removeChannel(ch); };
-  },[]);
 
   // Mantemos seção acessível mesmo sem orçamentos (apenas mostra vazio)
   // Scroll para topo ao mudar de seção
@@ -140,9 +119,9 @@ export default function Erp() {
               <ErpNavItem icon={<Package className='h-4 w-4' />} label="Gerenciar Produtos" active={section==='products_manage'} onClick={()=>setSection('products_manage')} />
               <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Valores de Vendas" active={section==='products_pricing'} onClick={()=>setSection('products_pricing')} />
               <ErpNavItem icon={<FolderTree className='h-4 w-4' />} label="Grupos de Produtos" active={section==='product_groups'} onClick={()=>setSection('product_groups')} />
-              
+              <ErpNavItem icon={<Ruler className='h-4 w-4' />} label="Unidades" active={section==='product_units'} onClick={()=>setSection('product_units')} />
+              <ErpNavItem icon={<Layers className='h-4 w-4' />} label="Grades / Variações" active={section==='product_variations'} onClick={()=>setSection('product_variations')} />
               <ErpNavItem icon={<Tags className='h-4 w-4' />} label="Etiquetas / Códigos" active={section==='product_labels'} onClick={()=>setSection('product_labels')} />
-              <ErpNavItem icon={<Bell className='h-4 w-4' />} label="Pedidos Reposição" active={section==='replenishment_orders'} onClick={()=>setSection('replenishment_orders')} count={replOpenCount||undefined} />
             </div>
             <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
@@ -206,10 +185,10 @@ export default function Erp() {
               {section === 'carriers' && <ErpCarriers />}
               {section === 'products_manage' && <ErpProducts />}
               {section === 'products_pricing' && <ProductsPricingPlaceholder />}
-              {section === 'product_groups' && <ErpProductGroups />}
-              
-              {section === 'product_labels' && <ErpProductLabels />} 
-              {section === 'replenishment_orders' && <ErpReplenishmentOrders />}
+              {section === 'product_groups' && <ProductGroupsPlaceholder />}
+              {section === 'product_units' && <ProductUnitsPlaceholder />}
+              {section === 'product_variations' && <ProductVariationsPlaceholder />}
+              {section === 'product_labels' && <ProductLabelsPlaceholder />}
               {section === 'stock' && <StockPlaceholder />}
               {section === 'stock_movements' && <ErpStockMovements />}
               {section === 'services' && <ServicesPlaceholder />}
@@ -240,14 +219,155 @@ export default function Erp() {
   );
 }
 
-function ErpNavItem({ icon, label, active, onClick, count }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void; count?: number }) {
+function SalesOrdersList(){
+  const [rows,setRows]=useState<Tables<'sales'>[]>([]);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState<string|null>(null);
+  const [search,setSearch]=useState('');
+  const [status,setStatus]=useState('');
+  const [payStatus,setPayStatus]=useState('');
+  const [page,setPage]=useState(1); const pageSize=20; const [total,setTotal]=useState(0);
+  useEffect(()=>{(async()=>{
+    setLoading(true); setError(null);
+    try {
+      let q = (supabase as any).from('sales').select('*',{count:'exact'}).order('created_at',{ascending:false}).range((page-1)*pageSize, page*pageSize-1);
+      if (search) q = q.ilike('sale_number','%'+search+'%');
+      if (status) q = q.eq('status',status);
+      if (payStatus) q = q.eq('payment_status',payStatus);
+      const { data, error, count } = await q;
+      if (error) throw error;
+      setRows(data||[]); setTotal(count||0);
+    } catch(e:any){ setError(e.message);} finally { setLoading(false); }
+  })();},[search,status,payStatus,page]);
+  const totalPages = Math.max(1, Math.ceil(total/pageSize));
+  return <Card className="p-6 space-y-4">
+    <header className="flex flex-wrap gap-3 items-end">
+      <div>
+        <h2 className="text-xl font-semibold mb-1">Pedidos de Vendas</h2>
+        <p className="text-sm text-muted-foreground">Pedidos confirmados de produtos.</p>
+      </div>
+      <div className="flex gap-2 ml-auto flex-wrap text-xs">
+        <Input placeholder="Número" value={search} onChange={e=>{setPage(1);setSearch(e.target.value);}} className="w-32 h-8" />
+        <select value={status} onChange={e=>{setPage(1);setStatus(e.target.value);}} className="h-8 border rounded px-2">
+          <option value="">Status</option>
+          <option value="ABERTO">Aberto</option>
+          <option value="FATURADO">Faturado</option>
+          <option value="CANCELADO">Cancelado</option>
+        </select>
+        <select value={payStatus} onChange={e=>{setPage(1);setPayStatus(e.target.value);}} className="h-8 border rounded px-2">
+          <option value="">Pagamento</option>
+          <option value="PENDENTE">Pendente</option>
+          <option value="PAGO">Pago</option>
+          <option value="PARCIAL">Parcial</option>
+        </select>
+        <Button size="sm" variant="outline" onClick={()=>{setSearch('');setStatus('');setPayStatus('');setPage(1);}}>Limpar</Button>
+      </div>
+    </header>
+    {error && <div className="text-sm text-red-500">{error}</div>}
+    <div className="border rounded overflow-auto max-h-[500px]">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Data</th><th className="px-2 py-1 text-left">Número</th><th className="px-2 py-1 text-left">Status</th><th className="px-2 py-1 text-left">Pagamento</th><th className="px-2 py-1 text-right">Total</th><th className="px-2 py-1 text-left">Cliente</th></tr></thead>
+        <tbody>
+          {loading && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Sem pedidos</td></tr>}
+          {!loading && rows.map(r=> {
+            let clientName='-';
+            if (r.client_snapshot && typeof r.client_snapshot === 'object' && !Array.isArray(r.client_snapshot)) {
+              const snap = r.client_snapshot as any;
+              clientName = snap.name || snap.company_name || '-';
+            }
+            return <tr key={r.id} className="border-t hover:bg-muted/40">
+              <td className="px-2 py-1 whitespace-nowrap">{new Date(r.created_at).toLocaleDateString('pt-BR')}</td>
+              <td className="px-2 py-1 font-medium">{r.sale_number}</td>
+              <td className="px-2 py-1">{r.status}</td>
+              <td className="px-2 py-1">{r.payment_status}</td>
+              <td className="px-2 py-1 text-right">{Number(r.total).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+              <td className="px-2 py-1 truncate max-w-[160px]" title={clientName}>{clientName}</td>
+            </tr>})}
+        </tbody>
+      </table>
+    </div>
+    <div className="flex justify-between items-center text-xs text-muted-foreground">
+      <span>Página {page} de {totalPages} • {total} registros</span>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</Button>
+        <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
+      </div>
+    </div>
+  </Card>;
+}
+
+function ServiceSalesOrdersList(){
+  const [rows,setRows]=useState<any[]>([]);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState<string|null>(null);
+  const [status,setStatus]=useState('');
+  const [search,setSearch]=useState('');
+  const [page,setPage]=useState(1); const pageSize=15; const [total,setTotal]=useState(0);
+  useEffect(()=>{(async()=>{
+    setLoading(true); setError(null);
+    try {
+      let q = (supabase as any).from('service_orders').select('*',{count:'exact'}).order('created_at',{ascending:false}).range((page-1)*pageSize,page*pageSize-1).not('service_sale_id','is',null);
+      if (status) q = q.eq('status',status);
+      if (search) q = q.ilike('number','%'+search+'%');
+      const { data, error, count } = await q;
+      if (error) throw error;
+      setRows(data||[]); setTotal(count||0);
+    } catch(e:any){ setError(e.message);} finally { setLoading(false); }
+  })();},[status,search,page]);
+  const totalPages = Math.max(1, Math.ceil(total/pageSize));
+  return <Card className="p-6 space-y-4">
+    <header className="flex flex-wrap gap-3 items-end">
+      <div>
+        <h2 className="text-xl font-semibold mb-1">Pedidos de Serviços</h2>
+        <p className="text-sm text-muted-foreground">OS faturadas / vinculadas a pedido de serviço.</p>
+      </div>
+      <div className="flex gap-2 ml-auto flex-wrap text-xs">
+        <Input placeholder="Número" value={search} onChange={e=>{setPage(1);setSearch(e.target.value);}} className="w-32 h-8" />
+        <select value={status} onChange={e=>{setPage(1);setStatus(e.target.value);}} className="h-8 border rounded px-2">
+          <option value="">Status</option>
+          <option value="ABERTA">Aberta</option>
+          <option value="EM_EXECUCAO">Em Execução</option>
+          <option value="CONCLUIDA">Concluída</option>
+          <option value="CANCELADA">Cancelada</option>
+        </select>
+        <Button size="sm" variant="outline" onClick={()=>{setSearch('');setStatus('');setPage(1);}}>Limpar</Button>
+      </div>
+    </header>
+    {error && <div className="text-sm text-red-500">{error}</div>}
+    <div className="border rounded overflow-auto max-h-[480px]">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Data</th><th className="px-2 py-1 text-left">Número</th><th className="px-2 py-1 text-left">Status</th><th className="px-2 py-1 text-left">Total</th><th className="px-2 py-1 text-left">Pedido Serviço</th></tr></thead>
+        <tbody>
+          {loading && <tr><td colSpan={5} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={5} className="text-center py-6 text-muted-foreground">Sem pedidos de serviço</td></tr>}
+          {!loading && rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
+            <td className="px-2 py-1 whitespace-nowrap">{new Date(r.created_at).toLocaleDateString('pt-BR')}</td>
+            <td className="px-2 py-1 font-medium">{r.number}</td>
+            <td className="px-2 py-1">{r.status}</td>
+            <td className="px-2 py-1">{r.total? Number(r.total).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'-'}</td>
+            <td className="px-2 py-1 text-xs">{r.service_sale_id || '-'}</td>
+          </tr>)}
+        </tbody>
+      </table>
+    </div>
+    <div className="flex justify-between items-center text-xs text-muted-foreground">
+      <span>Página {page} de {totalPages} • {total} registros</span>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</Button>
+        <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
+      </div>
+    </div>
+  </Card>;
+}
+
+function ErpNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
   return (
     <button
       onClick={onClick}
       className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-primary/10 text-left transition-colors ${active ? 'bg-primary/15 text-primary font-medium' : 'text-slate-600 dark:text-slate-300'}`}
     >
-  {icon}<span className="truncate flex-1 text-left">{label}</span>
-  {typeof count === 'number' && <span className="ml-auto text-[10px] font-semibold bg-primary/20 text-primary px-1.5 py-0.5 rounded">{count}</span>}
+      {icon}<span className="truncate">{label}</span>
     </button>
   );
 }
@@ -301,30 +421,14 @@ function StockPlaceholder() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ product_id:'', type:'ENTRADA', quantity:'', unit_cost:'', reference:'', notes:'' });
   const [loading, setLoading] = useState(false);
-  const [inventoryMissing, setInventoryMissing] = useState(false);
 
-  const load = useCallback(async () => {
-    setInventoryMissing(false);
+  async function load() {
     const { data: m, error: e1 } = await (supabase as any).from('inventory_movements').select('*').order('created_at',{ascending:false}).limit(50);
-    if (e1) {
-      // Erros típicos: relation does not exist (42P01) ou schema cache
-      if (e1.code === '42P01' || (e1.message && /inventory_movements/.test(e1.message))) {
-        setInventoryMissing(true);
-      } else {
-        toast.error('Erro movimentos');
-      }
-    } else {
-      setMovs(m as MovementRow[]);
-    }
-    // Só tenta view se tabela base existir
-    if (!inventoryMissing) {
-      const { data: s, error: e2 } = await (supabase as any).from('product_stock').select('*');
-      if (e2) {
-        if (!(e2.code === '42P01' || (e2.message && /product_stock/.test(e2.message)))) toast.error('Erro estoque');
-      } else setStock(s as StockRow[]);
-    }
-  },[inventoryMissing]);
-  useEffect(()=>{ load(); },[load]);
+    if (e1) toast.error('Erro movimentos'); else setMovs(m as MovementRow[]);
+    const { data: s, error: e2 } = await (supabase as any).from('product_stock').select('*');
+    if (e2) toast.error('Erro estoque'); else setStock(s as StockRow[]);
+  }
+  useEffect(()=>{ load(); },[]);
 
   async function save() {
     const qty = Number(form.quantity);
@@ -341,21 +445,6 @@ function StockPlaceholder() {
 
   return (
     <div className="space-y-4">
-      {inventoryMissing && (
-        <Card className="p-4 border-dashed border-red-300 bg-red-50 dark:bg-red-950/20">
-          <h2 className="font-semibold text-red-700 dark:text-red-300 mb-1">Módulo de Movimentação não instalado</h2>
-          <p className="text-xs text-red-600 dark:text-red-400 mb-2">A tabela <code>public.inventory_movements</code> não foi encontrada. É necessário aplicar as migrações.</p>
-          <ol className="text-[11px] space-y-1 list-decimal pl-4">
-            <li>Instale/atualize o CLI: <code>npm i -g supabase</code></li>
-            <li>No diretório raiz execute: <code>supabase login</code> e depois <code>supabase link --project-ref &lt;ref&gt;</code></li>
-            <li>Execute: <code>supabase db push</code> (ou <code>supabase migration up</code>)</li>
-            <li>Se já aplicou e continua: rode SQL <code>NOTIFY pgrst, 'reload schema';</code></li>
-          </ol>
-          <div className="mt-2 flex gap-2">
-            <UIButton size="sm" variant="outline" onClick={load}>Reverificar</UIButton>
-          </div>
-        </Card>
-      )}
       <div className="flex items-center gap-2">
         <UIButton size="sm" onClick={()=>setOpen(true)}><Plus className="h-4 w-4 mr-1"/>Nova Movimentação</UIButton>
         <UIButton size="sm" variant="outline" onClick={load}><RefreshCcw className="h-4 w-4 mr-1"/>Atualizar</UIButton>
@@ -428,8 +517,6 @@ function ProductsPricingPlaceholder(){
   const [rawPis,setRawPis]=useState<string>('');
   const [cofins,setCofins]=useState<number|undefined>();
   const [rawCofins,setRawCofins]=useState<string>('');
-  const [freight,setFreight]=useState<number|undefined>(); // % de frete sobre custo
-  const [rawFreight,setRawFreight]=useState<string>('');
   const [calcMode,setCalcMode]=useState<'forward'|'reverse'>('forward'); // forward: custo->preço ; reverse: preço->margem
   const [sale,setSale]=useState<number|undefined>();
   const [rawSale,setRawSale]=useState<string>('');
@@ -441,33 +528,30 @@ function ProductsPricingPlaceholder(){
   const saleComputed = (()=>{
     if(calcMode==='forward'){
       if(cost===undefined) return undefined;
-    // Base sem tributos: custo + margem + frete (frete % aplicado sobre o custo)
-    const base = cost * (1 + (margin||0)/100 + (freight||0)/100);
+      const base = cost * (1 + (margin||0)/100);
   const totalRate = (icms||0)+(pis||0)+(cofins||0);
   const taxVal = base * (totalRate/100);
   return +(base + taxVal).toFixed(2);
     } else {
       if(sale===undefined || cost===undefined) return undefined;
-  // Remover tributos agregados antes de calcular margem efetiva
+  // remover tributos agregados antes de calcular margem efetiva
   const totalRate = (icms||0)+(pis||0)+(cofins||0);
   const baseWithoutTax = sale / (1+ totalRate/100);
-    // baseWithoutTax = cost * (1 + margem + frete)
-    // => margem = baseWithoutTax/cost - 1 - frete
-    const effMargin = (baseWithoutTax/cost - 1 - (freight||0)/100)*100;
+      const effMargin = ((baseWithoutTax - cost)/cost)*100;
       return +effMargin.toFixed(2); // retorna margem calculada
     }
   })();
   async function fetchOne(){
     if(!search.trim()) return; setLoading(true);
     try {
-  const q = (supabase as any).from('products').select('*').or(`name.ilike.%${search}%,code.ilike.%${search}%`).limit(1);
+      let q = (supabase as any).from('products').select('*').or(`name.ilike.%${search}%,code.ilike.%${search}%`).limit(1);
       const { data, error } = await q;
       if(error) throw error;
       if(data && data[0]){
   const p = data[0]; setProduct(p);
   const cVal = p.cost_price? Number(p.cost_price):undefined; setCost(cVal); setRawCost(cVal!==undefined? cVal.toFixed(2).replace('.',','):'');
   const sVal = p.sale_price? Number(p.sale_price): (p.price? Number(p.price): undefined); setSale(sVal); setRawSale(sVal!==undefined? sVal.toFixed(2).replace('.',','):'');
-  setMargin(undefined); setRawMargin(''); setFreight(undefined); setRawFreight('');
+  setMargin(undefined); setRawMargin('');
   const iVal = p.icms_rate? Number(p.icms_rate):undefined; setIcms(iVal); setRawIcms(iVal!==undefined? iVal.toFixed(2).replace('.',','):'');
   const pisVal = p.pis_rate? Number(p.pis_rate):undefined; setPis(pisVal); setRawPis(pisVal!==undefined? pisVal.toFixed(2).replace('.',','):'');
   const cofVal = p.cofins_rate? Number(p.cofins_rate):undefined; setCofins(cofVal); setRawCofins(cofVal!==undefined? cofVal.toFixed(2).replace('.',','):'');
@@ -537,15 +621,14 @@ function ProductsPricingPlaceholder(){
           <option value="forward">Custo ⇒ Preço</option>
           <option value="reverse">Preço ⇒ Margem</option>
         </select>
-  <Button size="sm" variant="outline" onClick={()=>{setProduct(null);setCost(undefined);setRawCost('');setMargin(undefined);setRawMargin('');setFreight(undefined);setRawFreight('');setIcms(undefined);setRawIcms('');setPis(undefined);setRawPis('');setCofins(undefined);setRawCofins('');setSale(undefined);setRawSale('');}}>Limpar</Button>
+  <Button size="sm" variant="outline" onClick={()=>{setProduct(null);setCost(undefined);setRawCost('');setMargin(undefined);setRawMargin('');setIcms(undefined);setRawIcms('');setPis(undefined);setRawPis('');setCofins(undefined);setRawCofins('');setSale(undefined);setRawSale('');}}>Limpar</Button>
       </div>
     </div>
-  <div className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-slate-900/80 border-b pb-4 space-y-4">
-    <div className="grid md:grid-cols-6 gap-3 text-xs">
+  {product && <div className="grid md:grid-cols-6 gap-3 text-xs">
       <div>
         <label className="block text-[10px] font-medium uppercase mb-1">Custo</label>
-  <Input disabled={!product} value={rawCost} onChange={e=>{
-          const only = e.target.value.replace(/[^0-9,.]/g,'');
+        <Input value={rawCost} onChange={e=>{
+          const only = e.target.value.replace(/[^0-9,\.,]/g,'');
           setRawCost(only);
           const normalized = only.replace(',','.');
           const num = Number(normalized);
@@ -554,7 +637,7 @@ function ProductsPricingPlaceholder(){
       </div>
       {calcMode==='forward' && <div>
         <label className="block text-[10px] font-medium uppercase mb-1">Margem %</label>
-  <Input disabled={!product}
+        <Input
           value={rawMargin}
           onChange={e=>{
             const only = e.target.value.replace(/[^0-9,.-]/g,'');
@@ -568,26 +651,10 @@ function ProductsPricingPlaceholder(){
           className="h-8"
         />
       </div>}
-      <div>
-        <label className="block text-[10px] font-medium uppercase mb-1">Frete %</label>
-  <Input disabled={!product}
-          value={rawFreight}
-          onChange={e=>{
-            const only=e.target.value.replace(/[^0-9,.-]/g,'');
-            setRawFreight(only);
-            const n=Number(only.replace(',','.'));
-            if(!isNaN(n)) setFreight(n); else if(!only) setFreight(undefined);
-          }}
-          onBlur={()=>{ if(rawFreight){ const n=Number(rawFreight.replace(',','.')); if(!isNaN(n)) setRawFreight(n.toFixed(2).replace('.',',')); } }}
-          placeholder="%"
-          inputMode="decimal"
-          className="h-8"
-        />
-      </div>
       {calcMode==='reverse' && <div>
         <label className="block text-[10px] font-medium uppercase mb-1">Preço Venda</label>
-  <Input disabled={!product} value={rawSale} onChange={e=>{
-          const only = e.target.value.replace(/[^0-9,.]/g,'');
+        <Input value={rawSale} onChange={e=>{
+          const only = e.target.value.replace(/[^0-9,\.,]/g,'');
           setRawSale(only);
           const normalized = only.replace(',','.');
           const num = Number(normalized); if(!isNaN(num)) setSale(num); else if(only==='') setSale(undefined);
@@ -595,7 +662,7 @@ function ProductsPricingPlaceholder(){
       </div>}
       <div>
         <label className="block text-[10px] font-medium uppercase mb-1">ICMS %</label>
-  <Input disabled={!product}
+        <Input
           value={rawIcms}
           onChange={e=>{
             const only=e.target.value.replace(/[^0-9,.-]/g,'');
@@ -613,7 +680,7 @@ function ProductsPricingPlaceholder(){
       </div>
       <div>
         <label className="block text-[10px] font-medium uppercase mb-1">PIS %</label>
-  <Input disabled={!product}
+        <Input
           value={rawPis}
           onChange={e=>{
             const only=e.target.value.replace(/[^0-9,.-]/g,'');
@@ -631,7 +698,7 @@ function ProductsPricingPlaceholder(){
       </div>
       <div>
         <label className="block text-[10px] font-medium uppercase mb-1">COFINS %</label>
-  <Input disabled={!product}
+        <Input
           value={rawCofins}
           onChange={e=>{
             const only=e.target.value.replace(/[^0-9,.-]/g,'');
@@ -656,24 +723,22 @@ function ProductsPricingPlaceholder(){
         </div>
       </div>
       <div className="md:col-span-6 flex gap-2 items-center">
-  <Button size="sm" onClick={apply} disabled={!product}>Aplicar ao Produto</Button>
+        <Button size="sm" onClick={apply}>Aplicar ao Produto</Button>
         {calcMode==='reverse' && saleComputed!==undefined && <span className="text-[11px] text-muted-foreground">Margem efetiva considerando que preço inclui tributo.</span>}
       </div>
-    </div>
-    {product && <Breakdown cost={cost} margin={margin} freight={freight} icms={icms} pis={pis} cofins={cofins} saleComputed={saleComputed} calcMode={calcMode} saleInput={sale} />}
-  </div>
+    </div>}
+  {product && <Breakdown cost={cost} margin={margin} icms={icms} pis={pis} cofins={cofins} saleComputed={saleComputed} calcMode={calcMode} saleInput={sale} />}
   <MassRecalcTool />
     {!product && <div className="text-[11px] text-muted-foreground">Busque um produto para iniciar o cálculo.</div>}
-  <div className="text-[10px] text-muted-foreground">Modelo simples: Preço = Custo * (1 + Margem% + Frete%) + Tributos(ICMS/PIS/COFINS sobre a base). Ajuste conforme regras fiscais específicas depois.</div>
+    <div className="text-[10px] text-muted-foreground">Modelo simples: Preço = Custo*(1+Margem%) + (Tributação% sobre base). Ajuste conforme regras fiscais específicas depois.</div>
   </Card>;
 }
 // Breakdown de tributos e margem líquida
-type BreakdownProps = { cost: number|undefined; margin: number|undefined; freight:number|undefined; icms:number|undefined; pis:number|undefined; cofins:number|undefined; saleComputed:number|undefined; calcMode:'forward'|'reverse'; saleInput:number|undefined; };
-const Breakdown: React.FC<BreakdownProps> = ({cost, margin, freight, icms, pis, cofins, saleComputed, calcMode, saleInput}) => {
+function Breakdown({cost, margin, icms, pis, cofins, saleComputed, calcMode, saleInput}:{cost: number|undefined; margin: number|undefined; icms:number|undefined; pis:number|undefined; cofins:number|undefined; saleComputed:number|undefined; calcMode:'forward'|'reverse'; saleInput:number|undefined;}){
   if(cost===undefined) return null;
   const base = calcMode==='forward'
-    ? (cost * (1 + (margin||0)/100 + (freight||0)/100))
-    : (saleInput!==undefined && saleComputed!==undefined ? cost * (1 + (saleComputed/100) + (freight||0)/100) : undefined);
+    ? (cost * (1 + (margin||0)/100))
+    : (saleInput!==undefined && saleComputed!==undefined ? cost * (1 + saleComputed/100) : undefined);
   if(base===undefined) return null;
   const icmsVal = base * ((icms||0)/100);
   const pisVal = base * ((pis||0)/100);
@@ -681,8 +746,7 @@ const Breakdown: React.FC<BreakdownProps> = ({cost, margin, freight, icms, pis, 
   const totalTax = icmsVal+pisVal+cofinsVal;
   const finalPrice = calcMode==='forward' ? saleComputed : (saleInput!==undefined? saleInput: undefined);
   const grossMarginPct = calcMode==='forward' ? (margin||0) : (saleComputed||0);
-  const freightValue = cost * ((freight||0)/100);
-  const grossMarginValue = base - cost - freightValue; // margem exclui o frete (frete não é margem)
+  const grossMarginValue = base - cost;
   const netAfterTax = finalPrice!==undefined? finalPrice - totalTax: undefined;
   const netMarginValue = netAfterTax!==undefined? netAfterTax - cost: undefined;
   const netMarginPct = netMarginValue!==undefined? (netMarginValue/cost)*100: undefined;
@@ -696,8 +760,7 @@ const Breakdown: React.FC<BreakdownProps> = ({cost, margin, freight, icms, pis, 
   return <div className="border rounded p-3 bg-muted/40 text-[11px] space-y-1">
     <div className="font-semibold">Detalhamento</div>
     <div className="grid md:grid-cols-6 gap-x-4 gap-y-1">
-  <div><span className="text-muted-foreground">Base s/ Tributos (Custo+Margem+Frete):</span><br/>{fmt(base)}</div>
-  <div><span className="text-muted-foreground">Frete:</span><br/>{fmt(freightValue)} {freight? '('+freight+'%)':''}</div>
+      <div><span className="text-muted-foreground">Base s/ Tributos:</span><br/>{fmt(base)}</div>
       <div><span className="text-muted-foreground">ICMS:</span><br/>{fmt(icmsVal)} {icms? '('+icms+'%)':''}</div>
       <div><span className="text-muted-foreground">PIS:</span><br/>{fmt(pisVal)} {pis? '('+pis+'%)':''}</div>
       <div><span className="text-muted-foreground">COFINS:</span><br/>{fmt(cofinsVal)} {cofins? '('+cofins+'%)':''}</div>
@@ -711,7 +774,7 @@ const Breakdown: React.FC<BreakdownProps> = ({cost, margin, freight, icms, pis, 
       <div><span className="text-muted-foreground">Margem s/ ICMS:</span><br/>{fmt(netWithoutICMSMarginValue)} ({fmt(netWithoutICMSMarginPct, true)})</div>
     </div>
   </div>;
-};
+}
 // Ferramenta de recalcular em massa
 function MassRecalcTool(){
   const [open,setOpen]=useState(false);
@@ -777,160 +840,10 @@ function MassRecalcTool(){
     </div>}
   </div>;
 }
-// Substituído por componente funcional ErpProductGroups
+function ProductGroupsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Grupos de Produtos</h2><p className="text-sm text-muted-foreground mb-4">Organize hierarquias.</p><Button size="sm" onClick={()=>toast.message('Novo Grupo')}>Novo Grupo</Button><div className="mt-4 text-xs text-muted-foreground">Lista/árvore de grupos...</div></Card>;}
 function ProductUnitsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Unidades</h2><p className="text-sm text-muted-foreground mb-4">Cadastro de unidades comerciais.</p><Button size="sm" onClick={()=>toast.message('Nova Unidade')}>Nova Unidade</Button><div className="mt-4 text-xs text-muted-foreground">Tabela de unidades...</div></Card>;}
 function ProductVariationsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Grades / Variações</h2><p className="text-sm text-muted-foreground mb-4">Gerencie SKUs por atributos.</p><Button size="sm" onClick={()=>toast.message('Nova Grade')}>Nova Grade</Button><div className="mt-4 text-xs text-muted-foreground">Configuração de atributos e geração de variações...</div></Card>;}
-/* ================== ETIQUETAS ================== */
-interface LabelProduct { id:string; code?:string|null; name?:string|null; sale_price?:any; }
-function ProductLabels(){
-  const [search,setSearch]=useState('');
-  const [products,setProducts]=useState<LabelProduct[]>([]);
-  const [selected,setSelected]=useState<Record<string,number>>({});
-  const [loading,setLoading]=useState(false);
-  const [showConfig,setShowConfig]=useState(false);
-  const [priceSource,setPriceSource]=useState<'sale_price'|'manual'>('sale_price');
-  const [manualPrice,setManualPrice]=useState('');
-  const [labelWidth,setLabelWidth]=useState(80); // mm
-  const [labelHeight,setLabelHeight]=useState(40); // mm
-  const [fontScale,setFontScale]=useState(1);
-  const [showPreview,setShowPreview]=useState(false);
-
-  useEffect(()=>{(async()=>{
-    setLoading(true);
-    try{
-      let q = (supabase as any).from('products').select('id, code, name, sale_price').order('name').limit(200);
-      if(search) q = q.ilike('name','%'+search+'%');
-      const { data, error } = await q;
-      if(error) throw error;
-      setProducts(data||[]);
-    }catch(e:any){ toast.error(e.message);}finally{setLoading(false);} 
-  })();},[search]);
-
-  function toggle(p:LabelProduct){
-    setSelected(s=>{
-      const next={...s};
-      if(next[p.id]) delete next[p.id]; else next[p.id]=1;
-      return next;
-    });
-  }
-  function adjustQty(id:string,delta:number){
-    setSelected(s=>{ const q=(s[id]||0)+delta; const n={...s}; if(q<=0) delete n[id]; else n[id]=q; return n;});
-  }
-  const selectedProducts = products.filter(p=> selected[p.id]);
-
-  function buildPrintHtml(){
-    const mmToPx = (mm:number)=> mm * 3.78; // 96dpi approx
-    const wPx = mmToPx(labelWidth);
-    const hPx = mmToPx(labelHeight);
-    const css = `@page { size: ${labelWidth}mm ${labelHeight}mm; margin: 2mm; }
-      body { font-family: Arial, sans-serif; }
-      .sheet { display:flex; flex-wrap:wrap; gap:4px; }
-      .lbl { box-sizing:border-box; width:${wPx}px; height:${hPx}px; border:1px solid #000; padding:4px 6px; display:flex; flex-direction:column; justify-content:space-between; }
-      .name { font-size:${12*fontScale}px; font-weight:600; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .price { font-size:${24*fontScale}px; font-weight:700; text-align:right; }
-      .code { font-size:${10*fontScale}px; letter-spacing:1px; }
-      .barcode { font-size:0; }
-    `;
-    const rows: string[] = [];
-    selectedProducts.forEach(p=>{
-      const qty = selected[p.id];
-      const priceValue = priceSource==='manual'? manualPrice : (p.sale_price!=null? Number(p.sale_price).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '');
-      const code = p.code || p.id.slice(0,12).replace(/-/g,'').padEnd(12,'0');
-      for(let i=0;i<qty;i++){
-        rows.push(`<div class="lbl">
-          <div class="name">${(p.name||'').toUpperCase()}</div>
-          <div class="price">${priceValue}</div>
-          <div class="code">${code}</div>
-          <div class="barcode"><img src="https://api-bwipjs.metafloor.com/?bcid=ean13&text=${code}&scale=2&includetext=0" style="max-width:100%;height:32px;object-fit:contain" /></div>
-        </div>`);
-      }
-    });
-    return `<!DOCTYPE html><html><head><meta charset='utf-8'><title>Etiquetas</title><style>${css}</style></head><body onload="window.print()"><div class='sheet'>${rows.join('\n')}</div></body></html>`;
-  }
-
-  function handlePrint(){
-    if(!selectedProducts.length){ toast.warning('Selecione produtos'); return; }
-    const html = buildPrintHtml();
-    const w = window.open('','_blank','width=900,height=700');
-    if(w){ w.document.write(html); w.document.close(); }
-  }
-
-  return <Card className="p-6 space-y-4">
-    <header className="flex flex-wrap gap-4 items-end">
-      <div>
-        <h2 className="text-xl font-semibold">Etiquetas / Códigos</h2>
-        <p className="text-sm text-muted-foreground">Selecione produtos e gere etiquetas no modelo solicitado.</p>
-      </div>
-      <div className="flex gap-2 ml-auto flex-wrap items-center text-xs">
-        <Input placeholder="Buscar produto" value={search} onChange={e=>setSearch(e.target.value)} className="h-8 w-48" />
-        <Button size="sm" variant="outline" onClick={()=>setShowConfig(true)}>Configurar</Button>
-        <Button size="sm" onClick={handlePrint} disabled={!Object.keys(selected).length}>Imprimir ({Object.values(selected).reduce((a,b)=>a+b,0)})</Button>
-      </div>
-    </header>
-    <div className="border rounded overflow-hidden">
-      <table className="w-full text-xs">
-        <thead className="bg-slate-50"><tr><th className="px-2 py-1 text-left">Sel</th><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1 text-right">Preço</th><th className="px-2 py-1 text-center">Qtd</th></tr></thead>
-        <tbody>
-          {loading && <tr><td colSpan={5} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
-          {!loading && products.map(p=>{
-            const q = selected[p.id]||0;
-            return <tr key={p.id} className="border-t hover:bg-muted/40">
-              <td className="px-2 py-1"><input type="checkbox" checked={!!q} onChange={()=>toggle(p)} /></td>
-              <td className="px-2 py-1 font-mono text-[10px]">{p.code||'-'}</td>
-              <td className="px-2 py-1 truncate max-w-[240px]" title={p.name||''}>{p.name}</td>
-              <td className="px-2 py-1 text-right">{p.sale_price!=null? Number(p.sale_price).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'-'}</td>
-              <td className="px-2 py-1 text-center">
-                {q? <div className="inline-flex items-center gap-1">
-                  <button className="px-2 border rounded" onClick={()=>adjustQty(p.id,-1)}>-</button>
-                  <input value={q} onChange={e=>{const v=Number(e.target.value)||0; setSelected(s=>({...s,[p.id]:v}));}} className="w-10 h-6 text-center border rounded" />
-                  <button className="px-2 border rounded" onClick={()=>adjustQty(p.id,1)}>+</button>
-                </div>: <button className="text-primary underline" onClick={()=>adjustQty(p.id,1)}>Adicionar</button>}
-              </td>
-            </tr>;
-          })}
-          {!loading && !products.length && <tr><td colSpan={5} className="text-center py-6 text-muted-foreground">Nenhum produto</td></tr>}
-        </tbody>
-      </table>
-    </div>
-
-    {/* Config dialog simples */}
-    {showConfig && <Dialog open={showConfig} onOpenChange={setShowConfig}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Configuração de Etiquetas</DialogTitle></DialogHeader>
-        <div className="space-y-4 text-sm">
-          <div className="grid grid-cols-2 gap-4">
-            <label className="space-y-1"><span className="font-medium">Largura (mm)</span><Input type="number" value={labelWidth} onChange={e=>setLabelWidth(Number(e.target.value)||1)} /></label>
-            <label className="space-y-1"><span className="font-medium">Altura (mm)</span><Input type="number" value={labelHeight} onChange={e=>setLabelHeight(Number(e.target.value)||1)} /></label>
-            <label className="space-y-1"><span className="font-medium">Escala Fonte</span><Input type="number" step="0.1" value={fontScale} onChange={e=>setFontScale(Number(e.target.value)||1)} /></label>
-            <label className="space-y-1"><span className="font-medium">Preço Manual</span><Input disabled={priceSource!=='manual'} value={manualPrice} onChange={e=>setManualPrice(e.target.value)} placeholder="Ex: 39,00" /></label>
-          </div>
-          <div className="flex gap-4 items-center">
-            <label className="flex items-center gap-1 text-xs"><input type="radio" name="priceSource" value="sale_price" checked={priceSource==='sale_price'} onChange={()=>setPriceSource('sale_price')} /> Usar preço produto</label>
-            <label className="flex items-center gap-1 text-xs"><input type="radio" name="priceSource" value="manual" checked={priceSource==='manual'} onChange={()=>setPriceSource('manual')} /> Preço manual</label>
-          </div>
-          <div className="text-xs text-muted-foreground">O modelo inclui: Nome (linha 1), Preço em destaque, código numérico e código de barras EAN13 gerado (usa code, ou fallback uuid parcial). Use etiquetas térmicas {labelWidth}x{labelHeight}mm.</div>
-          <Button size="sm" variant="outline" onClick={()=>{setShowPreview(true);}}>Pré-visualizar</Button>
-        </div>
-        <DialogFooter>
-          <Button size="sm" onClick={()=>{setShowConfig(false);}}>Fechar</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>}
-
-    {showPreview && <Dialog open={showPreview} onOpenChange={setShowPreview}>
-      <DialogContent className="max-w-4xl">
-        <DialogHeader><DialogTitle>Pré-visualização</DialogTitle></DialogHeader>
-        <div className="overflow-auto border p-2 max-h-[60vh]">
-          <iframe title="preview" style={{width:'100%',height:'400px',background:'#fff'}} srcDoc={buildPrintHtml()} />
-        </div>
-        <DialogFooter>
-          <Button size="sm" variant="outline" onClick={()=>setShowPreview(false)}>Fechar</Button>
-          <Button size="sm" onClick={()=>{handlePrint();}}>Imprimir</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>}
-  </Card>;
-}
+function ProductLabelsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Etiquetas / Códigos</h2><p className="text-sm text-muted-foreground mb-4">Geração de códigos de barras e QR.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Gerar Etiqueta')}>Gerar</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Gerar em Lote')}>Lote</Button></div><div className="text-xs text-muted-foreground">Lista de etiquetas geradas...</div></Card>;}
 function ServicesPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Serviços</h2><p className="text-sm text-muted-foreground mb-4">Cadastro e gestão de serviços para ordens, contratos e faturamento.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Serviço')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Importar Serviços')}>Importar</Button></div><div className="text-xs text-muted-foreground">Tabela (código | descrição | unidade | custo | preço | tributos).</div></Card>;}
 function BudgetsPlaceholder(){
   const [data,setData]=useState<any[]>([]);
@@ -1328,186 +1241,40 @@ function BaseReportWrapper({ title, description, children, onExport, onExportXls
 }
 
 function ReportStockFull(){
-  // Relatório de estoque detalhado com filtros e métricas
+  // MVP aprimorado: limite + soma total
   const [rows,setRows]=useState<any[]>([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState('');
-  const [filterCat,setFilterCat]=useState('');
-  const [filterSector,setFilterSector]=useState('');
-  const [filterSession,setFilterSession]=useState('');
-  const [participationBase,setParticipationBase]=useState<'cost'|'sale'>('cost');
-  const [sortField,setSortField]=useState<string>('category');
-  const [sortDir,setSortDir]=useState<'asc'|'desc'>('asc');
   const LIMIT=1500;
   useEffect(()=>{(async()=>{
     setLoading(true);
     try {
-      // Consulta composta juntando produtos + estoque + métricas
-      // Como não há view pronta com custo médio e reservado, calculamos via subqueries.
-      const filter = search ? `and (p.name ilike '%${search}%' or p.code ilike '%${search}%' or p.id ilike '%${search}%')` : '';
-      // Usamos RPC via SQL raw (supabase-js não tem raw direta aqui; então montamos com .rpc custom? Como não temos função, fallback: múltiplas chamadas)
-      // Simples abordagem: buscar produtos e depois enriquecer em JS com queries auxiliares (performance aceitável para MVP <=1500).
-      let baseQ:any = (supabase as any).from('products').select('id, name, code, category, sector, session, cost_price, sale_price, price').limit(LIMIT).order('id');
-      if(search) baseQ = baseQ.or(`name.ilike.%${search}%,code.ilike.%${search}%,id.ilike.%${search}%`);
-      const { data: products, error: errP } = await baseQ;
-      if(errP) throw errP;
-      // Buscar estoque em lote
-      const ids = (products||[]).map((p:any)=>p.id);
-  const stockMap:Record<string,number>={};
-      if(ids.length){
-        const { data: stocks, error: errS } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
-        if(errS) throw errS; (stocks||[]).forEach((s:any)=> stockMap[s.product_id]=Number(s.stock||0));
-      }
-      // Calcular custo médio por produto (ponderado pelas entradas)
-  const avgCostMap:Record<string,number>={};
-      if(ids.length){
-        const { data: moves, error: errM } = await (supabase as any).from('inventory_movements').select('product_id, type, quantity, unit_cost').in('product_id', ids);
-        if(errM) throw errM;
-        const acc:Record<string,{qty:number,total:number}>={};
-        (moves||[]).forEach((m:any)=>{ if(m.type==='ENTRADA' && m.unit_cost!=null){ const q=Number(m.quantity||0); const c=Number(m.unit_cost||0); if(!acc[m.product_id]) acc[m.product_id]={qty:0,total:0}; acc[m.product_id].qty+=q; acc[m.product_id].total+= q*c; }});
-        Object.entries(acc).forEach(([pid,v])=>{ if(v.qty>0) avgCostMap[pid]= v.total / v.qty; });
-      }
-      // Placeholder de reservas (não há tabela identificada). Valores = 0.
-      const enriched = (products||[]).map((p:any)=>{
-        const stock = stockMap[p.id]??0;
-  const avg_cost = ((avgCostMap[p.id] ?? Number(p.cost_price||0)) || 0);
-        const sale_price = (p.sale_price!=null? Number(p.sale_price): (p.price!=null? Number(p.price): null));
-        const stock_positive = stock>0? stock:0;
-        const stock_negative = stock<0? stock:0;
-        const total_cost_value = +(stock * avg_cost).toFixed(2);
-        const total_sale_value = sale_price!=null? +(stock * sale_price).toFixed(2): null;
-        const reserved_qty = 0; // TODO: integrar reservas
-        const reserved_total_cost = 0; const reserved_total_sale = 0;
-        return { product_id: p.id, name: p.name, code: p.code, category: p.category, sector: p.sector, session: p.session, stock, stock_positive, stock_negative, avg_cost, sale_price, total_cost_value, total_sale_value, reserved_qty, reserved_total_cost, reserved_total_sale };
-      });
-      setRows(enriched);
+      let q = (supabase as any).from('product_stock').select('*').order('product_id').limit(LIMIT);
+      if (search) q = q.ilike('product_id','%'+search+'%');
+      const { data, error } = await q;
+      if (error) throw error;
+      setRows(data||[]);
     } catch(e:any){ toast.error(e.message); } finally { setLoading(false); }
   })();},[search]);
-  // Aplicar filtros em memória
-  let filtered = rows.filter(r=> (
-    (!filterCat || r.category===filterCat) &&
-    (!filterSector || r.sector===filterSector) &&
-    (!filterSession || r.session===filterSession)
-  ));
-  // Ordenação
-  filtered = [...filtered].sort((a,b)=>{
-    const va = a[sortField]; const vb = b[sortField];
-    if(va==null && vb!=null) return sortDir==='asc'? -1:1;
-    if(va!=null && vb==null) return sortDir==='asc'? 1:-1;
-    if(va==null && vb==null) return 0;
-    if(typeof va==='number' && typeof vb==='number') return sortDir==='asc'? (va-vb):(vb-va);
-    return sortDir==='asc'? String(va).localeCompare(String(vb)): String(vb).localeCompare(String(va));
-  });
-  const totalQtd = filtered.reduce((s:any,r:any)=> s + Number(r.stock||0),0);
-  const totalCost = filtered.reduce((s:any,r:any)=> s + Number(r.total_cost_value||0),0);
-  const totalSale = filtered.reduce((s:any,r:any)=> s + Number((r.total_sale_value||0)),0);
-  const totalReserved = filtered.reduce((s:any,r:any)=> s + Number(r.reserved_qty||0),0);
-  const [page,setPage]=useState(1); const pageSize = 100; const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageRows = filtered.slice((page-1)*pageSize, page*pageSize);
-  const cats = Array.from(new Set(rows.map(r=>r.category).filter(Boolean))).sort();
-  const sectors = Array.from(new Set(rows.filter(r=>!filterCat || r.category===filterCat).map(r=>r.sector).filter(Boolean))).sort();
-  const sessions = Array.from(new Set(rows.filter(r=>(!filterCat || r.category===filterCat) && (!filterSector || r.sector===filterSector)).map(r=>r.session).filter(Boolean))).sort();
-  function exportStockCsv(){
-    const friendly = filtered.map(r=> ({
-      Categoria: r.category||'', Setor: r.sector||'', Sessao: r.session||'', Codigo: r.code||'', Produto: r.name||r.product_id,
-      Estoque: r.stock, Estoque_Pos: r.stock_positive, Estoque_Neg: r.stock_negative,
-      Custo_Medio: r.avg_cost, Preco_Venda: r.sale_price,
-      Total_Custo: r.total_cost_value, Total_Venda: r.total_sale_value,
-      Reservado: r.reserved_qty, Reservado_Total_Custo: r.reserved_total_cost, Reservado_Total_Venda: r.reserved_total_sale,
-      Participacao_Percent: (participationBase==='cost'? (totalCost? +((r.total_cost_value/totalCost)*100).toFixed(2):0) : (totalSale? +(((r.total_sale_value||0)/totalSale)*100).toFixed(2):0)),
-      Margem_Potencial: (r.total_sale_value!=null? +( (r.total_sale_value - r.total_cost_value) ).toFixed(2): null),
-      Margem_Potencial_Pct: (r.total_sale_value? +(((r.total_sale_value - r.total_cost_value)/r.total_sale_value)*100).toFixed(2): null)
-    })); exportCsv(friendly,'estoque_completo.csv'); }
-  function exportStockXlsx(){
-    const friendly = filtered.map(r=> ({
-      Categoria: r.category||'', Setor: r.sector||'', Sessao: r.session||'', Codigo: r.code||'', Produto: r.name||r.product_id,
-      Estoque: r.stock, Estoque_Pos: r.stock_positive, Estoque_Neg: r.stock_negative,
-      Custo_Medio: r.avg_cost, Preco_Venda: r.sale_price,
-      Total_Custo: r.total_cost_value, Total_Venda: r.total_sale_value,
-      Reservado: r.reserved_qty, Reservado_Total_Custo: r.reserved_total_cost, Reservado_Total_Venda: r.reserved_total_sale,
-      Participacao_Percent: (participationBase==='cost'? (totalCost? +((r.total_cost_value/totalCost)*100).toFixed(2):0) : (totalSale? +(((r.total_sale_value||0)/totalSale)*100).toFixed(2):0)),
-      Margem_Potencial: (r.total_sale_value!=null? +( (r.total_sale_value - r.total_cost_value) ).toFixed(2): null),
-      Margem_Potencial_Pct: (r.total_sale_value? +(((r.total_sale_value - r.total_cost_value)/r.total_sale_value)*100).toFixed(2): null)
-    })); exportXlsx(friendly,'estoque_completo.xlsx'); }
-  return <BaseReportWrapper title="Estoque Completo" description="Posição atual de estoque por produto (limite 1500 registros)" onExport={exportStockCsv} onExportXlsx={exportStockXlsx}>
+  const totalQtd = rows.reduce((s:any,r:any)=> s + Number(r.stock||0),0);
+  const [page,setPage]=useState(1); const pageSize = 100; const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageRows = rows.slice((page-1)*pageSize, page*pageSize);
+  return <BaseReportWrapper title="Estoque Completo" description="Posição atual de estoque por produto (limite 1500 registros)" onExport={()=>exportCsv(rows,'estoque_completo.csv')} onExportXlsx={()=>exportXlsx(rows,'estoque_completo.xlsx')}>
     <div className="flex gap-2 mb-2 text-xs flex-wrap items-end">
       <Input placeholder="Produto" value={search} onChange={e=>setSearch(e.target.value)} className="w-40 h-8" />
       <Button size="sm" variant="outline" onClick={()=>setSearch('')}>Limpar</Button>
-      <select className="h-8 border rounded px-2" value={filterCat} onChange={e=>{setFilterCat(e.target.value); setFilterSector(''); setFilterSession(''); setPage(1);}}>
-        <option value="">Categoria</option>
-        {cats.map(c=> <option key={c} value={c}>{c}</option>)}
-      </select>
-      <select className="h-8 border rounded px-2" value={filterSector} onChange={e=>{setFilterSector(e.target.value); setFilterSession(''); setPage(1);}} disabled={cats.length===0 && !filterCat}>
-        <option value="">Setor</option>
-        {sectors.map(c=> <option key={c} value={c}>{c}</option>)}
-      </select>
-      <select className="h-8 border rounded px-2" value={filterSession} onChange={e=>{setFilterSession(e.target.value); setPage(1);}} disabled={sectors.length===0 && !filterSector}>
-        <option value="">Sessão</option>
-        {sessions.map(c=> <option key={c} value={c}>{c}</option>)}
-      </select>
-      <div className="flex gap-2 items-center">
-        <label className="text-[10px] uppercase font-medium">Participação</label>
-        <select className="h-8 border rounded px-2" value={participationBase} onChange={e=>setParticipationBase(e.target.value as any)}>
-          <option value="cost">Base: Custo</option>
-          <option value="sale">Base: Venda</option>
-        </select>
-      </div>
       <div className="ml-auto flex gap-4 font-medium text-[11px]">
         <span>SKUs: {rows.length}</span>
         <span>Total Estoque: {totalQtd}</span>
-        <span>Valor Custo: {totalCost.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
-        <span>Valor Venda: {totalSale.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
-        <span>Reservado: {totalReserved}</span>
       </div>
     </div>
     <div className="border rounded max-h-[480px] overflow-auto">
       <table className="w-full text-xs">
-        <thead className="bg-muted/50 sticky top-0">
-          <tr>
-            <th className="px-2 py-1 text-left">Categoria</th>
-            <th className="px-2 py-1 text-left">Setor</th>
-            <th className="px-2 py-1 text-left">Sessão</th>
-            <th className="px-2 py-1 text-left">Produto</th>
-            <th className="px-2 py-1 text-right">Estoque</th>
-            <th className="px-2 py-1 text-right">Est. +</th>
-            <th className="px-2 py-1 text-right">Est. -</th>
-            <th className="px-2 py-1 text-right">Custo Médio</th>
-            <th className="px-2 py-1 text-right">Preço Venda</th>
-            <th className="px-2 py-1 text-right">Total Custo</th>
-            <th className="px-2 py-1 text-right">Total Venda</th>
-            <th className="px-2 py-1 text-right">Reservado</th>
-            <th className="px-2 py-1 text-right">Val. Res. Custo</th>
-            <th className="px-2 py-1 text-right">Val. Res. Venda</th>
-            <th className="px-2 py-1 text-right cursor-pointer" onClick={()=>{ setSortField('total_cost_value'); setSortDir(d=> sortField==='total_cost_value' && sortDir==='asc'? 'desc':'asc'); }}>Part. % {sortField==='total_cost_value' && (participationBase==='cost')? (sortDir==='asc'?'↑':'↓'):''}</th>
-            <th className="px-2 py-1 text-right">Margem Pot.</th>
-            <th className="px-2 py-1 text-right">Margem Pot. %</th>
-          </tr>
-        </thead>
+        <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Produto</th><th className="px-2 py-1 text-right">Estoque</th></tr></thead>
         <tbody>
-          {loading && <tr><td colSpan={17} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
-          {!loading && filtered.length===0 && <tr><td colSpan={17} className="text-center py-6 text-muted-foreground">Sem dados</td></tr>}
-          {!loading && pageRows.map(r=> <tr key={r.product_id} className={`border-t ${r.stock<0? 'bg-red-50 dark:bg-red-900/20':''}`}>
-            <td className="px-2 py-1" title={r.category}>{r.category||'-'}</td>
-            <td className="px-2 py-1" title={r.sector}>{r.sector||'-'}</td>
-            <td className="px-2 py-1" title={r.session}>{r.session||'-'}</td>
-            <td className="px-2 py-1" title={r.name}>{r.code? r.code+' • ':''}{r.name||r.product_id}</td>
-            <td className="px-2 py-1 text-right">{r.stock}</td>
-            <td className="px-2 py-1 text-right">{r.stock_positive}</td>
-            <td className="px-2 py-1 text-right text-red-600">{r.stock_negative}</td>
-            <td className="px-2 py-1 text-right">{Number(r.avg_cost||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-            <td className="px-2 py-1 text-right">{r.sale_price!=null? Number(r.sale_price).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'—'}</td>
-            <td className="px-2 py-1 text-right">{Number(r.total_cost_value||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-            <td className="px-2 py-1 text-right">{r.total_sale_value!=null? Number(r.total_sale_value).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'—'}</td>
-            <td className="px-2 py-1 text-right">{r.reserved_qty}</td>
-            <td className="px-2 py-1 text-right">{Number(r.reserved_total_cost||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-            <td className="px-2 py-1 text-right">{Number(r.reserved_total_sale||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-            <td className="px-2 py-1 text-right">{participationBase==='cost'
-              ? (totalCost? ((r.total_cost_value/totalCost)*100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+' %':'—')
-              : (totalSale? (((r.total_sale_value||0)/totalSale)*100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+' %':'—')}
-            </td>
-            <td className="px-2 py-1 text-right">{r.total_sale_value!=null? (r.total_sale_value - r.total_cost_value).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'—'}</td>
-            <td className="px-2 py-1 text-right">{r.total_sale_value? (((r.total_sale_value - r.total_cost_value)/r.total_sale_value)*100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+' %':'—'}</td>
-          </tr>)}
+          {loading && <tr><td colSpan={2} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {!loading && rows.length===0 && <tr><td colSpan={2} className="text-center py-6 text-muted-foreground">Sem dados</td></tr>}
+          {!loading && pageRows.map(r=> <tr key={r.product_id} className="border-t"><td className="px-2 py-1">{r.product_id}</td><td className="px-2 py-1 text-right">{r.stock}</td></tr>)}
         </tbody>
       </table>
     </div>
@@ -1536,7 +1303,7 @@ function ReportSalesFull(){
         return query;
       };
   const q = applyFilters((supabase as any).from('sales').select('created_at,total,sale_number,status,payment_status').order('created_at',{ascending:false}).limit(1000));
-  const { data: initialData, error } = await q;
+  const { data, error } = await q;
       if (error) {
         const msg = (error.message||'').toLowerCase();
         if (msg.includes('column') && msg.includes('total')) {
@@ -1549,7 +1316,7 @@ function ReportSalesFull(){
           toast.message('Coluna total ausente - usando cálculo local');
         } else throw error;
       } else {
-  const enriched = (initialData||[]).map((r:any)=> r.total==null ? ({...r, total: (Number(r.subtotal||0) - Number(r.discount||0) + Number(r.freight||0))}) : r);
+        const enriched = (data||[]).map((r:any)=> r.total==null ? ({...r, total: (Number(r.subtotal||0) - Number(r.discount||0) + Number(r.freight||0))}) : r);
         setRows(enriched);
       }
     } catch(e:any){ toast.error(e.message);} finally { setLoading(false); }
@@ -1835,80 +1602,4 @@ function KpiCard({label,value,currency,highlight}:{label:string; value:number; c
     <div className="text-[11px] uppercase font-medium text-slate-500 tracking-wide">{label}</div>
     <div className={`text-lg font-semibold ${highlight? 'text-emerald-600 dark:text-emerald-400':''}`}>{currency? value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}): value.toLocaleString('pt-BR')}</div>
   </div>;
-}
-
-// ===== Pedidos de Vendas (Placeholder) =====
-function SalesOrdersList(){
-  const [rows,setRows]=useState<any[]>([]);
-  const [loading,setLoading]=useState(false);
-  const [erro,setErro]=useState<string|null>(null);
-  useEffect(()=>{(async()=>{
-    setLoading(true); setErro(null);
-    try {
-      // Tenta obter principais colunas; adapta se faltar
-  const q = (supabase as any).from('sales').select('id, created_at, client_id, total').order('created_at',{ascending:false}).limit(200);
-  const { data, error } = await q;
-      if(error){
-        const msg=(error.message||'').toLowerCase();
-        if(msg.includes('column') && msg.includes('total')){
-          // fallback calculando localmente
-          const q2 = (supabase as any).from('sales').select('id, created_at, client_id, subtotal, discount, freight').order('created_at',{ascending:false}).limit(200);
-      const r2 = await q2; if(r2.error) throw r2.error; const dataFallback = (r2.data||[]).map((r:any)=> ({...r,total: Number(r.subtotal||0)-Number(r.discount||0)+Number(r.freight||0)}));
-      setRows(dataFallback||[]);
-      toast.message('SalesOrders: coluna total ausente - cálculo local');
-      return;
-        } else throw error;
-      }
-  setRows(data||[]);
-    } catch(e:any){ setErro(e.message); }
-    finally{ setLoading(false); }
-  })();},[]);
-  return <Card className="p-6 space-y-4">
-    <div className="flex items-center gap-2">
-      <h2 className="text-xl font-semibold flex-1">Pedidos de Vendas</h2>
-      <Button size="sm" onClick={()=>toast.message('Novo pedido (futuro)')}>Novo Pedido</Button>
-    </div>
-    {erro && <div className="text-sm text-red-500">{erro}</div>}
-    <div className="border rounded overflow-auto max-h-[480px]">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">#</th><th className="px-2 py-1 text-left">Data</th><th className="px-2 py-1 text-left">Cliente</th><th className="px-2 py-1 text-right">Total</th></tr></thead>
-        <tbody>
-          {loading && <tr><td colSpan={4} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
-          {!loading && rows.length===0 && <tr><td colSpan={4} className="text-center py-6 text-muted-foreground">Nenhum pedido</td></tr>}
-          {!loading && rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/30 cursor-pointer" onClick={()=>toast.message('Abrir pedido '+r.id)}><td className="px-2 py-1">{r.id}</td><td className="px-2 py-1">{new Date(r.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td className="px-2 py-1">{r.client_id||'-'}</td><td className="px-2 py-1 text-right">{Number(r.total||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td></tr>)}
-        </tbody>
-      </table>
-    </div>
-  </Card>;
-}
-
-// ===== Pedidos de Serviços (Placeholder) =====
-function ServiceSalesOrdersList(){
-  const [rows,setRows]=useState<any[]>([]);
-  const [loading,setLoading]=useState(false);
-  useEffect(()=>{(async()=>{
-    setLoading(true);
-    try {
-      const { data, error } = await (supabase as any).from('service_sales_orders').select('id, created_at, client_id, total').order('created_at',{ascending:false}).limit(200);
-      if(error) throw error;
-      setRows(data||[]);
-    } catch(e:any){ toast.error(e.message); }
-    finally{ setLoading(false); }
-  })();},[]);
-  return <Card className="p-6 space-y-4">
-    <div className="flex items-center gap-2">
-      <h2 className="text-xl font-semibold flex-1">Pedidos de Serviços</h2>
-      <Button size="sm" onClick={()=>toast.message('Novo pedido serviço (futuro)')}>Novo Pedido</Button>
-    </div>
-    <div className="border rounded overflow-auto max-h-[480px]">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">#</th><th className="px-2 py-1 text-left">Data</th><th className="px-2 py-1 text-left">Cliente</th><th className="px-2 py-1 text-right">Total</th></tr></thead>
-        <tbody>
-          {loading && <tr><td colSpan={4} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
-          {!loading && rows.length===0 && <tr><td colSpan={4} className="text-center py-6 text-muted-foreground">Nenhum pedido</td></tr>}
-          {!loading && rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/30 cursor-pointer" onClick={()=>toast.message('Abrir pedido '+r.id)}><td className="px-2 py-1">{r.id}</td><td className="px-2 py-1">{new Date(r.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td className="px-2 py-1">{r.client_id||'-'}</td><td className="px-2 py-1 text-right">{Number(r.total||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td></tr>)}
-        </tbody>
-      </table>
-    </div>
-  </Card>;
 }

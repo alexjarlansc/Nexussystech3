@@ -27,9 +27,12 @@ type ProdRow = {
   price?: number | string | null;
   cost_price?: number | string | null;
   sale_price?: number | string | null;
+  // campos extras potencialmente existentes em views futuras
+  reserved?: number | string | null;
 };
 
-type ProductWithStock = Product & { stock?: number };
+// Inclui reserved para futura expansão (pode vir de uma view ou cálculo posterior)
+type ProductWithStock = Product & { stock?: number; reserved?: number };
 
 function currencyBRL(n: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -251,11 +254,11 @@ export default function QuoteBuilder() {
   const rows = (data as unknown as ProdRow[]) || [];
       const ids = rows.map(r => r.id).filter(Boolean) as string[];
       // buscar estoque para cada produto via view product_stock (view pode não estar no client types)
-      let stocks: { product_id: string; stock: number }[] = [];
+      let stocks: { product_id: string; stock: number; reserved?: number }[] = [];
       if (ids.length) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: sdata } = await (supabase as any).from('product_stock').select('product_id,stock').in('product_id', ids);
-        stocks = (sdata as { product_id: string; stock: number }[]) || [];
+        const { data: sdata } = await (supabase as any).from('product_stock').select('product_id,stock,reserved').in('product_id', ids);
+        stocks = (sdata as { product_id: string; stock: number; reserved?: number }[]) || [];
       }
       const formattedProducts: ProductWithStock[] = rows.map(p => ({
         id: p.id,
@@ -268,7 +271,8 @@ export default function QuoteBuilder() {
         price: Number(p.price),
         cost_price: p.cost_price != null ? Number(p.cost_price) : undefined,
         sale_price: p.sale_price != null ? Number(p.sale_price) : undefined,
-        stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? undefined
+        stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? undefined,
+        reserved: (stocks.find(s => s.product_id === p.id)?.reserved) ?? undefined
       }));
       // Se todos os produtos possuem exatamente a mesma imageDataUrl, considerar isso um 'placeholder' e limpar para evitar exibição repetida enganosa
       const uniqueImages = Array.from(new Set(formattedProducts.map(fp => fp.imageDataUrl).filter(Boolean)));
@@ -1545,8 +1549,8 @@ export default function QuoteBuilder() {
           <DialogHeader><DialogTitle>Buscar Produto</DialogTitle></DialogHeader>
           <SearchProductModal 
             products={products} 
-            onSelectProduct={(product) => {
-              addItemFromProduct(product);
+            onSelectProduct={(product, qty) => {
+              addItemFromProduct(product, qty);
               setOpenSearchProduct(false);
             }}
             onRegisterMovement={(product) => {
@@ -1608,70 +1612,101 @@ function SearchProductModal({
   onRegisterMovement
 }: { 
   products: ProductWithStock[]; 
-  onSelectProduct: (product: ProductWithStock) => void; 
+  onSelectProduct: (product: ProductWithStock, quantity: number) => void; 
   onRegisterMovement?: (product: ProductWithStock) => void;
 }) {
   const [search, setSearch] = useState('');
-  
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.id.toLowerCase().includes(search.toLowerCase())
-  );
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+
+  const filteredProducts = products.filter(p => {
+    const s = search.toLowerCase();
+    return !s || p.name.toLowerCase().includes(s) || (p.code||'').toLowerCase().includes(s) || p.id.toLowerCase().includes(s);
+  });
+
+  function getQty(id: string){ return quantities[id] ?? 1; }
+  function setQty(id: string, value: number){
+    setQuantities(q => ({ ...q, [id]: value < 1 ? 1 : value }));
+  }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <Input
-        placeholder="Buscar por nome ou código..."
+        placeholder="Buscar por nome, código..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="w-full"
       />
-      <div className="max-h-[60vh] overflow-auto flex flex-col gap-1">
+      <div className="max-h-[60vh] overflow-auto flex flex-col gap-2 pb-1">
         {filteredProducts.length === 0 && (
           <div className="text-sm text-muted-foreground">Nenhum produto encontrado.</div>
         )}
         {filteredProducts.map((p: ProductWithStock) => {
-          const price = currencyBRL(p.sale_price ?? p.price);
-          const cost = p.cost_price != null ? currencyBRL(p.cost_price) : '—';
-          const stock = p.stock != null ? String(p.stock) : '—';
+          const unitPrice = (p.sale_price ?? p.price) || 0;
+            const qty = getQty(p.id);
+            const total = unitPrice * qty;
+            const priceDisp = currencyBRL(unitPrice).replace(/^R\$\s?/, '');
+            const stockDisp = p.stock != null ? p.stock : '-';
+            const reservedDisp = p.reserved != null ? p.reserved : '-';
+            const costDisp = p.cost_price != null ? currencyBRL(p.cost_price).replace(/^R\$\s?/, '') : '—';
           return (
-            <button
-              type="button"
+            <div
               key={p.id}
-              className="group flex items-center gap-3 border rounded-md px-2 py-2 bg-background hover:bg-accent/70 active:bg-accent/90 cursor-pointer w-full focus:outline-none focus:ring-2 focus:ring-primary transition text-left"
-              onClick={() => onSelectProduct(p)}
-              aria-label={`Adicionar produto ${p.name}`}
+              className="group border rounded-md p-2 bg-background hover:bg-accent/60 transition focus-within:ring-2 focus-within:ring-primary"
             >
-              {p.imageDataUrl ? (
-                <img
-                  src={p.imageDataUrl}
-                  alt={p.name}
-                  className="h-12 w-12 rounded object-cover border bg-white flex-shrink-0"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="h-12 w-12 rounded border bg-accent/50 grid place-items-center text-[10px] text-muted-foreground flex-shrink-0">IMG</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-[13px] leading-snug line-clamp-2 break-words pr-4">
-                  {p.name}
+              <div className="flex gap-3 sm:items-center flex-col sm:flex-row">
+                <div className="flex items-start gap-3 w-full">
+                  {p.imageDataUrl ? (
+                    <img
+                      src={p.imageDataUrl}
+                      alt={p.name}
+                      className="h-14 w-14 rounded object-cover border bg-white flex-shrink-0"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="h-14 w-14 rounded border bg-accent/50 grid place-items-center text-[10px] text-muted-foreground flex-shrink-0">IMG</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-[13px] leading-snug line-clamp-2 break-words pr-1">
+                      {p.name}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] sm:text-[11px] text-muted-foreground">
+                      <span className="truncate">Cod {p.code ? p.code : p.id.slice(-6)}</span>
+                      <span>R$ {priceDisp}</span>
+                      <span className="hidden xs:inline">Cst {costDisp}</span>
+                      <span>Stk {stockDisp}</span>
+                      <span>Res {reservedDisp}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] sm:text-[11px] text-muted-foreground">
-                  <span className="truncate">Cod {p.code ? p.code : p.id.slice(-6)}</span>
-                  <span>R$ {price.replace(/^R\$\s?/, '')}</span>
-                  <span className="hidden xs:inline">Cst {cost === '—' ? '—' : cost.replace(/^R\$\s?/, '')}</span>
-                  <span>Stk {stock}</span>
+                <div className="flex items-end sm:items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={qty}
+                      onChange={(e)=> setQty(p.id, parseInt(e.target.value || '1',10))}
+                      className="h-8 w-20 text-center text-sm"
+                      aria-label={`Quantidade para ${p.name}`}
+                    />
+                  </div>
+                  <div className="text-xs text-muted-foreground min-w-[90px] text-right leading-tight">
+                    <div>Total</div>
+                    <div className="font-medium text-primary">{currencyBRL(total).replace(/^R\$\s?/, 'R$ ')}</div>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="h-8"
+                    onClick={() => onSelectProduct(p, qty)}
+                  >Adicionar</Button>
                 </div>
               </div>
-              <div className="ml-auto text-[10px] font-medium text-primary opacity-0 group-hover:opacity-100 transition-colors">Adicionar</div>
-            </button>
+            </div>
           );
         })}
       </div>
       <style>{`
         @media (max-width: 640px) {
           .sm\\:max-w-lg, .sm\\:max-w-2xl { max-width:100vw!important; width:100vw!important; border-radius:0!important; margin:0!important; }
-          /* Reduzir poluição visual mobile: remove sombra extra se houver */
           .group { -webkit-tap-highlight-color: transparent; }
         }
       `}</style>
