@@ -1330,12 +1330,29 @@ export default function QuoteBuilder() {
                       {/* Botão para retornar para orçamento, só admin */}
                       {q.type === 'PEDIDO' && profile?.role === 'admin' && (
                         <Button size="sm" variant="outline" onClick={async () => {
-                          const { error } = await supabase.from('quotes').update({ type: 'ORCAMENTO' }).eq('id', q.id);
-                          if (!error) {
-                            toast.success('Retornado para orçamento!');
+                          // Reverter PEDIDO -> ORCAMENTO gerando novo número ORC
+                          try {
+                            let newNumber = '';
+                            let success = false;
+                            for (let attempt = 0; attempt < 5; attempt++) {
+                              newNumber = await generateNextNumber('ORCAMENTO');
+                              const { error: upErr } = await supabase
+                                .from('quotes')
+                                .update({ type: 'ORCAMENTO', number: newNumber })
+                                .eq('id', q.id);
+                              if (!upErr) { success = true; break; }
+                              if (upErr && typeof upErr === 'object' && 'code' in upErr && (upErr as { code?: string }).code === '23505') {
+                                continue; // conflito unique -> tentar novo número
+                              }
+                              toast.error('Erro ao retornar para orçamento: ' + (upErr as { message?: string })?.message || 'desconhecido');
+                              return;
+                            }
+                            if (!success) { toast.error('Não foi possível reverter (tentativas excedidas)'); return; }
+                            toast.success('Retornado para orçamento! Número ' + newNumber);
                             fetchQuotes();
-                          } else {
-                            toast.error('Erro ao retornar para orçamento');
+                          } catch (e) {
+                            const msg = (e && typeof e === 'object' && 'message' in e) ? (e as { message: string }).message : String(e);
+                            toast.error('Erro inesperado ao retornar: ' + msg);
                           }
                         }}>Retornar para Orçamento</Button>
                       )}
