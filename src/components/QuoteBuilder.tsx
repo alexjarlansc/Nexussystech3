@@ -265,6 +265,56 @@ export default function QuoteBuilder() {
         }
         // Se available não veio (view antiga), calcula
         stocks = stocks.map(s => ({ ...s, available: s.available ?? (s.stock - (s.reserved ?? 0)) }));
+
+        // Fallback: se a view não existir ou retornou vazio / valores nulos, recalcular direto das tabelas
+        const needsFallback = !stocks.length || stocks.every(s => s.stock == null);
+        if (needsFallback) {
+          if (import.meta.env.DEV) console.warn('[Fallback estoque] Recalculando a partir de inventory_movements e quotes');
+          // 1) Agregar movimentos para estoque
+          try {
+            const { data: invMovs } = await (supabase as any)
+              .from('inventory_movements')
+              .select('product_id,type,quantity')
+              .in('product_id', ids)
+              .limit(20000); // limite defensivo
+            const agg: Record<string, { stock: number }> = {};
+            (invMovs || []).forEach((m: any) => {
+              if (!agg[m.product_id]) agg[m.product_id] = { stock: 0 };
+              if (m.type === 'ENTRADA') agg[m.product_id].stock += Number(m.quantity) || 0;
+              else if (m.type === 'SAIDA') agg[m.product_id].stock -= Number(m.quantity) || 0;
+              else if (m.type === 'AJUSTE') {
+                const q = Number(m.quantity) || 0;
+                agg[m.product_id].stock += q; // ajuste já traz sinal
+              }
+            });
+            // 2) Calcular reservados lendo pedidos rascunho
+            const { data: pedQuotes } = await (supabase as any)
+              .from('quotes')
+              .select('items')
+              .eq('type', 'PEDIDO')
+              .eq('status', 'Rascunho')
+              .limit(5000); // defensivo
+            const reservedAgg: Record<string, number> = {};
+            (pedQuotes || []).forEach((q: any) => {
+              try {
+                const items: any[] = Array.isArray(q.items) ? q.items : [];
+                items.forEach(it => {
+                  const pid = it.productId || it.product_id;
+                  if (pid && ids.includes(pid)) {
+                    reservedAgg[pid] = (reservedAgg[pid] || 0) + Number(it.quantity || 0);
+                  }
+                });
+              } catch {}
+            });
+            stocks = ids.map(id => {
+              const st = agg[id]?.stock ?? 0;
+              const res = reservedAgg[id] ?? 0;
+              return { product_id: id, stock: st, reserved: res, available: st - res };
+            });
+          } catch (fbErr) {
+            if (import.meta.env.DEV) console.error('[Fallback estoque] falhou', fbErr);
+          }
+        }
       }
       const formattedProducts: ProductWithStock[] = rows.map(p => ({
         id: p.id,

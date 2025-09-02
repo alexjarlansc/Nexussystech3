@@ -97,6 +97,48 @@ export function ErpProducts(){
           const base = baseStocks.find(s=>s.product_id===p.id);
           return { ...p, stock: base?.stock ?? 0, reserved: (base as any)?.reserved, available: (base as any)?.available ?? ((base?.stock ?? 0) - ((base as any)?.reserved ?? 0)) };
         });
+
+        // Fallback recalculado se não obtivemos dados
+        const needsFallback = !baseStocks.length || baseStocks.every(b => b.stock == null);
+        if(needsFallback){
+          if(import.meta.env.DEV) console.warn('[Fallback estoque ERP] Recalculando via inventory_movements + quotes');
+          try {
+            const { data: invMovs } = await (supabase as any)
+              .from('inventory_movements')
+              .select('product_id,type,quantity')
+              .in('product_id', ids)
+              .limit(20000);
+            const agg: Record<string,{stock:number}> = {};
+            (invMovs||[]).forEach((m:any)=>{
+              if(!agg[m.product_id]) agg[m.product_id] = { stock:0 };
+              const qNum = Number(m.quantity)||0;
+              if(m.type==='ENTRADA') agg[m.product_id].stock += qNum;
+              else if(m.type==='SAIDA') agg[m.product_id].stock -= qNum;
+              else if(m.type==='AJUSTE') agg[m.product_id].stock += qNum;
+            });
+            const { data: pedQuotes } = await (supabase as any)
+              .from('quotes')
+              .select('items')
+              .eq('type','PEDIDO')
+              .eq('status','Rascunho')
+              .limit(5000);
+            const reservedAgg: Record<string,number> = {};
+            (pedQuotes||[]).forEach((q:any)=>{
+              const items: any[] = Array.isArray(q.items)? q.items: [];
+              items.forEach(it=>{
+                const pid = it.productId || it.product_id;
+                if(pid && ids.includes(pid)){
+                  reservedAgg[pid] = (reservedAgg[pid]||0) + Number(it.quantity||0);
+                }
+              });
+            });
+            products = products.map(p=>{
+              const st = agg[p.id]?.stock ?? 0;
+              const res = reservedAgg[p.id] ?? 0;
+              return { ...p, stock: st, reserved: res, available: st - res };
+            });
+          } catch(fbErr){ if(import.meta.env.DEV) console.error('[Fallback estoque ERP] falhou', fbErr); }
+        }
       }
       if(import.meta.env.DEV){
         const sampleDebug = products.slice(0,10).map(p=>({id:p.id, img: (p as any).image_url}));
