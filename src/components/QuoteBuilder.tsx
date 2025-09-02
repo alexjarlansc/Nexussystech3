@@ -1331,7 +1331,8 @@ export default function QuoteBuilder() {
                             console.error('Erro conversão ORCAMENTO->PEDIDO', error);
                             return;
                           }
-                          toast.success('Pedido de venda gerado!');
+                          const vendName = (q.vendor && q.vendor.name) ? q.vendor.name : 'vendedor responsável';
+                          toast.success(`Pedido ainda em digitação/edição. Consulte o vendedor: ${vendName}.`);
                           if (import.meta.env.DEV) console.log('[DEBUG ORC->PED] success', { id: q.id, pedNumber });
                           fetchQuotes();
                         }}>Gerar Pedido de Venda</Button>
