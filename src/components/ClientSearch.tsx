@@ -9,17 +9,22 @@ interface ClientSearchProps {
 
 export const ClientSearch: React.FC<ClientSearchProps> = ({ clients, onSelect }) => {
   const [query, setQuery] = useState("");               // texto digitado definitivo
-  const [results, setResults] = useState<Client[]>([]);  // resultados filtrados
+  const [results, setResults] = useState<Client[]>([]);  // resultados exibidos (cortados)
+  const [totalMatches, setTotalMatches] = useState<number>(0); // total antes de cortar
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number>(-1); // índice navegação teclado
   const [tempText, setTempText] = useState<string>("");      // texto temporário ao navegar
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  // Busca: nome (prefixo; se >=3 letras aceita substring) e CPF/CNPJ (prefixo; se >=4 dígitos aceita substring)
+  // Config
+  const MAX_RESULTS = 30; // limite de itens mostrados
+
+  // Busca: nome (substring se >=2 letras) e CPF/CNPJ (substring se >=4 dígitos)
   useEffect(() => {
     if (!query.trim()) {
       setResults([]);
+      setTotalMatches(0);
       return;
     }
 
@@ -34,11 +39,12 @@ export const ClientSearch: React.FC<ClientSearchProps> = ({ clients, onSelect })
     
   const searchTerm = normalizeStr(query);
   const searchDigits = digitsOnly(query);
-  const allowNameSubstring = searchTerm.length >= 3;
+  // Permite substring já com 2 letras para melhorar usabilidade (ex: "te" em Mateus)
+  const allowNameSubstring = searchTerm.length >= 2; // antes: >=3
   const allowDigitsSubstring = searchDigits.length >= 4;
     
     // Filtra clientes por nome ou CPF/CNPJ conforme regras acima
-    const matches = clients.filter(client => {
+  const matches = clients.filter(client => {
       const nameWords = (client.name || "").split(/\s+/).filter(Boolean);
       const nameMatch = nameWords.some(word => {
         const nw = normalizeStr(word);
@@ -55,7 +61,7 @@ export const ClientSearch: React.FC<ClientSearchProps> = ({ clients, onSelect })
     });
     
     // Ordena: CPF/CNPJ primeiro, depois nome (ordem alfabética)
-    matches.sort((a, b) => {
+  matches.sort((a, b) => {
       const aTaxid = digitsOnly(a.taxid || "");
       const bTaxid = digitsOnly(b.taxid || "");
       
@@ -67,7 +73,8 @@ export const ClientSearch: React.FC<ClientSearchProps> = ({ clients, onSelect })
       return (a.name || "").localeCompare(b.name || "");
     });
     
-  setResults(matches.slice(0, 50));
+  setTotalMatches(matches.length);
+  setResults(matches.slice(0, MAX_RESULTS));
   setActiveIndex(-1); // reset navegação em nova busca
   }, [query, clients, onSelect]);
 
@@ -101,7 +108,7 @@ export const ClientSearch: React.FC<ClientSearchProps> = ({ clients, onSelect })
 
     // Nome: destacar somente se a palavra começa com o prefixo
     const normQuery = lower.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const allowSub = normQuery.length >= 3;
+  const allowSub = normQuery.length >= 2; // acompanhar regra de busca
     const words = text.split(/(\s+)/); // preserva espaços
     return words.map((w, idx) => {
       if (/^\s+$/.test(w)) return w; // espaço
@@ -143,14 +150,16 @@ export const ClientSearch: React.FC<ClientSearchProps> = ({ clients, onSelect })
         return next;
       });
     } else if (e.key === 'Enter') {
-      if (activeIndex >= 0 && results[activeIndex]) {
+      if (results.length > 0) {
         e.preventDefault();
-        handleSelect(results[activeIndex]);
+        const idx = activeIndex >= 0 ? activeIndex : 0; // se nada selecionado pega primeiro
+        handleSelect(results[idx]);
       }
     } else if (e.key === 'Escape') {
       setShowSuggestions(false);
       setActiveIndex(-1);
       setTempText("");
+      // NÃO limpamos query para permitir editar após fechar
     }
   };
 
@@ -181,30 +190,38 @@ export const ClientSearch: React.FC<ClientSearchProps> = ({ clients, onSelect })
       </div>
       
       {/* Resultados em tempo real */}
-      {results.length > 0 && showSuggestions && (
-        <ul ref={listRef} className="border rounded bg-white max-h-60 overflow-auto absolute z-10 w-full shadow-lg">
-          {results.map((client, idx) => {
-            const active = idx === activeIndex;
-            return (
-              <li
-                key={client.id}
-                className={`p-2 cursor-pointer border-b last:border-b-0 ${active ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
-                onMouseEnter={() => { setActiveIndex(idx); setTempText(client.name); }}
-                onMouseLeave={() => { setActiveIndex(-1); setTempText(""); }}
-                onMouseDown={e => { e.preventDefault(); handleSelect(client); }}
-              >
-                <div className="font-medium">{highlight(client.name)}</div>
-                <div className="text-xs text-gray-500">
-                  {client.taxid ? highlight(client.taxid, true) : 'Sem documento'}
-                  {client.email ? ` | ${client.email}` : ''}
-                </div>
-              </li>
-            );
-          })}
-          {results.length === 0 && (
-            <li className="p-2 text-xs text-gray-500">Nenhum cliente</li>
+      {showSuggestions && (
+        <div className="absolute z-10 w-full shadow-lg">
+          <ul ref={listRef} className="border rounded bg-white max-h-60 overflow-auto">
+            {results.map((client, idx) => {
+              const active = idx === activeIndex;
+              return (
+                <li
+                  key={client.id}
+                  className={`p-2 cursor-pointer border-b last:border-b-0 ${active ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
+                  onMouseEnter={() => { setActiveIndex(idx); setTempText(client.name); }}
+                  onMouseLeave={() => { setActiveIndex(-1); setTempText(""); }}
+                  onMouseDown={e => { e.preventDefault(); handleSelect(client); }}
+                >
+                  <div className="font-medium">{highlight(client.name)}</div>
+                  <div className="text-xs text-gray-500">
+                    {client.taxid ? highlight(client.taxid, true) : 'Sem documento'}
+                    {client.email ? ` | ${client.email}` : ''}
+                  </div>
+                </li>
+              );
+            })}
+            {results.length === 0 && (
+              <li className="p-2 text-xs text-gray-500">Nenhum cliente encontrado.</li>
+            )}
+          </ul>
+          {(totalMatches > 0) && (
+            <div className="bg-white border border-t-0 rounded-b px-2 py-1 text-[10px] text-gray-500 flex justify-between items-center">
+              <span>{`Exibindo ${results.length} de ${totalMatches} resultado${totalMatches === 1 ? '' : 's'}`}</span>
+              {totalMatches > results.length && <span className="italic">Refine para ver mais...</span>}
+            </div>
           )}
-        </ul>
+        </div>
       )}
     </div>
   );

@@ -229,8 +229,10 @@ export default function QuoteBuilder() {
   }
 
   useEffect(() => {
-    fetchQuotes();
-  }, [user, profile]);
+      fetchQuotes();
+      // fetchQuotes depende de user/profile internamente; se for estável pode ser ignorado via eslint-disable
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user, profile]);
 
 
   // Atualizar dados do vendedor quando o perfil mudar
@@ -247,7 +249,7 @@ export default function QuoteBuilder() {
   const loadProducts = useCallback(async () => {
     try {
   // Garante que profile exista para policies de company (evita RLS zerando estoque)
-  try { await (supabase as any).rpc('ensure_profile'); } catch(e) { if(import.meta.env.DEV) console.warn('ensure_profile falhou/indisponível', e); }
+  try { await (supabase as unknown as { rpc: (fn:string)=>Promise<unknown> }).rpc('ensure_profile'); } catch(e) { if(import.meta.env.DEV) console.warn('ensure_profile falhou/indisponível', e); }
       const { data, error } = await supabase
         .from('products')
         .select('id,code,name,description,options,image_url,price,cost_price,sale_price')
@@ -260,7 +262,8 @@ export default function QuoteBuilder() {
       if (ids.length) {
         // 1) Sempre garantir estoque
         try {
-          const { data: baseStock } = await (supabase as any).from('product_stock').select('product_id,stock,reserved,available').in('product_id', ids);
+          interface StockRow { product_id: string; stock: number; reserved?: number; available?: number }
+          const { data: baseStock } = await (supabase as unknown as { from: (t:string)=>{ select:(s:string)=>{ in:(col:string, vals:string[])=>Promise<{ data: StockRow[]|null }> } } }).from('product_stock').select('product_id,stock,reserved,available').in('product_id', ids);
           stocks = (baseStock as { product_id: string; stock: number; reserved?: number; available?: number }[]) || [];
         } catch (err) {
           if (import.meta.env.DEV) console.warn('Falha obtendo stock base:', err);
@@ -274,13 +277,14 @@ export default function QuoteBuilder() {
           if (import.meta.env.DEV) console.warn('[Fallback estoque] Recalculando a partir de inventory_movements e quotes');
           // 1) Agregar movimentos para estoque
           try {
-            const { data: invMovs } = await (supabase as any)
+            interface InvRow { product_id: string; type: string; quantity: number }
+            const { data: invMovs } = await (supabase as unknown as { from:(t:string)=>{ select:(s:string)=>{ in:(c:string,v:string[])=>{ limit:(n:number)=>Promise<{ data: InvRow[]|null }> } } } })
               .from('inventory_movements')
               .select('product_id,type,quantity')
               .in('product_id', ids)
               .limit(20000); // limite defensivo
             const agg: Record<string, { stock: number }> = {};
-            (invMovs || []).forEach((m: any) => {
+            (invMovs || []).forEach((m: { product_id: string; type: string; quantity: number }) => {
               if (!agg[m.product_id]) agg[m.product_id] = { stock: 0 };
               if (m.type === 'ENTRADA') agg[m.product_id].stock += Number(m.quantity) || 0;
               else if (m.type === 'SAIDA') agg[m.product_id].stock -= Number(m.quantity) || 0;
@@ -290,23 +294,25 @@ export default function QuoteBuilder() {
               }
             });
             // 2) Calcular reservados lendo pedidos rascunho
-            const { data: pedQuotes } = await (supabase as any)
+            interface QuoteItemsRow { items?: unknown }
+            type EqChain = { eq:(c:string,v:string)=>EqChain; limit:(n:number)=>Promise<{ data: QuoteItemsRow[]|null }> };
+            const { data: pedQuotes } = await (supabase as unknown as { from:(t:string)=>{ select:(s:string)=>EqChain } })
               .from('quotes')
               .select('items')
               .eq('type', 'PEDIDO')
               .eq('status', 'Rascunho')
               .limit(5000); // defensivo
             const reservedAgg: Record<string, number> = {};
-            (pedQuotes || []).forEach((q: any) => {
+            (pedQuotes || []).forEach((q: { items?: unknown }) => {
               try {
-                const items: any[] = Array.isArray(q.items) ? q.items : [];
+                const items: { productId?: string; product_id?: string; quantity?: number }[] = Array.isArray(q.items) ? (q.items as { productId?: string; product_id?: string; quantity?: number }[]) : [];
                 items.forEach(it => {
                   const pid = it.productId || it.product_id;
                   if (pid && ids.includes(pid)) {
                     reservedAgg[pid] = (reservedAgg[pid] || 0) + Number(it.quantity || 0);
                   }
                 });
-              } catch {}
+              } catch (_ignore) { /* ignore parse */ }
             });
             stocks = ids.map(id => {
               const st = agg[id]?.stock ?? 0;
@@ -318,21 +324,33 @@ export default function QuoteBuilder() {
           }
         }
       }
-      const formattedProducts: ProductWithStock[] = rows.map(p => ({
-        id: p.id,
-        code: p.code || undefined,
-        name: p.name,
-        description: p.description || '',
-        options: p.options || '',
-        // NÃO forçar imageDataUrl se não existir; mantém undefined para não repetir fallback visual
-        imageDataUrl: p.image_url ? p.image_url : undefined,
-        price: Number(p.price),
-        cost_price: p.cost_price != null ? Number(p.cost_price) : undefined,
-        sale_price: p.sale_price != null ? Number(p.sale_price) : undefined,
-  stock: (stocks.find(s => s.product_id === p.id)?.stock) ?? 0,
-  reserved: (stocks.find(s => s.product_id === p.id)?.reserved) ?? 0,
-  available: (stocks.find(s => s.product_id === p.id)?.available) ?? ((stocks.find(s => s.product_id === p.id)?.stock ?? 0) - (stocks.find(s => s.product_id === p.id)?.reserved ?? 0))
-      }));
+      // Index de estoque para evitar múltiplos finds (melhora performance em listas grandes)
+      const stockIndex: Record<string, { stock:number; reserved:number; available:number }> = {};
+      stocks.forEach(s => {
+        stockIndex[s.product_id] = {
+          stock: s.stock ?? 0,
+          reserved: s.reserved ?? 0,
+            available: s.available ?? ((s.stock ?? 0) - (s.reserved ?? 0))
+        };
+      });
+      const formattedProducts: ProductWithStock[] = rows.map(p => {
+        const entry = stockIndex[p.id];
+        const basePriceNum = typeof p.price === 'string' ? Number(p.price) : Number(p.price ?? 0);
+        return {
+          id: p.id,
+          code: p.code || undefined,
+          name: p.name,
+          description: p.description || '',
+          options: p.options || '',
+          imageDataUrl: p.image_url ? p.image_url : undefined,
+          price: isNaN(basePriceNum) ? 0 : basePriceNum,
+          cost_price: p.cost_price != null ? Number(p.cost_price) : undefined,
+          sale_price: p.sale_price != null ? Number(p.sale_price) : undefined,
+          stock: entry ? entry.stock : 0,
+          reserved: entry ? entry.reserved : 0,
+          available: entry ? entry.available : 0
+        };
+      });
       if(import.meta.env.DEV){
         const missing = formattedProducts.filter(fp=> fp.stock===0 && !stocks.find(s=>s.product_id===fp.id));
         if(missing.length){
@@ -361,18 +379,21 @@ export default function QuoteBuilder() {
   }, [loadProducts]);
 
   function addItemFromProduct(prod: Product, quantity = 1) {
-    const snapshot: QuoteItemSnapshot = {
-      productId: prod.id,
-      name: prod.name,
-      description: prod.description,
-      options: prod.options,
-      imageDataUrl: prod.imageDataUrl,
-  // Prioriza sale_price se existir; fallback para price legacy
-  unitPrice: (prod as any).sale_price != null ? (prod as any).sale_price : prod.price,
-  costPrice: (prod as any).cost_price != null ? (prod as any).cost_price : undefined,
-      quantity,
-  subtotal: ((prod as any).sale_price != null ? (prod as any).sale_price : prod.price) * quantity,
-    };
+      const salePrice = (prod as unknown as { sale_price?: number }).sale_price;
+      const costPriceRaw = (prod as unknown as { cost_price?: number }).cost_price;
+      const unit = salePrice != null ? salePrice : prod.price;
+      const prodWithImage = prod as Product & { imageDataUrl?: string };
+      const snapshot: QuoteItemSnapshot = {
+        productId: prod.id,
+        name: prod.name,
+        description: prod.description,
+        options: prod.options,
+        imageDataUrl: prodWithImage.imageDataUrl,
+        unitPrice: unit,
+        costPrice: costPriceRaw != null ? costPriceRaw : undefined,
+        quantity,
+        subtotal: unit * quantity,
+      };
     setItems((it) => [...it, snapshot]);
   }
 
@@ -601,13 +622,14 @@ export default function QuoteBuilder() {
               const rand = Math.random().toString(36).slice(2,8);
               const storagePath = `produtos/${code}-${Date.now()}-${rand}.${ext}`; // força caminho único
               const upRes = await supabase.storage.from(bucket).upload(storagePath, fileObj, { upsert: false });
-              if((upRes as any).error){ return pImg; }
+              if((upRes as { error?: unknown }).error){ return pImg; }
               // tentar signed url (30 dias)
               try {
                 const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 60*60*24*30);
                 if(signed?.signedUrl) return signed.signedUrl;
               } catch(_e){ /* ignore */ }
-              const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storagePath) as any;
+              const pubRes = supabase.storage.from(bucket).getPublicUrl(storagePath) as unknown as { data?: { publicUrl?: string } };
+              const pub = pubRes?.data;
               return pub?.publicUrl || pImg;
             } catch(_e){ return pImg; }
           })(),
@@ -1412,7 +1434,7 @@ export default function QuoteBuilder() {
                                   const cand = data as string;
                                   if (cand.replace(/^PED-?/,'') !== baseOrc) pedNumber = cand;
                                 }
-                              } catch {}
+                              } catch (_ignore) { /* ignore parse item */ }
                             }
                           }
                           let updatePayload: Record<string, unknown> = { type: 'PEDIDO', number: pedNumber, origin_orc_number: q.originOrcNumber || q.number, ped_number_cache: pedNumber };
@@ -1424,7 +1446,7 @@ export default function QuoteBuilder() {
                             const { ped_number_cache, ...rest } = updatePayload;
                             updatePayload = rest;
                             // Fallback: injeta token em notes
-                            let notesAppend = `[PEDCACHE:${pedNumber}]`;
+                            const notesAppend = `[PEDCACHE:${pedNumber}]`;
                             // Se já existe notes, preserva
                             if (typeof q.notes === 'string' && q.notes.length) {
                               if (!q.notes.includes('[PEDCACHE:')) {
@@ -1757,63 +1779,73 @@ function SearchProductModal({
         )}
         {filteredProducts.map((p: ProductWithStock) => {
           const unitPrice = (p.sale_price ?? p.price) || 0;
-            const qty = getQty(p.id);
-            const total = unitPrice * qty;
-            const priceDisp = currencyBRL(unitPrice).replace(/^R\$\s?/, '');
-            const stockDisp = p.stock != null ? p.stock : '-';
-            const reservedDisp = p.reserved != null ? p.reserved : '-';
-            const costDisp = p.cost_price != null ? currencyBRL(p.cost_price).replace(/^R\$\s?/, '') : '—';
+          const qty = getQty(p.id);
+          const total = unitPrice * qty;
+          const priceDisp = currencyBRL(unitPrice).replace(/^R\$\s?/, '');
+          const costDisp = p.cost_price != null ? currencyBRL(p.cost_price).replace(/^R\$\s?/, '') : '—';
+          const avail = p.available ?? (p.stock ?? 0) - (p.reserved ?? 0);
+          const lowStock = avail <= 0;
+          const insufficient = qty > avail && !lowStock;
           return (
             <div
               key={p.id}
-              className="group border rounded-md p-2 bg-background hover:bg-accent/60 transition focus-within:ring-2 focus-within:ring-primary"
+              className="group border rounded-md p-2 bg-background/60 hover:bg-accent/50 transition focus-within:ring-2 focus-within:ring-primary/70"
             >
-              <div className="flex gap-3 sm:items-center flex-col sm:flex-row">
-                <div className="flex items-start gap-3 w-full">
-                  {p.imageDataUrl ? (
-                    <img
-                      src={p.imageDataUrl}
-                      alt={p.name}
-                      className="h-14 w-14 rounded object-cover border bg-white flex-shrink-0"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="h-14 w-14 rounded border bg-accent/50 grid place-items-center text-[10px] text-muted-foreground flex-shrink-0">IMG</div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-[13px] leading-snug line-clamp-2 break-words pr-1">
-                      {p.name}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] sm:text-[11px] text-muted-foreground">
-                      <span className="truncate">Cod {p.code ? p.code : p.id.slice(-6)}</span>
-                      <span>R$ {priceDisp}</span>
-                      <span className="hidden xs:inline">Cst {costDisp}</span>
-                      <span>Stk {stockDisp}</span>
-                      <span>Res {reservedDisp}</span>
-                      {p.available != null && <span>Disp {(p.available).toString()}</span>}
-                    </div>
+              <div className="flex gap-3">
+                {/* Imagem */}
+                {p.imageDataUrl ? (
+                  <img
+                    src={p.imageDataUrl}
+                    alt={p.name}
+                    className="h-14 w-14 rounded object-cover border bg-white flex-shrink-0"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="h-14 w-14 rounded border bg-accent/40 grid place-items-center text-[10px] text-muted-foreground flex-shrink-0">IMG</div>
+                )}
+                {/* Info principal */}
+                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                  <div className="font-medium text-[13px] leading-snug line-clamp-2 break-words pr-1" title={p.name}>{p.name}</div>
+                  <div className="flex flex-wrap gap-1 text-[10px] sm:text-[11px] text-muted-foreground items-center">
+                    <span className="px-1 py-0.5 rounded bg-muted/60">Cod {p.code || p.id.slice(-6)}</span>
+                    <span className="px-1 py-0.5 rounded bg-muted/40">R$ {priceDisp}</span>
+                    <span className="px-1 py-0.5 rounded bg-muted/30 hidden md:inline">Cst {costDisp}</span>
+                    <span className="px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">Stk {p.stock ?? '-'}</span>
+                    <span className="px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">Res {p.reserved ?? '-'}</span>
+                    <span
+                      className={"px-1 py-0.5 rounded " + (lowStock ? "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300" : insufficient ? "bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300" : "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300")}
+                    >Disp {avail}</span>
                   </div>
                 </div>
-                <div className="flex items-end sm:items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
-                  <div className="flex items-center gap-1">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={qty}
-                      onChange={(e)=> setQty(p.id, parseInt(e.target.value || '1',10))}
-                      className="h-8 w-20 text-center text-sm"
-                      aria-label={`Quantidade para ${p.name}`}
-                    />
-                  </div>
-                  <div className="text-xs text-muted-foreground min-w-[90px] text-right leading-tight">
-                    <div>Total</div>
-                    <div className="font-medium text-primary">{currencyBRL(total).replace(/^R\$\s?/, 'R$ ')}</div>
+                {/* Ações */}
+                <div className="flex flex-col items-end gap-1 w-32 sm:w-36">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={qty}
+                    onChange={(e)=> setQty(p.id, parseInt(e.target.value || '1',10))}
+                    onKeyDown={(e)=> { if(e.key==='Enter') { onSelectProduct(p, qty); } }}
+                    className={"h-8 text-center text-sm " + (insufficient ? 'border-orange-500 focus-visible:ring-orange-500' : lowStock ? 'border-red-500 focus-visible:ring-red-500' : '')}
+                    aria-label={`Quantidade para ${p.name}`}
+                  />
+                  <div className="text-[10px] text-muted-foreground leading-tight w-full text-right">
+                    <span>Total </span>
+                    <span className="font-medium text-primary">{currencyBRL(total).replace(/^R\$\s?/, 'R$ ')}</span>
                   </div>
                   <Button
                     size="sm"
-                    className="h-8"
+                    className="h-8 w-full"
+                    disabled={lowStock}
+                    title={lowStock ? 'Sem disponibilidade' : 'Adicionar produto'}
                     onClick={() => onSelectProduct(p, qty)}
                   >Adicionar</Button>
+                  {onRegisterMovement && (
+                    <button
+                      type="button"
+                      onClick={()=> onRegisterMovement(p)}
+                      className="text-[10px] text-muted-foreground hover:text-primary underline-offset-2 hover:underline"
+                    >Movimento</button>
+                  )}
                 </div>
               </div>
             </div>
