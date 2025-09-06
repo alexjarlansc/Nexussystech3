@@ -99,6 +99,16 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({ clients, value, onSe
             </div>
           ): <span className="text-sm text-muted-foreground">Selecionar Cliente</span>}
         </Button>
+        {/* Botão para abrir modal de novo cliente (ERP) */}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          title="Novo cliente"
+          onClick={(e)=>{ e.stopPropagation(); window.dispatchEvent(new CustomEvent('erp:create-client',{ detail:{ prefill: {} } })); }}
+        >
+          Novo Cliente
+        </Button>
         {selected && (
           <Button
             type="button"

@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { AdvancedClientSelect } from '@/components/AdvancedClientSelect';
 import { ClientPicker } from '@/components/ClientPicker';
+import { ErpClients } from '@/components/erp/ErpClients';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
@@ -58,6 +59,10 @@ function collapseDoublePed(n: string){
 export default function QuoteBuilder() {
   // Token gerado pelo admin (deve ser o primeiro hook do componente)
   const [generatedToken, setGeneratedToken] = useState('');
+
+  // Render modal-only ERP clients so 'Novo Cliente' abre o modal nesta tela
+  // (mantemos fora do fluxo visual usando aria-hidden)
+  const ModalErp = <div aria-hidden className="sr-only"><ErpClients modalOnly /></div>;
 
   // Controle de token usado e validade
   function isTokenValid(token: string) {
@@ -129,6 +134,23 @@ export default function QuoteBuilder() {
 
   useEffect(() => {
     fetchClients();
+    const onCreated = (ev: Event) => {
+      try {
+        const ce = ev as CustomEvent;
+        const client = ce?.detail?.client as Client | undefined | null;
+        if (client && client.id) {
+          setClients(prev => {
+            if (prev.find(c=>c.id===client.id)) return prev;
+            return [client, ...prev];
+          });
+        } else {
+          // fallback: refetch
+          fetchClients();
+        }
+      } catch (err) { fetchClients(); }
+    };
+    window.addEventListener('erp:client-created', onCreated as EventListener);
+    return () => window.removeEventListener('erp:client-created', onCreated as EventListener);
   }, []);
   // (types declared at module scope)
   const [products, setProducts] = useState<ProductWithStock[]>([]);
@@ -951,6 +973,7 @@ export default function QuoteBuilder() {
 
   return (
     <main className="container mx-auto px-1 sm:px-2 md:px-4">
+  {ModalErp}
       <section aria-labelledby="editor" className="grid grid-cols-1 lg:grid-cols-3 gap-2 md:gap-4 lg:gap-6">
         <div className="lg:col-span-2 space-y-2 md:space-y-4">
           <Card className="card-elevated p-2 sm:p-4 md:p-6">
@@ -1008,19 +1031,22 @@ export default function QuoteBuilder() {
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">Cliente</h3>
                 </div>
-                {/* Novo fluxo: botão para abrir modal de busca de cliente */}
-                <ClientPicker
-                  clients={clients}
-                  value={clientId}
-                  onSelect={c => {
-                    if (!c || !c.id) {
-                      toast.error('Selecione um cliente válido do banco de dados!');
-                      return;
-                    }
-                    setClientId(c.id);
-                  }}
-                  onClear={() => setClientId('')}
-                />
+                {/* Novo fluxo: botão para abrir modal de busca de cliente e botão para criar novo cliente */}
+                <div className="flex items-center gap-2">
+                  <ClientPicker
+                    clients={clients}
+                    value={clientId}
+                    onSelect={c => {
+                      if (!c || !c.id) {
+                        toast.error('Selecione um cliente válido do banco de dados!');
+                        return;
+                      }
+                      setClientId(c.id);
+                    }}
+                    onClear={() => setClientId('')}
+                  />
+                  {/* botão 'Novo Cliente' removido daqui para evitar duplicação (já disponível no ClientPicker) */}
+                </div>
               </div>
             </div>
 

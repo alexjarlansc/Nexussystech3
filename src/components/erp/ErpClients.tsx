@@ -11,7 +11,8 @@ import { toast } from '@/components/ui/sonner';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export function ErpClients() {
+interface ErpClientsProps { modalOnly?: boolean }
+export function ErpClients({ modalOnly }: ErpClientsProps) {
   const pageSize = 20;
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -39,8 +40,26 @@ export function ErpClients() {
     setTotal(count || 0);
     setLoading(false);
   }, [page, pageSize, search]);
-  useEffect(()=>{ load(); }, [load]);
+  useEffect(()=>{ if(!modalOnly) load(); }, [load, modalOnly]);
   useEffect(()=>{ const t = setTimeout(()=>{ setPage(0); }, 400); return ()=>clearTimeout(t); }, [search]);
+
+  // Escuta evento global para abrir modal de novo cliente a partir de outros componentes
+  useEffect(()=>{
+    const handler = (ev: Event) => {
+      try {
+        const ce = ev as CustomEvent;
+        const detail = ce?.detail as any;
+        if (detail && detail.prefill) {
+          setNovo(prev => ({ ...prev, ...(detail.prefill || {}) }));
+        }
+      } catch (err) {
+        // ignore
+      }
+      setCreateOpen(true);
+    };
+    window.addEventListener('erp:create-client', handler as EventListener);
+    return () => window.removeEventListener('erp:create-client', handler as EventListener);
+  }, []);
 
   function exportCsv() {
     // exporta até 1000 rapidamente
@@ -121,50 +140,58 @@ export function ErpClients() {
       } else {
         toast.error('Erro ao criar: '+error.message); return; }
     }
-    toast.success('Cliente criado');
-    setCreateOpen(false); setNovo(emptyNew); load();
+  toast.success('Cliente criado');
+  // Dispara evento global para notificar criadores de lista (ex: QuoteBuilder)
+  try { window.dispatchEvent(new CustomEvent('erp:client-created', { detail: { client: ( (error? null : ( (await (supabase as any).from('clients').select('*').eq('name', payload.name).limit(1)).data?.[0]) ) ) } })); } catch(e){}
+  setCreateOpen(false); setNovo(emptyNew); load();
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} className="h-8 w-60" />
-        <Button size="sm" variant="outline" onClick={exportCsv}>Exportar CSV</Button>
-        <Button size="sm" onClick={()=>setCreateOpen(true)}>Novo Cliente</Button>
-        <div className="text-xs text-muted-foreground ml-auto">{loading ? 'Carregando...' : `${total} registros`}</div>
-      </div>
-      <Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/60 text-xs uppercase tracking-wide">
-            <tr>
-              <th className="text-left px-2 py-1 font-medium">Nome</th>
-              <th className="text-left px-2 py-1 font-medium">Documento</th>
-              <th className="text-left px-2 py-1 font-medium">Telefone</th>
-              <th className="text-left px-2 py-1 font-medium">Email</th>
-              <th className="text-left px-2 py-1 font-medium">Endereço</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map(c => (
-              <tr key={c.id} className="border-t hover:bg-accent/30 cursor-pointer" onClick={()=> setEdit(c)}>
-                <td className="px-2 py-1">{c.name}</td>
-                <td className="px-2 py-1">{c.taxid||'-'}</td>
-                <td className="px-2 py-1">{c.phone||'-'}</td>
-                <td className="px-2 py-1">{c.email||'-'}</td>
-                <td className="px-2 py-1 truncate max-w-[220px]" title={c.address}>{c.address||'-'}</td>
-              </tr>
-            ))}
-            {clients.length===0 && !loading && (
-              <tr><td colSpan={5} className="text-center text-xs text-muted-foreground py-6">Nenhum cliente</td></tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-      <div className="flex items-center gap-2 text-xs">
-        <Button size="sm" variant="outline" disabled={page===0} onClick={()=>setPage(p=>p-1)}>Anterior</Button>
-        <div>Página {page+1} / {Math.max(1, Math.ceil(total / pageSize))}</div>
-        <Button size="sm" variant="outline" disabled={(page+1)*pageSize>=total} onClick={()=>setPage(p=>p+1)}>Próxima</Button>
-      </div>
+      {!modalOnly && (
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} className="h-8 w-60" />
+            <Button size="sm" variant="outline" onClick={exportCsv}>Exportar CSV</Button>
+            <Button size="sm" onClick={()=>setCreateOpen(true)}>Novo Cliente</Button>
+            <div className="text-xs text-muted-foreground ml-auto">{loading ? 'Carregando...' : `${total} registros`}</div>
+          </div>
+
+          <Card className="overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/60 text-xs uppercase tracking-wide">
+                <tr>
+                  <th className="text-left px-2 py-1 font-medium">Nome</th>
+                  <th className="text-left px-2 py-1 font-medium">Documento</th>
+                  <th className="text-left px-2 py-1 font-medium">Telefone</th>
+                  <th className="text-left px-2 py-1 font-medium">Email</th>
+                  <th className="text-left px-2 py-1 font-medium">Endereço</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clients.map(c => (
+                  <tr key={c.id} className="border-t hover:bg-accent/30 cursor-pointer" onClick={()=> setEdit(c)}>
+                    <td className="px-2 py-1">{c.name}</td>
+                    <td className="px-2 py-1">{c.taxid||'-'}</td>
+                    <td className="px-2 py-1">{c.phone||'-'}</td>
+                    <td className="px-2 py-1">{c.email||'-'}</td>
+                    <td className="px-2 py-1 truncate max-w-[220px]" title={c.address}>{c.address||'-'}</td>
+                  </tr>
+                ))}
+                {clients.length===0 && !loading && (
+                  <tr><td colSpan={5} className="text-center text-xs text-muted-foreground py-6">Nenhum cliente</td></tr>
+                )}
+              </tbody>
+            </table>
+          </Card>
+
+          <div className="flex items-center gap-2 text-xs">
+            <Button size="sm" variant="outline" disabled={page===0} onClick={()=>setPage(p=>p-1)}>Anterior</Button>
+            <div>Página {page+1} / {Math.max(1, Math.ceil(total / pageSize))}</div>
+            <Button size="sm" variant="outline" disabled={(page+1)*pageSize>=total} onClick={()=>setPage(p=>p+1)}>Próxima</Button>
+          </div>
+        </div>
+      )}
 
       <Dialog open={!!edit} onOpenChange={(o)=>{ if(!o) setEdit(null); }}>
   <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col p-0 overflow-hidden">

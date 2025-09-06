@@ -192,6 +192,7 @@ export const ClientSearch: React.FC<ClientSearchProps> = ({ clients, onSelect })
       {/* Resultados em tempo real */}
       {showSuggestions && (
         <div className="absolute z-10 w-full shadow-lg">
+          {/* opção de criar fora do modal agora */}
           <ul ref={listRef} className="border rounded bg-white max-h-60 overflow-auto">
             {results.map((client, idx) => {
               const active = idx === activeIndex;
