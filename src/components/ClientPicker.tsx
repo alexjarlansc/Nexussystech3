@@ -121,7 +121,10 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({ clients, value, onSe
         )}
       </div>
 
-      <CommandDialog open={open} onOpenChange={setOpen}>
+      {/* Desabilita o filtro interno do cmdk (shouldFilter=false) para usar nossa lógica
+          customizada de normalização e tokenização. Sem isso, queries como "ale" não
+          retornavam resultados quando existiam nomes normalizados/acentuados. */}
+      <CommandDialog open={open} onOpenChange={setOpen} commandProps={{ shouldFilter: false }}>
         <CommandInput placeholder="Digite nome ou CPF/CNPJ" value={query} onValueChange={setQuery} autoFocus />
         <CommandList>
           <CommandEmpty>Nenhum resultado</CommandEmpty>

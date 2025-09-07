@@ -373,19 +373,31 @@ export default function QuoteBuilder() {
           available: entry ? entry.available : 0
         };
       });
+      if (import.meta.env.DEV) {
+        console.debug('[QuoteBuilder] formattedProducts sample images=', formattedProducts.slice(0,8).map(fp=>({id:fp.id, image: fp.imageDataUrl}))); 
+      }
       if(import.meta.env.DEV){
         const missing = formattedProducts.filter(fp=> fp.stock===0 && !stocks.find(s=>s.product_id===fp.id));
         if(missing.length){
           console.warn('[DEBUG estoque] Produtos sem linha na view/fallback, exibindo 0:', missing.slice(0,20).map(m=>m.id));
         }
       }
-      // Se todos os produtos possuem exatamente a mesma imageDataUrl, considerar isso um 'placeholder' e limpar para evitar exibição repetida enganosa
-      const uniqueImages = Array.from(new Set(formattedProducts.map(fp => fp.imageDataUrl).filter(Boolean)));
-      if(uniqueImages.length === 1 && formattedProducts.length > 1){
+      // Heurística para evitar placeholder repetido: limpar apenas quando
+      // TODOS os produtos compartilham exatamente a mesma imagem (caso de placeholder global).
+      const imgs = formattedProducts.map(fp => fp.imageDataUrl).filter(Boolean as unknown as (v: string) => boolean) as string[];
+      const uniqueImages = Array.from(new Set(imgs));
+      const countWithImage = imgs.length;
+      const totalProducts = formattedProducts.length;
+      if (import.meta.env.DEV) {
+        // Log curto para debug quando em dev
+        console.debug('[QuoteBuilder] imagens carregadas', { uniqueImagesCount: uniqueImages.length, countWithImage, totalProducts, uniqueImagesSample: uniqueImages.slice(0,3) });
+      }
+      // Só limpar se houver exatamente uma URL distinta E ela aparece em TODOS os produtos
+      if (uniqueImages.length === 1 && countWithImage === totalProducts && totalProducts > 1) {
         const single = uniqueImages[0];
-        // Heurística: se a URL contém "data:" ou termina em um nome de arquivo igual para todos, limpar
-        if(single?.startsWith('data:') || formattedProducts.every(p=>p.imageDataUrl===single)){
-          formattedProducts.forEach(p=>{ p.imageDataUrl = undefined; });
+        // limpar apenas se for data: (inline) ou quando for realmente o mesmo signed/public url para todos
+        if (single) {
+          formattedProducts.forEach(p => { p.imageDataUrl = undefined; });
         }
       }
       setProducts(formattedProducts);
@@ -399,6 +411,14 @@ export default function QuoteBuilder() {
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  // DEBUG: logar products quando mudam (dev)
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    try {
+      console.debug('[QuoteBuilder] products changed count=', products.length, 'sample=', products.slice(0,8).map(p=>({id:p.id,image:p.imageDataUrl})));
+    } catch(e){ console.debug('[QuoteBuilder] products log failed', e); }
+  }, [products]);
 
   function addItemFromProduct(prod: Product, quantity = 1) {
       const salePrice = (prod as unknown as { sale_price?: number }).sale_price;

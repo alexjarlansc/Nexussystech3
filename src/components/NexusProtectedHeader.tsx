@@ -126,6 +126,11 @@ export function NexusProtectedHeader() {
     loadInviteCodes();
   };
 
+  // Type guard para extrair mensagem de erro sem usar `any`
+  function isErrorWithMessage(v: unknown): v is { message: string } {
+    return !!v && typeof v === 'object' && 'message' in v && typeof (v as Record<string, unknown>).message === 'string';
+  }
+
   return (
     <>
       <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
@@ -354,19 +359,53 @@ export function NexusProtectedHeader() {
                     // Upload para bucket 'logos'
                     const ext = file.name.split('.').pop() || 'png';
                     const path = `${company?.id || 'company'}/${Date.now()}.${ext}`;
-                    const { error: upErr } = await supabase.storage.from('logos').upload(path, file, { upsert: true, cacheControl: '3600' });
-                    if (upErr) throw upErr;
-                    const { data: pub } = supabase.storage.from('logos').getPublicUrl(path);
-                    const publicUrl = pub?.publicUrl;
+                    const { data: upData, error: upErr } = await supabase.storage.from('logos').upload(path, file, { upsert: true, cacheControl: '3600' });
+                    if (upErr) {
+                      // Log detalhado para ajudar diagnóstico (bucket inexistente, permissões, etc)
+                      console.error('Erro upload logo (supabase):', upErr);
+                      // Tentar fallback: gerar DataURL e usar localmente / atualizar empresa com DataURL
+                      const dataUrl = await new Promise<string | null>((res) => {
+                        const reader = new FileReader();
+                        reader.onload = () => res(typeof reader.result === 'string' ? reader.result : null);
+                        reader.onerror = () => res(null);
+                        reader.readAsDataURL(file);
+                      });
+                      if (dataUrl) {
+                        // Persistir localmente e tentar atualizar empresa com DataURL para permitir pré-visualização
+                        setLogoDataUrl(dataUrl);
+                        try { await updateCompany({ logo_url: dataUrl }); } catch (uErr) { console.error('Erro ao atualizar empresa com DataURL fallback', uErr); }
+                        toast.success('Logo salva localmente (fallback) — verifique configuração do storage');
+                      } else {
+                        toast.error('Falha ao enviar logo: ' + (upErr.message || 'erro desconhecido'));
+                      }
+                      return;
+                    }
+                    // Se upload OK, obter URL pública
+                    const pubRes = supabase.storage.from('logos').getPublicUrl(path);
+                    let publicUrl: string | undefined = undefined;
+                    if (pubRes && typeof pubRes === 'object' && 'data' in pubRes && pubRes.data) {
+                      const d = pubRes.data as Record<string, unknown>;
+                      if (typeof d.publicUrl === 'string') publicUrl = d.publicUrl;
+                    }
                     if (publicUrl) {
                       setLogoDataUrl(publicUrl);
                       // atualizar empresa no banco
                       await updateCompany({ logo_url: publicUrl });
                       toast.success('Logo enviada');
+                    } else {
+                      // Caso raro: upload ok mas sem publicUrl
+                      console.warn('Upload realizado mas publicUrl não retornada', upData);
+                      toast.success('Logo enviada (upload ok)');
                     }
                   } catch (err) {
-                    console.error('Erro upload logo', err);
-                    toast.error('Falha ao enviar logo');
+                    console.error('Erro upload logo (catch):', err);
+                    // tentar extrair mensagem do erro do supabase
+                    const unknownErr = err as unknown;
+                    let msg = String(unknownErr);
+                    if (unknownErr && typeof unknownErr === 'object' && 'message' in unknownErr && typeof (unknownErr as Record<string, unknown>).message === 'string') {
+                      msg = (unknownErr as Record<string, unknown>).message as string;
+                    }
+                    toast.error('Falha ao enviar logo: ' + msg);
                   } finally {
                     setUploadingLogo(false);
                   }

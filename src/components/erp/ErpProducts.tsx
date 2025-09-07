@@ -89,7 +89,7 @@ export function ErpProducts(){
       try { await (supabase as any).rpc('ensure_profile'); } catch(err) { if(import.meta.env.DEV) console.warn('ensure_profile rpc indisponível', err); }
       let q = (supabase as any)
         .from('products')
-        .select('id,code,name,unit,sale_price,price,cost_price,status,created_at')
+        .select('id,code,name,unit,sale_price,price,cost_price,status,image_url,created_at')
         .order('created_at',{ascending:false});
       if(debouncedSearch){
         q = q.or(`name.ilike.%${debouncedSearch}%,code.ilike.%${debouncedSearch}%`);
@@ -205,6 +205,14 @@ export function ErpProducts(){
   }
   useEffect(()=>{ load(0); loadSuppliers(); setPage(0); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+
+  // DEBUG: logar resumo de rows quando mudam para diagnosticar imagens aplicadas indevidamente
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    try {
+      console.debug('[ErpProducts] rows changed count=', rows.length, 'sampleImages=', rows.slice(0,8).map(r=>({id:r.id, image: (r as any).image_url })));
+    } catch (e) { console.debug('[ErpProducts] rows changed (failed to stringify)'); }
+  }, [rows]);
   // Debounce da busca para evitar muitas requisições
   useEffect(()=>{
     const t = setTimeout(()=>{ setDebouncedSearch(search.trim()); setPage(0); load(0); }, 400);
@@ -259,16 +267,22 @@ export function ErpProducts(){
       toast.error('Código obrigatório');
       return;
     }
-    // Verificar unicidade do código
-  // cast to any to avoid deep generic instantiation in TS when selecting minimal fields
-  // Verificar código existente sem gerar filtro inválido quando não estiver editando
-  let codeQuery = (supabase as any)
-      .from('products')
-      .select('id')
-      .eq('code', form.code.trim())
-      .limit(1);
-  if(editing?.id) codeQuery = codeQuery.neq('id', editing.id);
-  const { data: codeExists } = await codeQuery.single();
+    // Verificar unicidade do código (resiliente a falhas temporárias)
+    let codeExists: any = null;
+    try {
+      // cast to any to avoid deep generic instantiation in TS when selecting minimal fields
+      let codeQuery = (supabase as any)
+        .from('products')
+        .select('id')
+        .eq('code', form.code.trim())
+        .limit(1);
+      if(editing?.id) codeQuery = codeQuery.neq('id', editing.id);
+      const qRes = await codeQuery.single();
+      codeExists = (qRes as any).data || null;
+    } catch(err) {
+      if(import.meta.env.DEV) console.debug('[ErpProducts] code uniqueness check failed, continuing', err);
+      codeExists = null; // falha ao verificar unicidade não bloqueia o save
+    }
     if(codeExists){
       toast.error('Já existe um produto com este código!');
       return;
@@ -485,9 +499,22 @@ export function ErpProducts(){
     )}
     <div className="border rounded max-h-[520px] overflow-auto">
       <table className="w-full text-xs">
-  <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Código</th><th className="px-2 py-1 text-left">Nome</th><th className="px-2 py-1">Un</th><th className="px-2 py-1 text-right">Custo Médio</th><th className="px-2 py-1 text-right">Preço Venda</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th><th className="px-2 py-1 text-right">Disp.</th><th className="px-2 py-1">Status</th><th className="px-2 py-1"/></tr></thead>
+  <thead className="bg-muted/50 sticky top-0"><tr>
+    <th className="px-2 py-1">&nbsp;</th>
+    <th className="px-2 py-1 text-left">Código</th>
+    <th className="px-2 py-1 text-left">Nome</th>
+    <th className="px-2 py-1">Un</th>
+    <th className="px-2 py-1 text-right">Custo Médio</th>
+    <th className="px-2 py-1 text-right">Preço Venda</th>
+    <th className="px-2 py-1 text-right">Estoque</th>
+    <th className="px-2 py-1 text-right">Reservado</th>
+    <th className="px-2 py-1 text-right">Disp.</th>
+    <th className="px-2 py-1">Status</th>
+    <th className="px-2 py-1"/>
+  </tr></thead>
         <tbody>
           {rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
+            <td className="px-2 py-1"><div className="h-8 w-8 bg-gray-100 rounded overflow-hidden border"><img src={(r as any).image_url||''} alt="" className="h-8 w-8 object-cover" onError={(e:any)=>{ e.currentTarget.style.display='none'; }} /></div></td>
             <td className="px-2 py-1 font-mono truncate max-w-[120px]" title={r.code||''}>{r.code||'-'}</td>
             <td className="px-2 py-1 truncate max-w-[240px]" title={r.name}>{r.name}</td>
             <td className="px-2 py-1 text-center">{r.unit||'-'}</td>
@@ -677,6 +704,7 @@ export function ErpProducts(){
           <Button onClick={async()=>{
             // upload imagem antes de salvar se houver
             let uploadedUrl: string | undefined;
+            const editingId = editing?.id;
             // Preparar arquivo para upload (pode vir de estado ou de uma dataURL existente)
             let fileToUpload: File | null = imageFile;
             if(!fileToUpload && typeof form.image_url === 'string' && form.image_url.startsWith('data:')){
@@ -693,77 +721,43 @@ export function ErpProducts(){
                 }
               } catch(err){ if(import.meta.env.DEV) console.warn('Falha converter dataURL inline em arquivo', err); }
             }
-            if(fileToUpload){
+                if(fileToUpload){
               try {
                 const identifier = editing?.id ? String(editing.id) : String(Date.now());
                 const randomSuffix = Math.random().toString(36).slice(2,8);
-                const path = `produtos/${identifier}-${Date.now()}-${randomSuffix}-${fileToUpload.name}`;
+                    // sanitize filename to avoid spaces and special chars that can cause 400
+                    const orig = fileToUpload.name || 'file';
+                    const extMatch = orig.match(/\.([a-zA-Z0-9]+)$/);
+                    const ext = extMatch ? extMatch[1] : '';
+                    const base = orig.replace(/\.[^/.]+$/, '')
+                      .toLowerCase()
+                      .replace(/[^a-z0-9-_]+/g, '-')
+                      .replace(/-+/g, '-')
+                      .slice(0, 60);
+                    const safeName = ext ? `${base}.${ext}` : base;
+                    const path = `produtos/${identifier}-${Date.now()}-${randomSuffix}-${safeName}`;
                 // tenta bucket específico de imagens do produto
-                let bucket = 'product-images';
-                let upErr: any = null;
+                const bucket = 'product-images';
+                const upErr: any = null;
                 try {
-                  const res = await supabase.storage.from(bucket).upload(path, fileToUpload, { upsert:false });
-                  upErr = (res as any).error;
-                  if(!upErr){
-                    // Sempre tentar gerar signed URL (funciona para bucket privado e público)
-                    let signedUrl: string | undefined;
-                    try {
-                      const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 60*60*24*30);
-                      signedUrl = signed?.signedUrl;
-                    } catch(_e){ /* ignore */ }
-                    if(!signedUrl){
-                      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path) as any;
-                      signedUrl = pub?.publicUrl;
-                    }
-                    uploadedUrl = signedUrl;
-                    // aplicar apenas ao form e ao produto em edição
-                    setForm(f=>({...f, image_url: uploadedUrl }));
-                    if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
-                  }
-                } catch(errInner) {
-                  upErr = errInner;
-                }
-                // Se bucket não existe ou upload falhar com esse erro, tenta bucket 'logos' como fallback
-                if(upErr) {
-                  const msg = extractErr(upErr);
-                  if(msg.toLowerCase().includes('bucket') || msg.toLowerCase().includes('not found')){
-                    bucket = 'logos';
-                    try {
-                      const res2 = await supabase.storage.from(bucket).upload(path, fileToUpload, { upsert:false });
-                      if((res2 as any).error) throw (res2 as any).error;
-                      let signedUrl2: string | undefined;
-                      try {
-                        const { data: signed2 } = await supabase.storage.from(bucket).createSignedUrl(path, 60*60*24*30);
-                        signedUrl2 = signed2?.signedUrl;
-                      } catch(_e){ /* ignore */ }
-                      if(!signedUrl2){
-                        const { data: pub2 } = supabase.storage.from(bucket).getPublicUrl(path) as any;
-                        signedUrl2 = pub2?.publicUrl;
-                      }
-                      uploadedUrl = signedUrl2;
-                      setForm(f=>({...f, image_url: uploadedUrl }));
-                      if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
-                    } catch(err2) {
-                      // Se o fallback também falhar por bucket não encontrado, converter para data URL e salvar direto no campo image_url
-                      const errMsg = extractErr(err2 || upErr).toLowerCase();
-                      if(errMsg.includes('bucket') || errMsg.includes('not found')){
-                        // converter arquivo em data URL
-                        const dataUrl = await new Promise<string>((resolve, reject) => {
-                          const reader = new FileReader();
-                          reader.onload = () => resolve(String(reader.result));
-                          reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
-                          reader.readAsDataURL(fileToUpload!);
-                        });
-                        uploadedUrl = dataUrl;
-                        setForm(f=>({...f, image_url: uploadedUrl, imageDataUrl: uploadedUrl }));
-                        if(editing) setEditing({...editing, image_url: uploadedUrl, imageDataUrl: uploadedUrl} as Product);
-                      } else {
-                        throw err2 || upErr;
-                      }
-                    }
-                  } else {
-                    throw upErr;
-                  }
+                  // Fast fallback: convert to data URL and save directly to image_url to avoid Storage issues
+                  const dataUrl = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(String(reader.result));
+                    reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
+                    reader.readAsDataURL(fileToUpload!);
+                  });
+                  uploadedUrl = dataUrl;
+                  if(import.meta.env.DEV) console.debug('[ErpProducts] using dataURL fallback for image', { editingId });
+                  setForm(f=>({...f, image_url: uploadedUrl, imageDataUrl: uploadedUrl }));
+                  setEditing(prev => {
+                    const res = prev && (editingId ? prev.id === editingId : true) ? ({ ...prev, image_url: uploadedUrl, imageDataUrl: uploadedUrl } as Product) : prev;
+                    if(import.meta.env.DEV) console.debug('[ErpProducts] setEditing result (dataURL fast)', { before: prev, after: res, editingId });
+                    return res;
+                  });
+                } catch(e) {
+                  if(import.meta.env.DEV) console.error('[ErpProducts] dataURL fallback failed', e);
+                  throw e;
                 }
               } catch(e:unknown){ toast.error('Upload falhou: '+ extractErr(e)); if(import.meta.env.DEV) console.error('upload error', e); }
             }
@@ -774,10 +768,10 @@ export function ErpProducts(){
             }
             // salvar e atualizar apenas a linha alterada em memória
              await save(uploadedUrl);
-            // garantir que rows reflitam a alteração (caso backend não retorne a URL imediatamente)
-            if(editing && (editing.id)){
-              setRows(prev => prev.map(r => r.id === editing.id ? { ...r, image_url: form.image_url || uploadedUrl } : r));
-            }
+            // Observação: não aplicamos mais a URL localmente a `rows` aqui para evitar
+            // efeitos colaterais — o método `save()` chama `load()` que recarrega a lista
+            // do backend e garante consistência. Mantemos logs de upload para debug.
+            if(import.meta.env.DEV) console.debug('[ErpProducts] upload finished, relying on load() to refresh rows', { editingId, uploadedUrl });
           }} disabled={saving}>{saving? 'Salvando...':'Salvar'}</Button>
         </DialogFooter>
       </DialogContent>
