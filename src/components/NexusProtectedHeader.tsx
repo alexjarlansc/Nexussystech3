@@ -165,14 +165,13 @@ export function NexusProtectedHeader() {
                 </Badge>
               </div>
 
-              {profile?.role === 'admin' && (
-                <Link
-                  to="/erp"
-                  className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted order-0"
-                  aria-label="ERP"
-                  title="ERP"
-                >ERP</Link>
-              )}
+              {/* ERP acessível a todos usuários autenticados */}
+              <Link
+                to="/erp"
+                className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted order-0"
+                aria-label="ERP"
+                title="ERP"
+              >ERP</Link>
               <Button
                 variant="ghost"
                 size="sm"

@@ -21,6 +21,7 @@
   }
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,6 +44,7 @@ const UNITS = ['UN','CX','KG','MT','LT','PC'];
 const STATUS = ['ATIVO','INATIVO'];
 
 export function ErpProducts(){
+  const { profile } = useAuth();
   const [rows,setRows]=useState<(Product & { stock?: number, reserved?: number, available?: number })[]>([]);
   const [stockViewColumns, setStockViewColumns] = useState<string[]|null>(null);
   const [loading,setLoading]=useState(false);
@@ -91,7 +93,11 @@ export function ErpProducts(){
         .from('products')
         .select('id,code,name,unit,sale_price,price,cost_price,status,image_url,created_at')
         .order('created_at',{ascending:false});
-      if(debouncedSearch){
+      // Se usuário não é admin, filtrar por company_id para isolar dados por empresa
+      if(profile && profile.role !== 'admin' && profile.company_id) {
+        q = q.eq('company_id', profile.company_id);
+      }
+  if(debouncedSearch){
         q = q.or(`name.ilike.%${debouncedSearch}%,code.ilike.%${debouncedSearch}%`);
       }
       const from = currentPage * pageSize;
@@ -102,7 +108,7 @@ export function ErpProducts(){
       let products = (data as ProductRow[])||[];
       setHasMore(products.length === pageSize);
       const ids = products.map(p=>p.id);
-      if(ids.length) {
+  if(ids.length) {
         // Buscar estoque pela lista de IDs (pode falhar se a view estiver usando códigos antigos ou outro identificador)
         let baseStocks: { product_id: string; stock: number; reserved?: number; available?: number }[] = [];
         try {
@@ -200,7 +206,8 @@ export function ErpProducts(){
     finally { setLoading(false); }
   }
   async function loadSuppliers(){
-    const { data, error }:{ data: Pick<Supplier,'id'|'name'>[]|null; error: unknown } = await (supabase as unknown as { from: any }).from('suppliers').select('id,name').eq('is_active', true).limit(200);
+  // carregar fornecedores visíveis para o usuário
+  const { data, error }:{ data: Pick<Supplier,'id'|'name'>[]|null; error: unknown } = await (supabase as unknown as { from: any }).from('suppliers').select('id,name').eq('is_active', true).limit(200);
     if(!error) setSuppliers(data||[]);
   }
   useEffect(()=>{ load(0); loadSuppliers(); setPage(0); // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -235,17 +242,9 @@ export function ErpProducts(){
     })();
   }, [search]);
   // Carregar companyId do profile do usuário autenticado (evita pegar outro profile)
-  useEffect(()=>{(async()=>{
-    try {
-      const { data: userRes } = await (supabase as any).auth.getUser();
-      const user = userRes?.user;
-      if(!user){ console.warn('Sem usuário autenticado para obter company_id'); return; }
-      const { data, error } = await (supabase as any).from('profiles').select('company_id').eq('user_id', user.id).single();
-      if(error){ console.warn('Erro ao buscar profile para company_id', error); return; }
-      if(data?.company_id){ setCompanyId(data.company_id); }
-      else console.warn('Profile sem company_id');
-    } catch (err) { console.warn('Falha ao carregar company_id', err); }
-  })();},[]);
+  useEffect(()=>{
+    if(profile?.company_id) setCompanyId(profile.company_id);
+  },[profile?.company_id]);
   // Recarregar quando companyId definido (não obrigatório mas ajuda debug)
   // Quando companyId for obtido, recarrega. Ignoramos dependência de 'load' intencionalmente.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -327,11 +326,16 @@ export function ErpProducts(){
   // garantir persistência da imagem (antes não era enviada no payload)
   image_url: effectiveImageUrl || null,
       };
-      if(companyId) payload.company_id = companyId;
+      // Assegura que novos produtos sejam atribuídos à company do usuário quando aplicável
+      if(profile && profile.role !== 'admin' && profile.company_id) {
+        payload.company_id = profile.company_id;
+      } else if(companyId) {
+        payload.company_id = companyId;
+      }
       if(!extendedCols){
         const allowed = ['name','description','price','sale_price','status'];
         Object.keys(payload).forEach(k=>{ if(!allowed.includes(k)) delete payload[k]; });
-        if(companyId) payload.company_id = companyId; // garantir
+        if(profile && profile.role !== 'admin' && profile.company_id) payload.company_id = profile.company_id; // garantir
       }
       let resp: { data: ProductRow|null; error: unknown };
       let oldStock = 0;

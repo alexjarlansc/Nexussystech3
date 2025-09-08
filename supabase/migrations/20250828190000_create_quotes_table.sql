@@ -1,5 +1,5 @@
 -- Criação da tabela de orçamentos (quotes) no Supabase
-create table quotes (
+create table if not exists quotes (
   id uuid primary key default gen_random_uuid(),
   number text not null,
   type text not null, -- ORCAMENTO ou PEDIDO
@@ -21,7 +21,7 @@ create table quotes (
 );
 
 -- Índice para busca rápida por empresa
-create index quotes_company_id_idx on quotes(company_id);
+create index if not exists quotes_company_id_idx on quotes(company_id);
 
 -- Índice para busca por número
-create index quotes_number_idx on quotes(number);
+create index if not exists quotes_number_idx on quotes(number);

@@ -35,7 +35,7 @@ createRoot(document.getElementById("root")!).render(
                 </ProtectedRoute>
               } />
               <Route path="/erp" element={
-                <ProtectedRoute requireAdmin>
+                <ProtectedRoute>
                   <RouteErrorBoundary>
                     <Suspense fallback={<div className='p-6 text-sm text-slate-500'>Carregando ERP...</div>}>
                       <Erp />
@@ -44,7 +44,7 @@ createRoot(document.getElementById("root")!).render(
                 </ProtectedRoute>
               } />
               <Route path="/erp/*" element={
-                <ProtectedRoute requireAdmin>
+                <ProtectedRoute>
                   <RouteErrorBoundary>
                     <Suspense fallback={<div className='p-6 text-sm text-slate-500'>Carregando ERP...</div>}>
                       <Erp />

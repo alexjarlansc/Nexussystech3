@@ -62,6 +62,10 @@ export function ErpSuppliers() {
       address: address || null,
       notes: notes || null,
     };
+    // If user has a company_id and is not admin, ensure supplier is linked to that company.
+    if (profile?.company_id && profile.role !== 'admin') {
+      payload.company_id = profile.company_id;
+    }
     console.log('[Suppliers][InsertAttempt]', payload);
     const { data, error } = await (supabase as any).from('suppliers').insert(payload).select('*').single();
     if (error) {
