@@ -171,11 +171,20 @@ export function NexusProtectedHeader() {
                 to="/erp"
                 onClick={e => {
                   // navegação programática para forçar rota no primeiro clique
-                  e.preventDefault();
+                  try {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  } catch(_) {}
                   // fechar possíveis modais abertos
                   setOpenProfile(false);
                   setOpenCompany(false);
+                  setOpenInvites(false);
+                  // remover foco ativo que pode capturar o primeiro clique
+                  try { (document.activeElement as HTMLElement | null)?.blur(); } catch(_) {}
+                  // navegação normal via react-router
                   navigate('/erp');
+                  // fallback para garantir que a rota seja recarregada caso algo bloqueie a navegação SPA
+                  setTimeout(() => { if (window.location.pathname !== '/erp') window.location.href = '/erp'; }, 250);
                 }}
                 className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted order-0"
                 aria-label="ERP"
