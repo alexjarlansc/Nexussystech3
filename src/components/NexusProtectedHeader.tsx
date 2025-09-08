@@ -8,13 +8,14 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/sonner";
 import { LogOut, Settings, User, Building2, Key, Copy } from "lucide-react";
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from "@/hooks/useAuth";
 import type { InviteCode } from '@/hooks/authTypes';
 import { StorageKeys, setJSON } from '@/utils/storage';
 import { supabase } from '@/integrations/supabase/client';
 
 export function NexusProtectedHeader() {
+  const navigate = useNavigate();
   const { user, profile, company, signOut, updateProfile, updateCompany, generateInviteCode, getInviteCodes } = useAuth();
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
@@ -168,6 +169,14 @@ export function NexusProtectedHeader() {
               {/* ERP acessível a todos usuários autenticados */}
               <Link
                 to="/erp"
+                onClick={e => {
+                  // navegação programática para forçar rota no primeiro clique
+                  e.preventDefault();
+                  // fechar possíveis modais abertos
+                  setOpenProfile(false);
+                  setOpenCompany(false);
+                  navigate('/erp');
+                }}
                 className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted order-0"
                 aria-label="ERP"
                 title="ERP"
