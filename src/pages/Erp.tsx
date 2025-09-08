@@ -181,7 +181,7 @@ export default function Erp() {
         {/* Main content */}
         <main className="flex-1 overflow-auto">
           <ScrollArea id="erp-main-scroll" className="h-full">
-            <div key={section} className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+            <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
               {section === 'dashboard' && <ErpDashboard />}
               {section === 'clients' && <ErpClients />}
               {section === 'suppliers' && <ErpSuppliers />}
