@@ -170,6 +170,7 @@ export function NexusProtectedHeader() {
               <Link
                 to="/erp"
                 onClick={e => {
+                  console.debug('[Header] ERP click', { openProfile, openCompany, openInvites, path: window.location.pathname });
                   // navegação programática para forçar rota no primeiro clique
                   try {
                     e.preventDefault();
@@ -179,10 +180,12 @@ export function NexusProtectedHeader() {
                   setOpenProfile(false);
                   setOpenCompany(false);
                   setOpenInvites(false);
+                  console.debug('[Header] after close modals, navigating');
                   // remover foco ativo que pode capturar o primeiro clique
                   try { (document.activeElement as HTMLElement | null)?.blur(); } catch(_) {}
                   // navegação normal via react-router
                   navigate('/erp');
+                  console.debug('[Header] navigate called');
                   // fallback para garantir que a rota seja recarregada caso algo bloqueie a navegação SPA
                   setTimeout(() => { if (window.location.pathname !== '/erp') window.location.href = '/erp'; }, 250);
                 }}
