@@ -179,20 +179,19 @@ export function NexusProtectedHeader() {
                   setOpenInvites(false);
                   // remover foco ativo que pode capturar o primeiro clique
                   try { (document.activeElement as HTMLElement | null)?.blur(); } catch(_) {}
-                  // Atrasar a navegação por uma pequena fração para permitir que Portals (Radix) completem
-                  // suas rotinas de unmount antes do React desmontar o componente pai — evita condições
-                  // de corrida que podem levar a erros como "removeChild: node is not a child".
+                  // Aumentar o atraso para permitir que Portals (Radix) completem animações e unmounts.
+                  // Observamos que 80ms não foi suficiente em alguns casos; usar 300ms reduz race conditions.
                   setTimeout(() => {
                     try {
                       navigate('/erp');
                       console.debug('[Header] navigate called (deferred)');
                       // fallback se SPA navigation for bloqueada
-                      setTimeout(() => { if (window.location.pathname !== '/erp') window.location.href = '/erp'; }, 300);
+                      setTimeout(() => { if (window.location.pathname !== '/erp') window.location.href = '/erp'; }, 400);
                     } catch (err) {
                       console.error('[Header] navigation error', err);
                       window.location.href = '/erp';
                     }
-                  }, 80);
+                  }, 300);
                 }}
                 className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted order-0"
                 aria-label="ERP"
