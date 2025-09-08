@@ -862,6 +862,17 @@ function BudgetsPlaceholder(){
   async function load(){
     setLoading(true);
   let q = (supabase as any).from('quotes').select('*').eq('type','ORCAMENTO').order('created_at',{ascending:false}).limit(200);
+    // Se o usuário não for admin, filtrar por company_id do profile
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (uid) {
+        const { data: prof } = await supabase.from('profiles').select('company_id,role').eq('user_id', uid).single();
+        if (prof && prof.role !== 'admin' && prof.company_id) {
+          q = q.eq('company_id', prof.company_id);
+        }
+      }
+    } catch (_) { /* ignore */ }
     if(period.from) q = q.gte('created_at', period.from+'T00:00:00');
     if(period.to) q = q.lte('created_at', period.to+'T23:59:59');
     if(search) q = q.ilike('number','%'+search+'%');

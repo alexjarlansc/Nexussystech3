@@ -224,8 +224,10 @@ export default function QuoteBuilder() {
   async function fetchQuotes() {
     if (!user) return;
   let query = supabase.from('quotes').select('*').order('created_at', { ascending: false });
+    // Aplicar filtro por company quando usuário não for admin
     if (profile?.role !== 'admin') {
-      query = query.eq('created_by', user.id);
+      if (profile?.company_id) query = query.eq('company_id', profile.company_id);
+      else query = query.eq('created_by', user.id);
     }
     const { data, error } = await query;
     if (error) {
