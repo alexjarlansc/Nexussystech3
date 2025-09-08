@@ -151,11 +151,11 @@ export const ErpStockMovements = () => {
     if (!qtyNum || qtyNum <= 0) { toast.error('Qtd inválida'); return; }
     setCreating(true);
 
-    // Obter usuário autenticado
-    let created_by = '-';
+    // Obter usuário autenticado (usar user.id que é UUID para coluna created_by)
+    let created_by: string | undefined = undefined;
     try {
       const { data: userRes } = await supabase.auth.getUser();
-      created_by = userRes?.user?.email || userRes?.user?.id || '-';
+      created_by = userRes?.user?.id || undefined;
     } catch (_) { /* ignore */ }
 
     try {
@@ -169,7 +169,7 @@ export const ErpStockMovements = () => {
         quantity: Math.abs(qtyNum),
         type,
         created_at: new Date().toISOString(),
-        created_by,
+  ...(created_by ? { created_by } : {}),
         ...(companyId ? { company_id: companyId } : {}),
       } as any;
 
