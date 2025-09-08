@@ -28,6 +28,7 @@ export interface Client {
   birth_date?: string; // ISO date
   sex?: string;
   marital_status?: string;
+  state_registration?: string; // Inscrição Estadual
   street?: string; number?: string; complement?: string; neighborhood?: string; city?: string; state?: string; zip?: string;
   phone_fixed?: string; phone_mobile?: string; whatsapp?: string;
   preferred_payment_method?: string;

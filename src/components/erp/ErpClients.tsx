@@ -259,8 +259,7 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
             </div>
             <div className="grid grid-cols-3 gap-2">
               <Input type="date" value={novo.birth_date||''} onChange={e=> setNovo({...novo, birth_date:e.target.value})} />
-              <Input value={novo.sex||''} onChange={e=> setNovo({...novo, sex:e.target.value})} placeholder="Sexo" />
-              <Input value={novo.marital_status||''} onChange={e=> setNovo({...novo, marital_status:e.target.value})} placeholder="Estado civil" />
+              <Input value={novo.state_registration||''} onChange={e=> setNovo({...novo, state_registration:e.target.value})} placeholder="Inscrição estadual" />
             </div>
             <div className="font-semibold text-xs text-muted-foreground uppercase mt-2">Endereço</div>
             <div className="grid grid-cols-3 gap-2">
@@ -272,7 +271,33 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
               <Input value={novo.neighborhood||''} onChange={e=> setNovo({...novo, neighborhood:e.target.value})} placeholder="Bairro" />
               <Input value={novo.city||''} onChange={e=> setNovo({...novo, city:e.target.value})} placeholder="Cidade" />
               <Input value={novo.state||''} onChange={e=> setNovo({...novo, state:e.target.value})} placeholder="UF" />
-              <Input value={novo.zip||''} onChange={e=> setNovo({...novo, zip:formatCEP(e.target.value)})} onBlur={e=> { if(!validateCEP(e.target.value)) toast.error('CEP inválido'); }} placeholder="CEP" />
+              <Input
+                value={novo.zip||''}
+                onChange={async e => {
+                  const zip = formatCEP(e.target.value);
+                  setNovo({ ...novo, zip });
+                  if (zip.length === 9 && validateCEP(zip)) {
+                    try {
+                      const res = await fetch(`https://viacep.com.br/ws/${zip.replace(/\D/g, '')}/json/`);
+                      const data = await res.json();
+                      if (!data.erro) {
+                        setNovo(n => ({
+                          ...n,
+                          street: data.logradouro || n.street || '',
+                          neighborhood: data.bairro || n.neighborhood || '',
+                          city: data.localidade || n.city || '',
+                          state: data.uf || n.state || '',
+                          zip
+                        }));
+                      }
+                    } catch {
+                      toast.error('Erro ao buscar endereço do CEP');
+                    }
+                  }
+                }}
+                onBlur={e=> { if(!validateCEP(e.target.value)) toast.error('CEP inválido'); }}
+                placeholder="CEP"
+              />
             </div>
             <div className="font-semibold text-xs text-muted-foreground uppercase mt-2">Contato</div>
             <div className="grid grid-cols-3 gap-2">

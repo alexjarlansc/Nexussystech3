@@ -160,7 +160,7 @@ export default function QuoteBuilder() {
   const [items, setItems] = useState<QuoteItemSnapshot[]>([]);
   // Campo de entrada do frete (pode ser valor fixo ou percentual ex: "5%")
   const [freight, setFreight] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Pix');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Pix'); // Valor inicial igual ao da lista
   const [paymentTerms, setPaymentTerms] = useState('');
   // Estrutura avançada de condições (parcelas)
   interface PaymentScheduleItem {
@@ -1197,7 +1197,7 @@ export default function QuoteBuilder() {
                 )}
                 <Label>Método de pagamento</Label>
                 <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}>
-                  <SelectTrigger><SelectValue placeholder="Método" /></SelectTrigger>
+                  <SelectTrigger />
                   <SelectContent>
                     {(['Pix','Cartão Débito','Cartão de Crédito','Boleto','Cupom Fiscal'] as PaymentMethod[]).map((m) => (
                       <SelectItem key={m} value={m}>{m}</SelectItem>

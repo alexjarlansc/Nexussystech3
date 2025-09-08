@@ -181,7 +181,7 @@ export default function Erp() {
         {/* Main content */}
         <main className="flex-1 overflow-auto">
           <ScrollArea id="erp-main-scroll" className="h-full">
-            <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+            <div key={section} className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
               {section === 'dashboard' && <ErpDashboard />}
               {section === 'clients' && <ErpClients />}
               {section === 'suppliers' && <ErpSuppliers />}
@@ -367,8 +367,9 @@ function ServiceSalesOrdersList(){
 function ErpNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
   return (
     <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-primary/10 text-left transition-colors ${active ? 'bg-primary/15 text-primary font-medium' : 'text-slate-600 dark:text-slate-300'}`}
+      onClick={active ? undefined : onClick}
+      disabled={active}
+      className={`w-full flex items-center gap-2 px-2 py-1 rounded-md hover:bg-primary/10 text-left transition-colors ${active ? 'bg-primary/15 text-primary font-medium opacity-60 cursor-default' : 'text-slate-600 dark:text-slate-300'}`}
     >
       {icon}<span className="truncate">{label}</span>
     </button>
