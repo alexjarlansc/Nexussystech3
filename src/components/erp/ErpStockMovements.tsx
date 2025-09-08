@@ -59,7 +59,10 @@ export const ErpStockMovements = () => {
     setLoading(true);
     try {
       const from = (page-1)*pageSize; const to = from + pageSize - 1;
-  const query = (supabase as any).from('inventory_movements').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(from,to);
+  let query = (supabase as any).from('inventory_movements').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(from,to);
+  if (companyId) {
+    query = query.eq('company_id', companyId);
+  }
   // Removido filtro de companyId pois inventory_movements não possui esse campo
   // Filtros desativados para garantir exibição de todos os registros
       const { data, error, count } = await query;
@@ -148,6 +151,7 @@ export const ErpStockMovements = () => {
         type,
         created_at: new Date().toISOString(),
         created_by,
+        ...(companyId ? { company_id: companyId } : {}),
       } as any;
 
       const { error } = await (supabase as any).from('inventory_movements').insert([payload]);
