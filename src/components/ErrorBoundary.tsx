@@ -23,6 +23,23 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('🚨 ErrorBoundary capturou um erro:', error, errorInfo);
+    try {
+      // Snapshot rápido dos filhos do body para entender quais Portals/elementos existem
+      const snapshot = Array.from(document.body.children).map((c) => ({
+        tag: c.tagName,
+        id: (c as HTMLElement).id || undefined,
+        class: (c as HTMLElement).className || undefined,
+        outerHTMLLength: c.outerHTML ? c.outerHTML.length : 0,
+      }));
+      console.debug('ErrorBoundary: document.body children snapshot:', snapshot);
+
+      // Buscar possíveis Portals/Dialogs (Radix/Reach/Role=dialog)
+      const portalNodes = Array.from(document.querySelectorAll('[data-radix-portal], [data-reach-dialog], [role="dialog"], .radix-portal'))
+        .map(n => ({ tag: (n as HTMLElement).tagName, id: (n as HTMLElement).id || undefined, class: (n as HTMLElement).className || undefined, outerHTMLLength: (n as HTMLElement).outerHTML?.length || 0 }));
+      console.debug('ErrorBoundary: possible portal/dialog nodes:', portalNodes);
+    } catch (e) {
+      console.debug('ErrorBoundary: failed to capture DOM snapshot', e);
+    }
   }
 
   private handleReload = () => {
