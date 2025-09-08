@@ -10,6 +10,8 @@ import { ErpSuppliers } from '@/components/erp/ErpSuppliers';
 import { ErpProducts } from '@/components/erp/ErpProducts';
 import { ErpCarriers } from '@/components/erp/ErpCarriers';
 import { ErpClients } from '@/components/erp/ErpClients';
+import { ErpProductGroups } from '@/components/erp/ErpProductGroups';
+import ProductsReplenish from '@/components/erp/ProductsReplenish';
 import ErpServiceOrders from '@/components/erp/ErpServiceOrders';
 import ErpStockMovements from '@/components/erp/ErpStockMovements';
 import ErpStockAdjustments from '@/components/erp/ErpStockAdjustments';
@@ -186,9 +188,9 @@ export default function Erp() {
               {section === 'carriers' && <ErpCarriers />}
               {section === 'products_manage' && <ErpProducts />}
               {section === 'products_pricing' && <ProductsPricingPlaceholder />}
-              {section === 'product_groups' && <ProductGroupsPlaceholder />}
+              {section === 'product_groups' && <ErpProductGroups />}
               {section === 'product_units' && <ProductUnitsPlaceholder />}
-              {section === 'product_variations' && <ProductVariationsPlaceholder />}
+              {section === 'product_variations' && <ProductsReplenish />}
               {section === 'product_labels' && <ProductLabelsPlaceholder />}
               {section === 'stock' && <StockPlaceholder />}
               {section === 'stock_movements' && <ErpStockMovements />}

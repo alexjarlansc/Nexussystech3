@@ -15,7 +15,7 @@ interface ClientPickerProps {
 function normalize(v: string){
   return (v||'')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g,'') // remove acentos
+  .replace(/[\u0300-\u036f]/g,'') // remove acentos
     .toLowerCase();
 }
 

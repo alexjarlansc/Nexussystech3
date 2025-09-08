@@ -20,7 +20,7 @@ const movementTypes = [
 
 export const ErpStockMovements = () => {
   const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<Tables<'stock_movements'>[]>([]);
+  const [rows, setRows] = useState<any[]>([]);
   const [page,setPage]=useState(1); const pageSize=50; const [total,setTotal]=useState(0);
   const [search, setSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
@@ -59,17 +59,9 @@ export const ErpStockMovements = () => {
     setLoading(true);
     try {
       const from = (page-1)*pageSize; const to = from + pageSize - 1;
-      let query = supabase.from('stock_movements').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(from,to);
-      if (companyId) query = query.eq('company_id', companyId);
-      if (typeFilter) query = query.eq('type', typeFilter);
-      if (search) query = query.ilike('reason', `%${search}%`);
-      if (productSearch) {
-  // Buscar produtos que batem com o termo
-  const { data: prodData } = await supabase.from('products').select('id').or(`name.ilike.%${productSearch}%,code.ilike.%${productSearch}%`);
-  const prodIds = prodData?.map((p: { id: string }) => p.id) || [];
-  if(prodIds.length) query = query.in('product_id', prodIds);
-  else query = query.in('product_id', ['']); // força vazio se não encontrar
-      }
+  const query = (supabase as any).from('inventory_movements').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(from,to);
+  // Removido filtro de companyId pois inventory_movements não possui esse campo
+  // Filtros desativados para garantir exibição de todos os registros
       const { data, error, count } = await query;
       if (error) throw error;
       setRows(data || []);
@@ -78,7 +70,7 @@ export const ErpStockMovements = () => {
       const msg = (e instanceof Error) ? e.message : 'Falha ao carregar movimentos';
       toast.error(msg);
     } finally { setLoading(false); }
-  }, [typeFilter, search, page, companyId, productSearch]);
+  }, [page]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadProducts(); }, []);
@@ -136,31 +128,46 @@ export const ErpStockMovements = () => {
     const qtyNum = parseFloat(form.qty.replace(',','.'));
     if (!qtyNum || qtyNum <= 0) { toast.error('Qtd inválida'); return; }
     setCreating(true);
+
+    // Obter usuário autenticado
+    let created_by = '-';
     try {
-      // Forçar qty negativo para movimentos de saída para garantir redução
+      const { data: userRes } = await supabase.auth.getUser();
+      created_by = userRes?.user?.email || userRes?.user?.id || '-';
+    } catch (_) { /* ignore */ }
+
+    try {
+      // Montar payload para inventory_movements
+      let type = 'AJUSTE';
+      if (form.type === 'IN') type = 'ENTRADA';
+      else if (form.type === 'OUT') type = 'SAIDA';
+
       const payload = {
-        p_product_id: form.product_id,
-        p_qty: form.type === 'OUT' ? -qtyNum : qtyNum,
-        p_type: form.type, // já no padrão (IN/OUT/ADJUSTMENT/TRANSFER/RETURN/EXCHANGE)
-        p_reason: form.reason || null,
-        p_location_from: form.loc_from || null,
-        p_location_to: form.loc_to || null,
-      };
-      const { error } = await supabase.rpc('register_stock_movement', payload);
+        product_id: form.product_id,
+        quantity: Math.abs(qtyNum),
+        type,
+        created_at: new Date().toISOString(),
+        created_by,
+      } as any;
+
+      const { error } = await (supabase as any).from('inventory_movements').insert([payload]);
       if (error) {
         toast.error('Erro ao registrar: ' + (error.message || JSON.stringify(error)));
-        if(import.meta.env.DEV) console.error('Erro detalhado:', error);
+        if (import.meta.env.DEV) console.error('Erro detalhado:', error);
         return;
       }
+
       toast.success('Movimento registrado');
       setCreateOpen(false);
       setForm({ product_id: '', qty: '', type: 'IN', reason: '', loc_from: '', loc_to: '' });
       load();
-    } catch(e){
+    } catch (e) {
       const msg = (e instanceof Error) ? e.message : 'Erro ao registrar';
       toast.error(msg);
-      if(import.meta.env.DEV) console.error('Erro inesperado:', e);
-    } finally { setCreating(false); }
+      if (import.meta.env.DEV) console.error('Erro inesperado:', e);
+    } finally {
+      setCreating(false);
+    }
   }
 
   function productName(id:string){
@@ -210,7 +217,9 @@ export const ErpStockMovements = () => {
                     key={p.id}
                     className='px-2 py-1 cursor-pointer hover:bg-muted/30'
                     onClick={() => {
-                      setProductSearch(p.code ? `${p.code} - ${p.name}` : p.name);
+                      setProductSearch('');
+                      setProductInput(p.code ? `${p.code} - ${p.name}` : p.name);
+                      setForm(f => ({ ...f, product_id: p.id }));
                       setProductSuggestions([]);
                     }}
                   >
@@ -220,19 +229,9 @@ export const ErpStockMovements = () => {
               </ul>
             )}
           </div>
-  </div>
-        <div className='flex flex-col'>
-          <span className='text-[11px] uppercase text-slate-500'>Tipo</span>
-          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} className='h-9 border rounded px-2 text-sm'>
-            <option value=''>Todos</option>
-            {movementTypes.map(t=> <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
         </div>
-        <Button onClick={()=>load()} variant='outline' size='sm'>Atualizar</Button>
-        <Button onClick={()=>setCreateOpen(true)} size='sm'>Novo Movimento</Button>
-        <Button onClick={exportCsv} variant='outline' size='sm'>Exportar CSV</Button>
       </div>
-      <div className='overflow-auto border rounded'>
+      <div className='overflow-x-auto'>
         <table className='w-full text-xs'>
           <thead className='bg-muted/50'>
             <tr>
@@ -250,13 +249,15 @@ export const ErpStockMovements = () => {
             {!loading && rows.length===0 && <tr><td colSpan={7} className='p-4 text-center text-slate-400'>Nenhum movimento</td></tr>}
             {!loading && rows.map(r => (
               <tr key={r.id} className='border-t hover:bg-muted/30'>
-                <td className='p-2'>{new Date(r.created_at).toLocaleString()}</td>
+                <td className='p-2'>
+                  {r.created_at ? new Date(r.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+                </td>
                 <td className='p-2' title={r.product_id}>{productName(r.product_id)}</td>
                 <td className='p-2'>{r.type}</td>
-                <td className={'p-2 font-mono ' + (r.signed_qty < 0 ? 'text-red-600' : 'text-green-600')}>{r.signed_qty}</td>
-                <td className='p-2'>{r.location || '-'}</td>
-                <td className='p-2 max-w-[220px] truncate' title={r.reason || ''}>{r.reason || '-'}</td>
-                <td className='p-2 text-[10px]'>{r.movement_group?.slice(0,8) || '-'}</td>
+                <td className={'p-2 font-mono ' + (r.type === 'SAIDA' ? 'text-red-600' : 'text-green-600')}>{r.quantity}</td>
+                <td className='p-2 text-xs text-muted-foreground'>
+                  {r.created_by ? r.created_by : '-'}
+                </td>
               </tr>
             ))}
           </tbody>
