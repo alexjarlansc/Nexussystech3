@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -30,6 +31,8 @@ export const ErpStockMovements = () => {
   const [form, setForm] = useState({ product_id: '', qty: '', type: 'IN', reason: '', loc_from: '', loc_to: '' });
   const [productInput, setProductInput] = useState('');
   const [companyId, setCompanyId] = useState<string|undefined>(undefined);
+  const [availableCompanies, setAvailableCompanies] = useState<Array<{id:string,name:string}>>([]);
+  const auth = useAuth();
   const [productSuggestions, setProductSuggestions] = useState<ProductOption[]>([]);
   // Carregar companyId do profile do usuário autenticado
   useEffect(()=>{(async()=>{
@@ -43,6 +46,22 @@ export const ErpStockMovements = () => {
       else console.warn('Profile sem company_id');
     } catch (err) { console.warn('Falha ao carregar company_id', err); }
   })();},[]);
+
+  // Se for admin, carregar lista de empresas disponíveis para seleção
+  useEffect(() => {
+    (async () => {
+      try {
+        if (auth.profile?.role === 'admin') {
+          const { data, error } = await supabase.from('companies').select('id,name').order('name');
+          if (!error && Array.isArray(data)) {
+            setAvailableCompanies((data as any[]).map(d => ({ id: String(d.id), name: String(d.name) })));
+          }
+        } else if (auth.profile?.company_id) {
+          setAvailableCompanies([{ id: auth.profile.company_id, name: auth.company?.name || 'Minha empresa' }]);
+        }
+      } catch (e) { if (import.meta.env.DEV) console.warn('Erro ao carregar empresas', e); }
+    })();
+  }, [auth.profile, auth.company]);
   // Corrigir valor inicial para 'ENTRADA'
   const [products, setProducts] = useState<ProductOption[]>([]);
 
@@ -234,7 +253,16 @@ export const ErpStockMovements = () => {
             )}
           </div>
         </div>
-        <div className='ml-auto flex gap-2'>
+        <div className='ml-auto flex items-center gap-2'>
+          {availableCompanies.length > 0 && (
+            <div className='flex items-center gap-2'>
+              <label className='text-xs text-muted-foreground'>Empresa</label>
+              <select value={companyId||''} onChange={e=>setCompanyId(e.target.value||undefined)} className='h-9 border rounded px-2 text-sm'>
+                <option value=''>Todas</option>
+                {availableCompanies.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
+              </select>
+            </div>
+          )}
           <Button size='sm' onClick={()=>setCreateOpen(true)}>Novo Movimento</Button>
           <Button size='sm' variant='outline' onClick={exportCsv}>Exportar</Button>
         </div>
