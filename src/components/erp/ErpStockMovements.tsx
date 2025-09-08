@@ -199,8 +199,8 @@ export const ErpStockMovements = () => {
 
   return (
     <div className='space-y-4'>
-      <div className='flex gap-2 items-end flex-wrap'>
-        <div className='flex flex-col'>
+  <div className='flex gap-2 items-end flex-wrap'>
+  <div className='flex flex-col'>
           <span className='text-[11px] uppercase text-slate-500'>Buscar Motivo</span>
           <Input value={search} onChange={e=>setSearch(e.target.value)} placeholder='Motivo...' className='h-9 w-52' />
         </div>
@@ -233,6 +233,10 @@ export const ErpStockMovements = () => {
               </ul>
             )}
           </div>
+        </div>
+        <div className='ml-auto flex gap-2'>
+          <Button size='sm' onClick={()=>setCreateOpen(true)}>Novo Movimento</Button>
+          <Button size='sm' variant='outline' onClick={exportCsv}>Exportar</Button>
         </div>
       </div>
       <div className='overflow-x-auto'>
