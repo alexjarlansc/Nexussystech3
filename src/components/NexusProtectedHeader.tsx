@@ -169,8 +169,7 @@ export function NexusProtectedHeader() {
               {/* ERP acessível a todos usuários autenticados */}
               <Link
                 to="/erp"
-                onClick={e => {
-                  // debug do clique e estados relevantes
+                onClick={async (e) => {
                   console.debug('[Header] ERP click', { openProfile, openCompany, openInvites, path: window.location.pathname });
                   try { e.preventDefault(); e.stopPropagation(); } catch(_) {}
                   // fechar possíveis modais abertos imediatamente
@@ -179,19 +178,29 @@ export function NexusProtectedHeader() {
                   setOpenInvites(false);
                   // remover foco ativo que pode capturar o primeiro clique
                   try { (document.activeElement as HTMLElement | null)?.blur(); } catch(_) {}
-                  // Aumentar o atraso para permitir que Portals (Radix) completem animações e unmounts.
-                  // Observamos que 80ms não foi suficiente em alguns casos; usar 300ms reduz race conditions.
-                  setTimeout(() => {
-                    try {
-                      navigate('/erp');
-                      console.debug('[Header] navigate called (deferred)');
-                      // fallback se SPA navigation for bloqueada
-                      setTimeout(() => { if (window.location.pathname !== '/erp') window.location.href = '/erp'; }, 400);
-                    } catch (err) {
-                      console.error('[Header] navigation error', err);
-                      window.location.href = '/erp';
-                    }
-                  }, 300);
+
+                  // Helper: aguarda até que não haja portais/dialogs no DOM ou até timeout
+                  const waitForNoPortals = (timeout = 1200) => new Promise<boolean>((resolve) => {
+                    const start = Date.now();
+                    const check = () => {
+                      const portals = document.querySelectorAll('[data-radix-portal], [data-reach-dialog], [role="dialog"], .radix-portal, [data-radix-select-content]');
+                      if (portals.length === 0) return resolve(true);
+                      if (Date.now() - start > timeout) return resolve(false);
+                      setTimeout(check, 50);
+                    };
+                    check();
+                  });
+
+                  const cleared = await waitForNoPortals(1200);
+                  console.debug('[Header] portals cleared before navigate?', cleared);
+                  try {
+                    navigate('/erp');
+                    // fallback se SPA navigation for bloqueada
+                    setTimeout(() => { if (window.location.pathname !== '/erp') window.location.href = '/erp'; }, 400);
+                  } catch (err) {
+                    console.error('[Header] navigation error', err);
+                    window.location.href = '/erp';
+                  }
                 }}
                 className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted order-0"
                 aria-label="ERP"
