@@ -170,24 +170,29 @@ export function NexusProtectedHeader() {
               <Link
                 to="/erp"
                 onClick={e => {
+                  // debug do clique e estados relevantes
                   console.debug('[Header] ERP click', { openProfile, openCompany, openInvites, path: window.location.pathname });
-                  // navegação programática para forçar rota no primeiro clique
-                  try {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  } catch(_) {}
-                  // fechar possíveis modais abertos
+                  try { e.preventDefault(); e.stopPropagation(); } catch(_) {}
+                  // fechar possíveis modais abertos imediatamente
                   setOpenProfile(false);
                   setOpenCompany(false);
                   setOpenInvites(false);
-                  console.debug('[Header] after close modals, navigating');
                   // remover foco ativo que pode capturar o primeiro clique
                   try { (document.activeElement as HTMLElement | null)?.blur(); } catch(_) {}
-                  // navegação normal via react-router
-                  navigate('/erp');
-                  console.debug('[Header] navigate called');
-                  // fallback para garantir que a rota seja recarregada caso algo bloqueie a navegação SPA
-                  setTimeout(() => { if (window.location.pathname !== '/erp') window.location.href = '/erp'; }, 250);
+                  // Atrasar a navegação por uma pequena fração para permitir que Portals (Radix) completem
+                  // suas rotinas de unmount antes do React desmontar o componente pai — evita condições
+                  // de corrida que podem levar a erros como "removeChild: node is not a child".
+                  setTimeout(() => {
+                    try {
+                      navigate('/erp');
+                      console.debug('[Header] navigate called (deferred)');
+                      // fallback se SPA navigation for bloqueada
+                      setTimeout(() => { if (window.location.pathname !== '/erp') window.location.href = '/erp'; }, 300);
+                    } catch (err) {
+                      console.error('[Header] navigation error', err);
+                      window.location.href = '/erp';
+                    }
+                  }, 80);
                 }}
                 className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted order-0"
                 aria-label="ERP"
