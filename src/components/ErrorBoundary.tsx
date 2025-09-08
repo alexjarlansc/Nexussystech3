@@ -40,6 +40,37 @@ export class ErrorBoundary extends Component<Props, State> {
     } catch (e) {
       console.debug('ErrorBoundary: failed to capture DOM snapshot', e);
     }
+    // Patch Node.prototype.removeChild once (dev only) to log detailed diagnostics
+    try {
+      const w = window as any;
+      if (!w.__removeChildPatched) {
+        const orig = Node.prototype.removeChild;
+        Node.prototype.removeChild = function(child: Node) {
+          try {
+            return orig.call(this, child);
+          } catch (err) {
+            try {
+              const parent = this as HTMLElement;
+              const childInfo = child && child.nodeType ? {
+                nodeName: (child as HTMLElement).nodeName,
+                id: (child as HTMLElement).id || undefined,
+                className: (child as HTMLElement).className || undefined,
+                outerHTMLSnippet: ((child as HTMLElement).outerHTML || '').slice(0, 300)
+              } : child;
+              const parentChildren = parent && parent.children ? Array.from(parent.children).map(c => ({ nodeName: c.nodeName, id: (c as HTMLElement).id || undefined, className: (c as HTMLElement).className || undefined })) : [];
+              console.error('removeChild PATCH ERROR: parent:', parent, 'child:', childInfo, 'parentChildren:', parentChildren, 'originalError:', err, '\nstack:', new Error().stack);
+            } catch (inner) {
+              console.error('removeChild PATCH failed to introspect nodes', inner);
+            }
+            throw err;
+          }
+        };
+        w.__removeChildPatched = true;
+        console.debug('ErrorBoundary: Node.prototype.removeChild patched for diagnostics');
+      }
+    } catch (e) {
+      console.debug('ErrorBoundary: failed to patch removeChild', e);
+    }
   }
 
   private handleReload = () => {
