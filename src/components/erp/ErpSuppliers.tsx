@@ -92,7 +92,7 @@ export function ErpSuppliers() {
       {debugEnabled ? 'Debug ON':'Debug'}
     </Button>
   )}
-        <div className="text-xs text-muted-foreground ml-auto">{loading ? 'Carregando...' : suppliers.length + ' registros'}</div>
+  <div className="text-xs text-muted-foreground ml-auto">{loading ? 'Carregando...' : suppliers.length + ' registros'}</div>
       </div>
       <Card className="p-0 overflow-hidden">
         <table className="w-full text-sm">
@@ -126,7 +126,7 @@ export function ErpSuppliers() {
   {import.meta.env.DEV && debugEnabled && debugInfo && (
         <div className="text-[10px] font-mono bg-muted/30 p-2 rounded border max-w-full overflow-auto">
           <div className="font-semibold mb-1 flex items-center justify-between">
-            <span>DEBUG Suppliers</span>
+            <span>DEBUG Fornecedores</span>
             <button className="text-xs underline" onClick={()=> setDebugInfo(null)}>fechar</button>
           </div>
           <pre className="whitespace-pre-wrap break-all">{JSON.stringify({count: suppliers.length, debugInfo}, null, 2)}</pre>

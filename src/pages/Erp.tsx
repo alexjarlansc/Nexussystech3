@@ -18,6 +18,10 @@ import ErpStockAdjustments from '@/components/erp/ErpStockAdjustments';
 import ErpStockTransfers from '@/components/erp/ErpStockTransfers';
 import ErpStockReturns from '@/components/erp/ErpStockReturns';
 import { StockLoader } from '@/components/erp/StockLoader';
+import ProductLabels from '@/components/erp/ProductLabels';
+import FinancePayables from '@/components/erp/FinancePayables';
+import FinanceReceivables from '@/components/erp/FinanceReceivables';
+import FinanceDashboard from '@/components/erp/FinanceDashboard';
 import { Tables } from '@/integrations/supabase/types';
 import { ErpPurchasesList } from '@/components/erp/ErpPurchasesList';
 import { ErpPurchaseXmlImport } from '@/components/erp/ErpPurchaseXmlImport';
@@ -167,7 +171,7 @@ export default function Erp() {
             </div>
             <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Relatórios" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Dashboard (KPIs)" active={section==='reports_dashboard'} onClick={()=>setSection('reports_dashboard')} />
+              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Painel (KPIs)" active={section==='reports_dashboard'} onClick={()=>setSection('reports_dashboard')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Estoque completo" active={section==='report_stock_full'} onClick={()=>setSection('report_stock_full')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Vendas completo" active={section==='report_sales_full'} onClick={()=>setSection('report_sales_full')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Financeiro completo" active={section==='report_finance_full'} onClick={()=>setSection('report_finance_full')} />
@@ -182,7 +186,7 @@ export default function Erp() {
         <main className="flex-1 overflow-auto">
           <ScrollArea id="erp-main-scroll" className="h-full">
             <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
-              {section === 'dashboard' && <ErpDashboard />}
+              {section === 'dashboard' && <FinanceDashboard />}
               {section === 'clients' && <ErpClients />}
               {section === 'suppliers' && <ErpSuppliers />}
               {section === 'carriers' && <ErpCarriers />}
@@ -191,7 +195,7 @@ export default function Erp() {
               {section === 'product_groups' && <ErpProductGroups />}
               {section === 'product_units' && <ProductUnitsPlaceholder />}
               {section === 'product_variations' && <ProductsReplenish />}
-              {section === 'product_labels' && <ProductLabelsPlaceholder />}
+              {section === 'product_labels' && <ProductLabels />}
               {section === 'stock' && <StockPlaceholder />}
               {section === 'stock_movements' && <ErpStockMovements />}
               {section === 'services' && <ServicesPlaceholder />}
@@ -206,8 +210,8 @@ export default function Erp() {
               {section === 'purchases_xml' && <ErpPurchaseXmlImport />}
               {section === 'purchases_returns' && <ErpPurchaseReturns />}
               {section === 'purchases_history' && <ErpPurchasesList />}
-              {section === 'fin_payables' && <FinancePayablesPlaceholder />}
-              {section === 'fin_receivables' && <FinanceReceivablesPlaceholder />}
+              {section === 'fin_payables' && <FinancePayables />}
+              {section === 'fin_receivables' && <FinanceReceivables />}
               {section === 'fin_payroll' && <FinancePayrollPlaceholder />}
               {section === 'fiscal_docs' && <FiscalDocsPlaceholder />}
               {section === 'report_stock_full' && <ReportStockFull />}
@@ -554,7 +558,7 @@ function ProductsPricingPlaceholder(){
   async function fetchOne(){
     if(!search.trim()) return; setLoading(true);
     try {
-      let q = (supabase as any).from('products').select('*').or(`name.ilike.%${search}%,code.ilike.%${search}%`).limit(1);
+  const q = (supabase as any).from('products').select('*').or(`name.ilike.%${search}%,code.ilike.%${search}%`).limit(1);
       const { data, error } = await q;
       if(error) throw error;
       if(data && data[0]){
@@ -638,7 +642,7 @@ function ProductsPricingPlaceholder(){
       <div>
         <label className="block text-[10px] font-medium uppercase mb-1">Custo</label>
         <Input value={rawCost} onChange={e=>{
-          const only = e.target.value.replace(/[^0-9,\.,]/g,'');
+          const only = e.target.value.replace(/[^0-9.,]/g,'');
           setRawCost(only);
           const normalized = only.replace(',','.');
           const num = Number(normalized);
@@ -664,7 +668,7 @@ function ProductsPricingPlaceholder(){
       {calcMode==='reverse' && <div>
         <label className="block text-[10px] font-medium uppercase mb-1">Preço Venda</label>
         <Input value={rawSale} onChange={e=>{
-          const only = e.target.value.replace(/[^0-9,\.,]/g,'');
+          const only = e.target.value.replace(/[^0-9.,]/g,'');
           setRawSale(only);
           const normalized = only.replace(',','.');
           const num = Number(normalized); if(!isNaN(num)) setSale(num); else if(only==='') setSale(undefined);
@@ -865,7 +869,8 @@ function BudgetsPlaceholder(){
   let q = (supabase as any).from('quotes').select('*').eq('type','ORCAMENTO').order('created_at',{ascending:false}).limit(200);
     // Se o usuário não for admin, filtrar por company_id do profile
     try {
-      const { data: session } = await supabase.auth.getSession();
+      const { data } = await supabase.auth.getSession();
+      const session = data?.session ?? null;
       const uid = session?.user?.id;
       if (uid) {
         const { data: prof } = await supabase.from('profiles').select('company_id,role').eq('user_id', uid).single();

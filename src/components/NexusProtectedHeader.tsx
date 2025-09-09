@@ -143,7 +143,11 @@ export function NexusProtectedHeader() {
               aria-label="Ir para início"
               className="flex items-center gap-3 min-w-0 group cursor-pointer select-none pr-4 mr-auto -ml-1 sm:-ml-2"
             >
-              <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0 transition-transform group-hover:scale-105" />
+              { (company?.logo_url || logoDataUrl) ? (
+                <img src={company?.logo_url || logoDataUrl} alt={company?.name || 'Logo'} className="h-7 w-7 sm:h-8 sm:w-8 object-contain flex-shrink-0 rounded-sm bg-white border" />
+              ) : (
+                <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0 transition-transform group-hover:scale-105" />
+              ) }
               <div className="leading-tight min-w-0">
                 <h1 className="font-bold text-primary text-lg sm:text-xl tracking-tight group-hover:opacity-90">Nexus System</h1>
                 <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px] group-hover:text-primary/80 transition-colors">
@@ -171,13 +175,13 @@ export function NexusProtectedHeader() {
                 to="/erp"
                 onClick={async (e) => {
                   console.debug('[Header] ERP click', { openProfile, openCompany, openInvites, path: window.location.pathname });
-                  try { e.preventDefault(); e.stopPropagation(); } catch(_) {}
+                  try { e.preventDefault(); e.stopPropagation(); } catch(_) { /* ignore */ }
                   // fechar possíveis modais abertos imediatamente
                   setOpenProfile(false);
                   setOpenCompany(false);
                   setOpenInvites(false);
                   // remover foco ativo que pode capturar o primeiro clique
-                  try { (document.activeElement as HTMLElement | null)?.blur(); } catch(_) {}
+                  try { (document.activeElement as HTMLElement | null)?.blur(); } catch(_) { /* ignore */ }
 
                   // Helper: aguarda até que não haja portais/dialogs no DOM ou até timeout
                   const waitForNoPortals = (timeout = 1200) => new Promise<boolean>((resolve) => {
