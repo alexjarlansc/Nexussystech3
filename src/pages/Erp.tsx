@@ -1267,48 +1267,250 @@ function BaseReportWrapper({ title, description, children, onExport, onExportXls
 }
 
 function ReportStockFull(){
-  // MVP aprimorado: limite + soma total
-  const [rows,setRows]=useState<any[]>([]);
+  // Implementação hierárquica: carregar product_groups, product_stock, produtos e últimas saídas
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState('');
-  const LIMIT=1500;
+  const [groups,setGroups]=useState<{id:string;name:string;level:number;parent_id:string|null}[]>([]);
+  const [flatProducts,setFlatProducts]=useState<any[]>([]); // produtos com stock e preços
+  const [expanded,setExpanded]=useState<Record<string,boolean>>({});
+  const [page,setPage]=useState(1);
+  const [pageSize,setPageSize]=useState(250);
+
   useEffect(()=>{(async()=>{
     setLoading(true);
-    try {
-      let q = (supabase as any).from('product_stock').select('*').order('product_id').limit(LIMIT);
-      if (search) q = q.ilike('product_id','%'+search+'%');
-      const { data, error } = await q;
-      if (error) throw error;
-      setRows(data||[]);
-    } catch(e:any){ toast.error(e.message); } finally { setLoading(false); }
+    try{
+      // carregar grupos (nivéis 1..3)
+      const { data: pg, error: pgErr } = await (supabase as any).from('product_groups').select('id,name,level,parent_id').order('level').order('name');
+      if(pgErr) throw pgErr;
+      setGroups(pg||[]);
+
+      // carregar product_stock (todos até limite razoável)
+      const LIMIT = 2000;
+      let q = (supabase as any).from('product_stock').select('*').limit(LIMIT);
+      if(search) q = q.ilike('product_id','%'+search+'%');
+      const { data: stocks, error: stockErr } = await q;
+      if(stockErr) throw stockErr;
+      const stockRows = (stocks||[]) as any[];
+
+      // buscar produtos correspondentes para enriquecer
+      const ids = stockRows.map((s:any)=> String(s.product_id)).filter(Boolean);
+      let products: any[] = [];
+      if(ids.length){
+        // tentamos primeiro por id
+        const { data: prodsById, error: prodErr1 } = await (supabase as any).from('products').select('id,code,name,cost_price,sale_price,product_group_id').in('id', ids).limit(2000);
+        if(prodErr1) console.warn('prodById err', prodErr1);
+        // se alguns ids não baterem, tentar buscar por code (algumas bases usam código como product_id em product_stock)
+        const foundIds = (prodsById||[]).map((p:any)=> String(p.id));
+        const missing = ids.filter(i => !foundIds.includes(i));
+        let prodsByCode: any[] = [];
+        if(missing.length){
+          try{
+            const { data: byCode } = await (supabase as any).from('products').select('id,code,name,cost_price,sale_price,product_group_id').in('code', missing).limit(2000);
+            prodsByCode = byCode || [];
+          }catch(err){ console.warn('prodByCode lookup failed', err); }
+        }
+        products = [...(prodsById||[]), ...prodsByCode];
+        console.debug('[ReportStockFull] products found by id:', (prodsById||[]).length, 'by code fallback:', prodsByCode.length, 'missing stock rows:', ids.length - ((prodsById||[]).length + prodsByCode.length));
+      }
+
+      // buscar última saída (inventory_movements type='SAIDA') por produto
+      let lastOutMap: Record<string,string|null> = {};
+      if(ids.length){
+        const { data: movs } = await (supabase as any).from('inventory_movements').select('product_id,created_at').in('product_id', ids).eq('type','SAIDA').order('created_at',{ascending:false}).limit(20000);
+        (movs||[]).forEach((m:any)=>{
+          if(!lastOutMap[m.product_id]) lastOutMap[m.product_id] = m.created_at;
+        });
+      }
+
+      // unir dados
+      const prodById: Record<string, any> = {};
+      products.forEach(p=> prodById[String(p.id)] = p);
+      const enriched = stockRows.map(s=>{
+        const pid = String(s.product_id);
+        const p = prodById[pid] || { id: pid, name: pid, code: pid, cost_price: 0, sale_price: 0, product_group_id: undefined };
+        return {
+          product_id: pid,
+          code: p.code || '',
+          name: p.name || pid,
+          stock: Number(s.stock||0),
+          reserved: Number(s.reserved||0),
+          available: Number(s.available ?? (Number(s.stock||0) - Number(s.reserved||0))),
+          cost_price: Number(p.cost_price||0),
+          sale_price: Number(p.sale_price||p.price||0),
+          product_group_id: p.product_group_id || null,
+          last_sale_at: lastOutMap[pid] || null
+        };
+      });
+      setFlatProducts(enriched);
+    }catch(e:any){ console.error('ReportStockFull error', e); toast.error(extractErr(e)); }
+    finally{ setLoading(false); }
   })();},[search]);
-  const totalQtd = rows.reduce((s:any,r:any)=> s + Number(r.stock||0),0);
-  const [page,setPage]=useState(1); const pageSize = 100; const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const pageRows = rows.slice((page-1)*pageSize, page*pageSize);
-  return <BaseReportWrapper title="Estoque Completo" description="Posição atual de estoque por produto (limite 1500 registros)" onExport={()=>exportCsv(rows,'estoque_completo.csv')} onExportXlsx={()=>exportXlsx(rows,'estoque_completo.xlsx')}>
+
+  // construir árvore flattened para renderizar com expand/collapse
+  function buildTree(){
+    const groupById: Record<string, any> = {};
+    groups.forEach(g=> groupById[g.id] = { ...g, children: [], totals: { stock:0, reserved:0, totalCost:0, totalSale:0 } });
+
+    // criar raízes map
+    const roots: any[] = [];
+    groups.forEach(g=>{
+      if(g.parent_id) {
+        const parent = groupById[g.parent_id]; if(parent) parent.children.push(groupById[g.id]); else roots.push(groupById[g.id]);
+      } else roots.push(groupById[g.id]);
+    });
+
+    // atribuir produtos às sessões (level 3) — se sem grupo, colocar em raíz especial
+    const ungroupedProducts: any[] = [];
+    flatProducts.forEach(pr=>{
+      const gid = pr.product_group_id;
+      if(gid && groupById[gid]){
+        groupById[gid].children = groupById[gid].children || [];
+        groupById[gid].children.push({ ...pr, __isProduct:true });
+      } else {
+        ungroupedProducts.push({ ...pr, __isProduct:true });
+      }
+    });
+    if(ungroupedProducts.length) roots.push({ id: 'ungrouped', name: 'Sem Categoria', level: 0, parent_id: null, children: ungroupedProducts, totals: {} });
+
+    // agregações recursivas (soma de filhos produto e grupos)
+    function agg(node:any){
+      if(node.__isProduct){
+        const stock = Number(node.stock||0);
+        const reserved = Number(node.reserved||0);
+        const totalCost = (Number(node.cost_price||0) * stock);
+        const totalSale = (Number(node.sale_price||0) * stock);
+        return { stock, reserved, totalCost, totalSale };
+      }
+      let acc = { stock:0, reserved:0, totalCost:0, totalSale:0 };
+      (node.children||[]).forEach((c:any)=>{
+        const childAgg = agg(c);
+        acc.stock += childAgg.stock;
+        acc.reserved += childAgg.reserved;
+        acc.totalCost += childAgg.totalCost;
+        acc.totalSale += childAgg.totalSale;
+      });
+      node.totals = acc;
+      return acc;
+    }
+    roots.forEach(r=> agg(r));
+
+    // flatenar para renderizar linhas com nível (depth)
+    const rows: any[] = [];
+    function pushNode(n:any, depth:number){
+      rows.push({ node: n, depth });
+      const id = n.id;
+      if(n.children && n.children.length && expanded[id]){
+        n.children.forEach((c:any)=> pushNode(c, depth+1));
+      }
+    }
+    roots.forEach(r=> pushNode(r, 0));
+    return rows;
+  }
+
+  // util: expandir tudo / contrair tudo (aplica apenas a nós grupos)
+  function expandAll(){
+    const map: Record<string,boolean> = {};
+    groups.forEach(g=> { if(g.id) map[g.id]=true; });
+    setExpanded(map);
+  }
+  function collapseAll(){ setExpanded({}); }
+
+  const flatForExport = flatProducts.map(p=> ({ product_id: p.product_id, code: p.code, name: p.name, stock: p.stock, reserved: p.reserved, cost_price: p.cost_price, sale_price: p.sale_price }));
+
+  const rowsToRender = buildTree();
+  const totalPages = Math.max(1, Math.ceil(rowsToRender.length / pageSize));
+  const pageRows = rowsToRender.slice((page-1)*pageSize, page*pageSize);
+
+  function toggle(id:string){ setExpanded(e=> ({ ...e, [id]: !e[id] })); }
+
+  function daysSince(dateStr:any){ if(!dateStr) return '-'; try{ const d = new Date(dateStr); const diff = Date.now() - d.getTime(); return Math.floor(diff / (1000*60*60*24)); }catch{ return '-'; } }
+
+  const totalQtd = flatProducts.reduce((s:any,r:any)=> s + Number(r.stock||0),0);
+  const missingMatches = flatProducts.filter(p=> (p.name||'') === String(p.product_id)).length;
+
+  return <BaseReportWrapper title="Estoque Completo" description="Posição atual de estoque agrupada por Categoria › Setor › Sessão" onExport={()=>exportCsv(flatForExport,'estoque_completo.csv')} onExportXlsx={()=>exportXlsx(flatForExport,'estoque_completo.xlsx')}>
     <div className="flex gap-2 mb-2 text-xs flex-wrap items-end">
-      <Input placeholder="Produto" value={search} onChange={e=>setSearch(e.target.value)} className="w-40 h-8" />
+      <Input placeholder="Produto (nome ou código)" value={search} onChange={e=>{ setSearch(e.target.value); setPage(1); }} className="w-56 h-8" />
       <Button size="sm" variant="outline" onClick={()=>setSearch('')}>Limpar</Button>
+      <div className="ml-2 flex gap-2">
+        <Button size="sm" variant="ghost" onClick={expandAll}>Expandir tudo</Button>
+        <Button size="sm" variant="ghost" onClick={collapseAll}>Contrair tudo</Button>
+      </div>
       <div className="ml-auto flex gap-4 font-medium text-[11px]">
-        <span>SKUs: {rows.length}</span>
+        <span>SKUs: {flatProducts.length}</span>
         <span>Total Estoque: {totalQtd}</span>
       </div>
     </div>
-    <div className="border rounded max-h-[480px] overflow-auto">
+  {missingMatches>0 && <div className="text-sm text-amber-600">Aviso: {missingMatches} registros de estoque não tiveram produto correspondente (busca por id/code pode ser necessário).</div>}
+  <div className="border rounded max-h-[640px] overflow-auto">
       <table className="w-full text-xs">
-        <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Produto</th><th className="px-2 py-1 text-right">Estoque</th></tr></thead>
+        <thead className="bg-muted/50 sticky top-0"><tr>
+          <th className="px-2 py-1 text-left">Categoria / Produto</th>
+          <th className="px-2 py-1 text-right">Qtd</th>
+          <th className="px-2 py-1 text-right">Reservado</th>
+          <th className="px-2 py-1 text-right">Custo Médio</th>
+          <th className="px-2 py-1 text-right">R$ Venda</th>
+          <th className="px-2 py-1 text-right">R$ Total (Custo)</th>
+          <th className="px-2 py-1 text-right">R$ Total (Venda)</th>
+          <th className="px-2 py-1 text-right">Dias sem saída</th>
+        </tr></thead>
         <tbody>
-          {loading && <tr><td colSpan={2} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
-          {!loading && rows.length===0 && <tr><td colSpan={2} className="text-center py-6 text-muted-foreground">Sem dados</td></tr>}
-          {!loading && pageRows.map(r=> <tr key={r.product_id} className="border-t"><td className="px-2 py-1">{r.product_id}</td><td className="px-2 py-1 text-right">{r.stock}</td></tr>)}
+          {loading && <tr><td colSpan={8} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          {!loading && rowsToRender.length===0 && <tr><td colSpan={8} className="text-center py-6 text-muted-foreground">Sem dados</td></tr>}
+          {!loading && pageRows.map((r:any, idx:number)=>{
+            const n = r.node; const depth = r.depth;
+            const isProduct = !!n.__isProduct;
+            const indent = { paddingLeft: `${depth * 18 + 8}px` };
+            if(isProduct){
+              const cost = Number(n.cost_price||0);
+              const sale = Number(n.sale_price||0);
+              const totalCost = cost * Number(n.stock||0);
+              const totalSale = sale * Number(n.stock||0);
+              return <tr key={(n.product_id||n.id)+'-'+idx} className="border-t">
+                <td className="px-2 py-1" style={indent}><span className="text-[11px]">{n.code? <span className="font-mono mr-2">{n.code}</span>:null}{n.name}</span></td>
+                <td className="px-2 py-1 text-right">{n.stock}</td>
+                <td className="px-2 py-1 text-right">{n.reserved}</td>
+                <td className="px-2 py-1 text-right">{cost.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                <td className="px-2 py-1 text-right">{sale.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                <td className="px-2 py-1 text-right">{totalCost.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                <td className="px-2 py-1 text-right">{totalSale.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                <td className="px-2 py-1 text-right">{daysSince(n.last_sale_at)}</td>
+              </tr>;
+            }
+            // group row
+            const t = n.totals || { stock:0, reserved:0, totalCost:0, totalSale:0 };
+            const avgCost = t.stock? (t.totalCost / t.stock) : 0;
+            const avgSale = t.stock? (t.totalSale / t.stock) : 0;
+            return <tr key={String(n.id)+'-'+idx} className="border-t bg-gray-50">
+              <td className="px-2 py-1" style={indent}>
+                {n.children && n.children.length ? <button className="mr-2" onClick={()=>toggle(String(n.id))}>{expanded[String(n.id)]? '▾':'▸'}</button> : <span className="mr-4"/>}
+                <span className="font-medium">{n.name}</span>
+              </td>
+              <td className="px-2 py-1 text-right font-medium">{t.stock}</td>
+              <td className="px-2 py-1 text-right">{t.reserved}</td>
+              <td className="px-2 py-1 text-right">{avgCost.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+              <td className="px-2 py-1 text-right">{avgSale.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+              <td className="px-2 py-1 text-right">{t.totalCost.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+              <td className="px-2 py-1 text-right">{t.totalSale.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+              <td className="px-2 py-1 text-right">-</td>
+            </tr>;
+          })}
         </tbody>
       </table>
     </div>
-    <div className="flex justify-between items-center mt-2 text-[11px] text-muted-foreground">
-      <span>Página {page} de {totalPages}</span>
-      <div className="flex gap-2">
+    <div className="flex items-center justify-between mt-2 text-[11px] text-muted-foreground">
+      <div>Linhas: {rowsToRender.length}</div>
+      <div className="flex items-center gap-2">
+        <div className="text-xs">Página</div>
         <Button size="sm" variant="outline" disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</Button>
+        <div className="px-2">{page} / {totalPages}</div>
         <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
+        <select value={pageSize} onChange={e=>{ setPageSize(Number(e.target.value)); setPage(1); }} className="h-8 border rounded px-2 text-xs">
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+          <option value={250}>250</option>
+          <option value={500}>500</option>
+        </select>
       </div>
     </div>
   </BaseReportWrapper>;

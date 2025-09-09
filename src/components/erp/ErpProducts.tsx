@@ -69,6 +69,7 @@ export function ErpProducts(){
   const [imageFile,setImageFile]=useState<File|null>(null);
   const [confirmDelete,setConfirmDelete]=useState<null|Product>(null);
   const [extendedCols,setExtendedCols]=useState(true); // se false não enviar campos novos
+  const [hasProductGroupCol, setHasProductGroupCol] = useState<boolean>(true);
   const [companyId,setCompanyId]=useState<string|undefined>(undefined);
 
   type ProductRow = Product & { created_at?: string };
@@ -292,6 +293,22 @@ export function ErpProducts(){
     })();
   },[]);
 
+  // checar existência da coluna product_group_id para evitar PGRST204 quando a migration
+  // não foi aplicada no banco em produção
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const t = await (supabase as unknown as { from:any }).from('products').select('product_group_id').limit(1);
+        if(t && (t as any).error){
+          setHasProductGroupCol(false);
+          if(import.meta.env.DEV) console.warn('product_group_id ausente na tabela products');
+        } else {
+          setHasProductGroupCol(true);
+        }
+      }catch(e){ setHasProductGroupCol(false); if(import.meta.env.DEV) console.warn('Erro ao checar product_group_id', e); }
+    })();
+  },[]);
+
   async function save(imageUrlOverride?: string){
   if(!form.name.trim()){ toast.error('Nome obrigatório'); return; }
     if(!form.code || !form.code.trim()){
@@ -325,15 +342,24 @@ export function ErpProducts(){
       form.image_url = undefined;
     }
     if(isNaN(salePrice)){ toast.error('Preço inválido'); return; }
-  setSaving(true);
+    // Validar obrigatoriedade da hierarquia de grupos apenas se a coluna existir no DB
+    if(hasProductGroupCol){
+      if(!(selectedCategoryId && selectedSectorId && form.product_group_id)){
+        toast.error('Categoria, Setor e Sessão são obrigatórios');
+        return;
+      }
+    }
+
+    setSaving(true);
     try {
   const effectiveImageUrl = imageUrlOverride !== undefined ? imageUrlOverride : form.image_url;
   const payload: Record<string, unknown> = {
         name: form.name.trim(),
         description: form.description||null,
   code: (form.code && form.code !== 'sample_code') ? form.code : null,
-        category: form.category||null,
-  product_group_id: form.product_group_id||null,
+    category: form.category||null,
+    // product_group_id may not exist in older DB schemas; include only if detected
+    ...(hasProductGroupCol ? { product_group_id: form.product_group_id||null } : {}),
         brand: form.brand||null,
         model: form.model||null,
         unit: form.unit||null,
@@ -640,7 +666,7 @@ export function ErpProducts(){
                     setForm(f=>({...f, product_group_id: undefined, category: productGroups.find(x=>x.id===sel)?.name || f.category }));
                   }}>
                   <option value="">Setor (opcional)</option>
-                  {productGroups.filter(pg=>pg.level===2).map(s=> <option key={s.id} value={s.id}>{productGroups.find(c=>c.id===s.parent_id)?.name ? `${productGroups.find(c=>c.id===s.parent_id)?.name} › ${s.name}` : s.name}</option>)}
+                  {productGroups.filter(pg=>pg.level===2).map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
               <div>
@@ -659,11 +685,14 @@ export function ErpProducts(){
                     }
                   }}>
                   <option value="">Sessão (opcional)</option>
-                  {productGroups.filter(pg=>pg.level===3).map(ss=> <option key={ss.id} value={ss.id}>{(productGroups.find(s=>s.id===ss.parent_id)?.name||'') + ' › ' + ss.name}</option>)}
+                  {productGroups.filter(pg=>pg.level===3).map(ss=> <option key={ss.id} value={ss.id}>{ss.name}</option>)}
                 </select>
               </div>
               <Input placeholder="Prefixo Código (opc)" value={(form as any).code_prefix||''} onChange={e=>setForm(f=>({...f, code_prefix:e.target.value||undefined}))} />
             </div>
+            {/* Aviso de obrigatoriedade da hierarquia */}
+            <div className="text-xs text-rose-600">Categoria → Setor → Sessão são obrigatórios para salvar o produto.</div>
+            {!hasProductGroupCol && <div className="text-xs text-amber-600">Atenção: sua base de dados não possui a coluna <b>product_group_id</b>. Aplique a migration que adiciona essa coluna para que a hierarquia seja persistida. No momento, a seleção não será enviada ao servidor.</div>}
             <div className="flex items-center gap-3">
               <div className="flex flex-col gap-1">
                 <input type="file" accept="image/*" onChange={e=>setImageFile(e.target.files?.[0]||null)} className="text-xs" />
@@ -778,7 +807,8 @@ export function ErpProducts(){
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={()=>setOpen(false)}>Cancelar</Button>
-          <Button onClick={async()=>{
+          <Button title={(hasProductGroupCol && !(selectedCategoryId && selectedSectorId && form.product_group_id)) ? 'Categoria, Setor e Sessão são obrigatórios' : ''}
+            onClick={async()=>{
             // upload imagem antes de salvar se houver
             let uploadedUrl: string | undefined;
             const editingId = editing?.id;
@@ -844,12 +874,17 @@ export function ErpProducts(){
               setForm(f=>({...f, image_url: uploadedUrl}));
             }
             // salvar e atualizar apenas a linha alterada em memória
+            if(hasProductGroupCol && !(selectedCategoryId && selectedSectorId && form.product_group_id)){
+              // defesa extra antes de chamar save (botão também estará desabilitado)
+              toast.error('Categoria, Setor e Sessão são obrigatórios');
+              return;
+            }
              await save(uploadedUrl);
             // Observação: não aplicamos mais a URL localmente a `rows` aqui para evitar
             // efeitos colaterais — o método `save()` chama `load()` que recarrega a lista
             // do backend e garante consistência. Mantemos logs de upload para debug.
             if(import.meta.env.DEV) console.debug('[ErpProducts] upload finished, relying on load() to refresh rows', { editingId, uploadedUrl });
-          }} disabled={saving}>{saving? 'Salvando...':'Salvar'}</Button>
+          }} disabled={saving || (hasProductGroupCol && !(selectedCategoryId && selectedSectorId && form.product_group_id))}>{saving? 'Salvando...':'Salvar'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
