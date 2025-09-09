@@ -27,6 +27,7 @@ import { ErpPurchasesList } from '@/components/erp/ErpPurchasesList';
 import { ErpPurchaseXmlImport } from '@/components/erp/ErpPurchaseXmlImport';
 import { ErpPurchaseReturns } from '@/components/erp/ErpPurchaseReturns';
 import { Card } from '@/components/ui/card';
+import ErpBudgetNew from '@/components/erp/ErpBudgetNew';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -888,17 +889,19 @@ function BudgetsPlaceholder(){
   }
   useEffect(()=>{ load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+  const [openNew,setOpenNew]=useState(false);
   return <Card className="p-6 space-y-4">
     <header className="flex flex-wrap gap-3 items-end">
       <div>
         <h2 className="text-xl font-semibold mb-1">Orçamentos</h2>
         <p className="text-sm text-muted-foreground">Consulta consolidada de orçamentos de produtos e serviços.</p>
       </div>
-      <div className="flex gap-2 ml-auto flex-wrap">
+  <div className="flex gap-2 ml-auto flex-wrap">
         <Input type="date" value={period.from} onChange={e=>setPeriod(p=>({...p,from:e.target.value}))} className="w-40" />
         <Input type="date" value={period.to} onChange={e=>setPeriod(p=>({...p,to:e.target.value}))} className="w-40" />
         <Input placeholder="Número" value={search} onChange={e=>setSearch(e.target.value)} className="w-32" />
   <Button size="sm" onClick={load} disabled={loading}>{loading?'Carregando...':'Filtrar'}</Button>
+    <Button size="sm" onClick={()=>setOpenNew(true)}><Plus className="h-4 w-4 mr-2"/>Novo Orçamento</Button>
         
       </div>
     </header>
@@ -920,6 +923,7 @@ function BudgetsPlaceholder(){
       </table>
     </div>
     <div className="text-[10px] text-muted-foreground">Limite 200 resultados • adicionar paginação e exportação CSV posteriormente.</div>
+    <ErpBudgetNew open={openNew} onOpenChange={setOpenNew} />
   </Card>;
 }
 
