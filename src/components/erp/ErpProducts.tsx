@@ -59,6 +59,10 @@ export function ErpProducts(){
   const [open,setOpen]=useState(false);
   const [saving,setSaving]=useState(false);
   const [suppliers,setSuppliers]=useState<Supplier[]>([]);
+  const [productGroups,setProductGroups]=useState<{ id:string; name:string; level:number; parent_id:string|null }[]>([]);
+  const [loadingGroups,setLoadingGroups]=useState(false);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string|undefined>(undefined);
+  const [selectedSectorId, setSelectedSectorId] = useState<string|undefined>(undefined);
   const [editing,setEditing]=useState<Product|null>(null);
   const makeEmpty = (): ProductForm => ({ name: '', unit: 'UN', status: 'ATIVO' });
   const [form,setForm]=useState<ProductForm>(makeEmpty());
@@ -213,6 +217,34 @@ export function ErpProducts(){
   useEffect(()=>{ load(0); loadSuppliers(); setPage(0); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
+  // carregar grupos de produto (hierarquia) para os selects em cascata
+  async function loadProductGroups(){
+    setLoadingGroups(true);
+    try{
+      const { data, error } = await (supabase as any).from('product_groups').select('id,name,level,parent_id').order('level').order('name');
+      if(error) throw error;
+      setProductGroups(data || []);
+    }catch(e){ if(import.meta.env.DEV) console.warn('Falha ao carregar product_groups', e); setProductGroups([]); }
+    finally{ setLoadingGroups(false); }
+  }
+  useEffect(()=>{ loadProductGroups(); },[]);
+  // sincronizar selects quando productGroups ou form.product_group_id mudam (ex: abrir edição)
+  useEffect(()=>{
+    if(!productGroups.length) return;
+    if(form.product_group_id){
+      const sess = productGroups.find(pg=>pg.id===form.product_group_id);
+      const sectorId = sess?.parent_id || undefined;
+      const categoryId = sectorId ? productGroups.find(pg=>pg.id===sectorId)?.parent_id : undefined;
+      setSelectedSectorId(sectorId);
+      setSelectedCategoryId(categoryId);
+    } else {
+      // se não existe product_group_id, tentar manter texto category, mas limpar selects
+      setSelectedSectorId(undefined);
+      setSelectedCategoryId(undefined);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[productGroups, form.product_group_id]);
+
   // DEBUG: logar resumo de rows quando mudam para diagnosticar imagens aplicadas indevidamente
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -301,6 +333,7 @@ export function ErpProducts(){
         description: form.description||null,
   code: (form.code && form.code !== 'sample_code') ? form.code : null,
         category: form.category||null,
+  product_group_id: form.product_group_id||null,
         brand: form.brand||null,
         model: form.model||null,
         unit: form.unit||null,
@@ -436,7 +469,7 @@ export function ErpProducts(){
   if(import.meta.env.DEV) console.log('Editar produto raw:', p);
   // clonar para evitar mutação por referência direta ao objeto listado em `rows`
   setEditing({ ...p });
-    setForm(scrubbed);
+  setForm(scrubbed);
     setOpen(true);
   }
   async function toggleStatus(p:Product){
@@ -453,6 +486,8 @@ export function ErpProducts(){
       if(error) throw error; toast.success('Produto removido'); setConfirmDelete(null); load();
     } catch(e:unknown){ toast.error(extractErr(e)); if(import.meta.env.DEV) console.error('delete product error', e); }
   }
+
+  // selected ids (kept in state) are synchronized with form.product_group_id via effect above
 
   return <Card className="p-6 space-y-4">
     <header className="flex flex-wrap gap-3 items-end">
@@ -584,11 +619,49 @@ export function ErpProducts(){
                 {STATUS.map(s=> <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            <div className="grid md:grid-cols-5 gap-2">
-              <Input placeholder="Categoria" value={form.category||''} onChange={e=>setForm(f=>({...f,category:e.target.value}))} />
-              <Input placeholder="Marca" value={form.brand||''} onChange={e=>setForm(f=>({...f,brand:e.target.value}))} />
-              <Input placeholder="Modelo" value={form.model||''} onChange={e=>setForm(f=>({...f,model:e.target.value}))} />
-              <Input placeholder="Localização" value={form.location||''} onChange={e=>setForm(f=>({...f,location:e.target.value}))} />
+            <div className="grid md:grid-cols-4 gap-2">
+              <div>
+                <select className="h-9 border rounded px-2 w-full" value={selectedCategoryId||''} onChange={e=>{
+                    const sel = e.target.value || '';
+                    setSelectedCategoryId(sel || undefined);
+                    // clear lower selections
+                    setSelectedSectorId(undefined);
+                    setForm(f=>({...f, product_group_id: undefined, category: productGroups.find(pg=>pg.id===sel)?.name || f.category }));
+                  }}>
+                  <option value="">Categoria / Setor / Sessão</option>
+                  {productGroups.filter(pg=>pg.level===1).map(c=> <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <select className="h-9 border rounded px-2 w-full" value={selectedSectorId||''} onChange={e=>{
+                    const sel = e.target.value || '';
+                    setSelectedSectorId(sel || undefined);
+                    // clear session selection
+                    setForm(f=>({...f, product_group_id: undefined, category: productGroups.find(x=>x.id===sel)?.name || f.category }));
+                  }}>
+                  <option value="">Setor (opcional)</option>
+                  {productGroups.filter(pg=>pg.level===2).map(s=> <option key={s.id} value={s.id}>{productGroups.find(c=>c.id===s.parent_id)?.name ? `${productGroups.find(c=>c.id===s.parent_id)?.name} › ${s.name}` : s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <select className="h-9 border rounded px-2 w-full" value={form.product_group_id||''} onChange={e=>{
+                    const sel = e.target.value || undefined;
+                    const g = productGroups.find(pg=>pg.id===sel);
+                    if(g && g.level===3){
+                      // set product_group_id and also set textual fields for backward compatibility
+                      const sector = productGroups.find(x=>x.id===g.parent_id);
+                      const category = sector ? productGroups.find(x=>x.id===sector.parent_id) : undefined;
+                      setSelectedSectorId(sector?.id);
+                      setSelectedCategoryId(category?.id);
+                      setForm(f=>({...f, product_group_id: g.id, category: category?.name || sector?.name || g.name }));
+                    } else {
+                      setForm(f=>({...f, product_group_id: undefined }));
+                    }
+                  }}>
+                  <option value="">Sessão (opcional)</option>
+                  {productGroups.filter(pg=>pg.level===3).map(ss=> <option key={ss.id} value={ss.id}>{(productGroups.find(s=>s.id===ss.parent_id)?.name||'') + ' › ' + ss.name}</option>)}
+                </select>
+              </div>
               <Input placeholder="Prefixo Código (opc)" value={(form as any).code_prefix||''} onChange={e=>setForm(f=>({...f, code_prefix:e.target.value||undefined}))} />
             </div>
             <div className="flex items-center gap-3">

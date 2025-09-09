@@ -85,15 +85,16 @@ export function ErpSuppliers() {
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <Input placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} className="h-8 w-56" />
-  <Button size="sm" onClick={()=>setOpen(true)}>Novo Fornecedor</Button>
-  <Button size="sm" variant="outline" onClick={()=>load()}>Recarregar</Button>
-  {import.meta.env.DEV && (
-    <Button size="sm" variant={debugEnabled ? 'secondary':'outline'} onClick={()=> { setDebugEnabled(v=>!v); if(!debugEnabled) { /* ativando */ } else { setDebugInfo(null);} }}>
-      {debugEnabled ? 'Debug ON':'Debug'}
-    </Button>
-  )}
-  <div className="text-xs text-muted-foreground ml-auto">{loading ? 'Carregando...' : suppliers.length + ' registros'}</div>
+        <Button size="sm" onClick={()=>setOpen(true)}>Novo Fornecedor</Button>
+        <Button size="sm" variant="outline" onClick={()=>load()}>Recarregar</Button>
+        {import.meta.env.DEV && (
+          <Button size="sm" variant={debugEnabled ? 'secondary':'outline'} onClick={()=> { setDebugEnabled(v=>!v); if(!debugEnabled) { /* ativando */ } else { setDebugInfo(null);} }}>
+            {debugEnabled ? 'Debug ON':'Debug'}
+          </Button>
+        )}
+        <div className="text-xs text-muted-foreground ml-auto">{loading ? 'Carregando...' : suppliers.length + ' registros'}</div>
       </div>
+
       <Card className="p-0 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/60 text-xs uppercase tracking-wide">
@@ -102,23 +103,28 @@ export function ErpSuppliers() {
               <th className="text-left px-2 py-1 font-medium">CNPJ/CPF</th>
               <th className="text-left px-2 py-1 font-medium">Telefone</th>
               <th className="text-left px-2 py-1 font-medium">Email</th>
+              <th className="text-center px-2 py-1 font-medium">Ações</th>
             </tr>
           </thead>
           <tbody>
             {suppliers.filter(s=> (s.is_active ?? true) && s.name.toLowerCase().includes(search.toLowerCase())).map(s=> (
-              <tr
-                key={s.id}
-                className="border-t hover:bg-accent/30 cursor-pointer"
-                onClick={()=> { setSelected(s); setDetailOpen(true); }}
-              >
-                <td className="px-2 py-1">{s.name}</td>
-                <td className="px-2 py-1">{s.taxid||'-'}</td>
-                <td className="px-2 py-1">{s.phone||'-'}</td>
-                <td className="px-2 py-1">{s.email||'-'}</td>
+              <tr key={s.id} className="border-t hover:bg-accent/30">
+                <td className="px-2 py-1 cursor-pointer" onClick={()=> { setSelected(s); setDetailOpen(true); }}>{s.name}</td>
+                <td className="px-2 py-1 cursor-pointer" onClick={()=> { setSelected(s); setDetailOpen(true); }}>{s.taxid||'-'}</td>
+                <td className="px-2 py-1 cursor-pointer" onClick={()=> { setSelected(s); setDetailOpen(true); }}>{s.phone||'-'}</td>
+                <td className="px-2 py-1 cursor-pointer" onClick={()=> { setSelected(s); setDetailOpen(true); }}>{s.email||'-'}</td>
+                <td className="px-2 py-1 text-center min-w-[80px]">
+                  <button title="Editar" className="text-blue-600 hover:text-blue-900 mr-2" onClick={e=>{ e.stopPropagation(); setSelected(s); setDetailOpen(true); setEditMode(true); }}>
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                  </button>
+                  <button title="Excluir" className="text-red-600 hover:text-red-900" onClick={e=>{ e.stopPropagation(); setSelected(s); setConfirmDelete(true); }}>
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </td>
               </tr>
             ))}
             {suppliers.length===0 && (
-              <tr><td colSpan={4} className="text-center text-xs text-muted-foreground py-6">Nenhum fornecedor</td></tr>
+              <tr><td colSpan={5} className="text-center text-xs text-muted-foreground py-6">Nenhum fornecedor</td></tr>
             )}
           </tbody>
         </table>

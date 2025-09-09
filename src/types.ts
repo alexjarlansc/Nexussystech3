@@ -56,6 +56,7 @@ export interface Product {
   price: number;
   // Novos campos estendidos
   code?: string;
+  product_group_id?: string; // FK para product_groups (sessão)
   category?: string;
   brand?: string;
   model?: string;
