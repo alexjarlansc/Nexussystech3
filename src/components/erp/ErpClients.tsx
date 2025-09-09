@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import debounce from 'lodash.debounce';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,10 +19,12 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
   const [total, setTotal] = useState(0);
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [edit, setEdit] = useState<Client | null>(null);
   const [notes, setNotes] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name?: string } | null>(null);
   const emptyNew: Partial<Client> = { name:'', taxid:'', phone_mobile:'', email:'', street:'', number:'', city:'', state:'', zip:'', preferred_payment_method:'', credit_limit:0 };
   const [novo,setNovo] = useState<Partial<Client>>(emptyNew);
 
@@ -29,19 +32,67 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
     setLoading(true);
     const from = page * pageSize;
     const to = from + pageSize - 1;
-    // pesquisa simples client-side depois; para server use ilike
-    let query: any = supabase.from('clients').select('*', { count: 'exact' }).order('name').range(from, to);
-    if (search.trim()) {
-      query = supabase.from('clients').select('*', { count: 'exact' }).ilike('name', `%${search.trim()}%`).order('name').range(from, to);
+    try {
+      // pesquisa: busca por nome, documento (taxid), telefone e e-mail no servidor usando ilike
+      let query: any = supabase.from('clients').select('*', { count: 'exact' }).order('name').range(from, to);
+      const q = search.trim();
+      let orExpr = '';
+      // prepare esc e like fora do bloco para permitir retry sem referência ausente
+      const esc = q ? q.replace(/'/g, "\\'") : '';
+      const like = q ? `%${esc}%` : '';
+      if (q) {
+        // monta expressão OR para ilike em múltiplas colunas
+        // supabase JS não aceita objetos complexos para OR com ilike diretamente, usamos .or()
+        orExpr = `name.ilike.${like},taxid.ilike.${like},phone.ilike.${like},phone_mobile.ilike.${like},email.ilike.${like}`;
+        query = supabase.from('clients').select('*', { count: 'exact' }).or(orExpr).order('name').range(from, to);
+      }
+      // executa a query; se falhar por coluna inexistente (ex: phone_mobile), tenta novamente sem essa coluna
+      let exec = await query;
+      let data = exec.data as any[] | null;
+      let count = exec.count as number | null;
+      let error = exec.error as any;
+      if (error && /phone_mobile/i.test(String(error.message || ''))) {
+        // retry sem phone_mobile
+        try {
+          const orExpr2 = `name.ilike.${like},taxid.ilike.${like},phone.ilike.${like},email.ilike.${like}`;
+          const retry = await (supabase as any).from('clients').select('*', { count: 'exact' }).or(orExpr2).order('name').range(from, to);
+          if (retry.error) {
+            console.error('Erro ao carregar clientes (retry):', retry.error, { search, orExpr2 });
+            toast.error('Erro ao carregar clientes: ' + (retry.error.message || 'Erro desconhecido'));
+            setLoading(false);
+            return;
+          }
+          data = retry.data as any[];
+          count = retry.count as number | null;
+        } catch (e2) {
+          console.error('Exceção no retry sem phone_mobile', e2, { search });
+          toast.error('Erro ao carregar clientes: ' + (e2 instanceof Error ? e2.message : String(e2)));
+          setLoading(false);
+          return;
+        }
+      } else if (error) {
+        console.error('Erro ao carregar clientes:', error, { search, orExpr });
+        toast.error('Erro ao carregar clientes: ' + (error.message || 'Erro desconhecido'));
+        setLoading(false);
+        return;
+      }
+      setClients((data || []) as Client[]);
+      setTotal(count || 0);
+    } catch (err) {
+      console.error('Exceção ao carregar clients', err, { search });
+      toast.error('Erro ao carregar clientes: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setLoading(false);
     }
-    const { data, count, error } = await query;
-    if (error) { toast.error('Erro ao carregar clientes'); setLoading(false); return; }
-    setClients(data as Client[]);
-    setTotal(count || 0);
-    setLoading(false);
   }, [page, pageSize, search]);
   useEffect(()=>{ if(!modalOnly) load(); }, [load, modalOnly]);
   useEffect(()=>{ const t = setTimeout(()=>{ setPage(0); }, 400); return ()=>clearTimeout(t); }, [search]);
+
+  // Debounce para pesquisa (evita chamar load a cada tecla)
+  const debouncedSetSearch = useMemo(() => debounce((v: string) => { setSearch(v); }, 300), [setSearch]);
+  useEffect(() => {
+    return () => { debouncedSetSearch.cancel(); };
+  }, [debouncedSetSearch]);
 
   // Escuta evento global para abrir modal de novo cliente a partir de outros componentes
   useEffect(()=>{
@@ -79,8 +130,8 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
 
   async function saveEdit() {
     if (!edit) return;
-    const { id, name, taxid, phone, email, address, birth_date, sex, marital_status, street, number, complement, neighborhood, city, state, zip, phone_fixed, phone_mobile, whatsapp, preferred_payment_method, credit_limit, interests, purchase_frequency, preferred_channel, custom_notes } = edit as any;
-    const fullPayload:any = { name, taxid, phone: phone||phone_mobile, email, address: address||[street, number, complement, neighborhood, city, state, zip].filter(Boolean).join(', '), birth_date, sex, marital_status, street, number, complement, neighborhood, city, state, zip, phone_fixed, phone_mobile, whatsapp, preferred_payment_method, credit_limit, interests, purchase_frequency, preferred_channel, custom_notes };
+    const { id, name, taxid, phone, email, address, birth_date, state_registration, street, number, complement, neighborhood, city, state, zip, phone_fixed, phone_mobile, whatsapp, preferred_payment_method, credit_limit, interests, purchase_frequency, preferred_channel, custom_notes } = edit as any;
+    const fullPayload:any = { name, taxid, phone: phone||phone_mobile, email, address: address||[street, number, complement, neighborhood, city, state, zip].filter(Boolean).join(', '), birth_date, state_registration, street, number, complement, neighborhood, city, state, zip, phone_fixed, phone_mobile, whatsapp, preferred_payment_method, credit_limit, interests, purchase_frequency, preferred_channel, custom_notes };
   const { error } = await (supabase as any).from('clients').update(fullPayload).eq('id', id);
     if (error) {
       const msg = (error.message||'').toLowerCase();
@@ -109,8 +160,7 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
       email: novo.email || null,
       address: addressFull || null,
       birth_date: novo.birth_date || null,
-      sex: novo.sex || null,
-      marital_status: novo.marital_status || null,
+      state_registration: novo.state_registration || null,
       street: novo.street || null,
       number: novo.number || null,
       complement: novo.complement || null,
@@ -146,40 +196,70 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
   setCreateOpen(false); setNovo(emptyNew); load();
   }
 
+  // Função para deletar cliente
+  async function deleteClient(id: string) {
+    try {
+      const { error } = await (supabase as any).from('clients').delete().eq('id', id);
+      if (error) { toast.error('Erro ao excluir: '+error.message); return; }
+      toast.success('Cliente excluído');
+      load();
+    } catch (e) {
+      toast.error('Erro ao excluir');
+    }
+  }
+
   return (
     <div className="space-y-4">
       {!modalOnly && (
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Input placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} className="h-8 w-60" />
-            <Button size="sm" variant="outline" onClick={exportCsv}>Exportar CSV</Button>
-            <Button size="sm" onClick={()=>setCreateOpen(true)}>Novo Cliente</Button>
-            <div className="text-xs text-muted-foreground ml-auto">{loading ? 'Carregando...' : `${total} registros`}</div>
-          </div>
-
           <Card className="overflow-hidden">
+            <div className="p-2 border-b bg-muted/5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 w-full">
+                <Input className="flex-1" placeholder="Pesquisar por nome, documento, telefone ou email" value={searchInput} onChange={e=>{ setSearchInput(e.target.value); debouncedSetSearch(e.target.value); }} />
+                <Button size="sm" variant="outline" onClick={()=>{ setCreateOpen(true); }}>Novo</Button>
+                <Button size="sm" variant="outline" onClick={exportCsv}>Exportar</Button>
+              </div>
+              <div className="text-xs text-muted-foreground">Total: {total}</div>
+            </div>
             <table className="w-full text-sm">
               <thead className="bg-muted/60 text-xs uppercase tracking-wide">
                 <tr>
                   <th className="text-left px-2 py-1 font-medium">Nome</th>
                   <th className="text-left px-2 py-1 font-medium">Documento</th>
-                  <th className="text-left px-2 py-1 font-medium">Telefone</th>
+                  <th className="text-left px-2 py-1 font-medium">Celular</th>
+                  <th className="text-left px-2 py-1 font-medium">WhatsApp</th>
                   <th className="text-left px-2 py-1 font-medium">Email</th>
+                  <th className="text-left px-2 py-1 font-medium">Bairro</th>
+                  <th className="text-left px-2 py-1 font-medium">Cidade</th>
+                  <th className="text-left px-2 py-1 font-medium">UF</th>
                   <th className="text-left px-2 py-1 font-medium">Endereço</th>
+                  <th className="text-center px-2 py-1 font-medium">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {clients.map(c => (
-                  <tr key={c.id} className="border-t hover:bg-accent/30 cursor-pointer" onClick={()=> setEdit(c)}>
-                    <td className="px-2 py-1">{c.name}</td>
-                    <td className="px-2 py-1">{c.taxid||'-'}</td>
-                    <td className="px-2 py-1">{c.phone||'-'}</td>
-                    <td className="px-2 py-1">{c.email||'-'}</td>
-                    <td className="px-2 py-1 truncate max-w-[220px]" title={c.address}>{c.address||'-'}</td>
+                  <tr key={c.id} className="border-t hover:bg-accent/30 group">
+                    <td className="px-2 py-1 cursor-pointer" onClick={()=> setEdit(c)}>{c.name}</td>
+                    <td className="px-2 py-1 cursor-pointer" onClick={()=> setEdit(c)}>{c.taxid||'-'}</td>
+                    <td className="px-2 py-1 cursor-pointer" onClick={()=> setEdit(c)}>{c.phone_mobile||c.phone||'-'}</td>
+                    <td className="px-2 py-1 cursor-pointer" onClick={()=> setEdit(c)}>{c.whatsapp||'-'}</td>
+                    <td className="px-2 py-1 cursor-pointer" onClick={()=> setEdit(c)}>{c.email||'-'}</td>
+                    <td className="px-2 py-1 cursor-pointer" onClick={()=> setEdit(c)}>{(c as any).neighborhood||'-'}</td>
+                    <td className="px-2 py-1 cursor-pointer" onClick={()=> setEdit(c)}>{(c as any).city||'-'}</td>
+                    <td className="px-2 py-1 cursor-pointer" onClick={()=> setEdit(c)}>{(c as any).state||'-'}</td>
+                    <td className="px-2 py-1 truncate max-w-[180px] cursor-pointer" title={c.address} onClick={()=> setEdit(c)}>{c.address||'-'}</td>
+                    <td className="px-2 py-1 text-center min-w-[60px]">
+                      <button title="Editar" className="text-blue-600 hover:text-blue-900 mr-2" onClick={e=>{e.stopPropagation(); setEdit(c);}}>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                      </button>
+                      <button title="Excluir" className="text-red-600 hover:text-red-900" onClick={e=>{e.stopPropagation(); setPendingDelete({ id: c.id, name: c.name });}}>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {clients.length===0 && !loading && (
-                  <tr><td colSpan={5} className="text-center text-xs text-muted-foreground py-6">Nenhum cliente</td></tr>
+                  <tr><td colSpan={10} className="text-center text-xs text-muted-foreground py-6">Nenhum cliente</td></tr>
                 )}
               </tbody>
             </table>
@@ -205,8 +285,8 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <Input type="date" value={edit.birth_date||''} onChange={e=> setEdit({...edit, birth_date:e.target.value})} placeholder="Data nascimento/fundação" />
-                <Input value={edit.sex||''} onChange={e=> setEdit({...edit, sex:e.target.value})} placeholder="Sexo" />
-                <Input value={edit.marital_status||''} onChange={e=> setEdit({...edit, marital_status:e.target.value})} placeholder="Estado civil" />
+                <Input value={(edit as any).state_registration||''} onChange={e=> setEdit({...edit, state_registration:e.target.value})} placeholder="Inscrição estadual" />
+                <div />
               </div>
               <div className="font-semibold text-xs text-muted-foreground uppercase mt-2">Endereço</div>
               <div className="grid grid-cols-3 gap-2">
@@ -218,7 +298,33 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
                 <Input value={(edit as any).neighborhood||''} onChange={e=> setEdit({...edit, neighborhood:e.target.value})} placeholder="Bairro" />
                 <Input value={(edit as any).city||''} onChange={e=> setEdit({...edit, city:e.target.value})} placeholder="Cidade" />
                 <Input value={(edit as any).state||''} onChange={e=> setEdit({...edit, state:e.target.value})} placeholder="UF" />
-                <Input value={(edit as any).zip||''} onChange={e=> setEdit({...edit, zip:formatCEP(e.target.value)})} onBlur={e=> { if(!validateCEP(e.target.value)) toast.error('CEP inválido'); }} placeholder="CEP" />
+                <Input
+                  value={(edit as any).zip||''}
+                  onChange={async e => {
+                    const zip = formatCEP(e.target.value);
+                    setEdit(prev => ({ ...(prev as any), zip }));
+                    if (zip.length === 9 && validateCEP(zip)) {
+                      try {
+                        const res = await fetch(`https://viacep.com.br/ws/${zip.replace(/\D/g, '')}/json/`);
+                        const data = await res.json();
+                        if (!data.erro) {
+                          setEdit(prev => ({
+                            ...(prev as any),
+                            street: data.logradouro || (prev as any).street || '',
+                            neighborhood: data.bairro || (prev as any).neighborhood || '',
+                            city: data.localidade || (prev as any).city || '',
+                            state: data.uf || (prev as any).state || '',
+                            zip
+                          }));
+                        }
+                      } catch {
+                        toast.error('Erro ao buscar endereço do CEP');
+                      }
+                    }
+                  }}
+                  onBlur={e=> { if(!validateCEP(e.target.value)) toast.error('CEP inválido'); }}
+                  placeholder="CEP"
+                />
               </div>
               <div className="font-semibold text-xs text-muted-foreground uppercase mt-2">Contato</div>
               <div className="grid grid-cols-3 gap-2">
@@ -260,6 +366,7 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
             <div className="grid grid-cols-3 gap-2">
               <Input type="date" value={novo.birth_date||''} onChange={e=> setNovo({...novo, birth_date:e.target.value})} />
               <Input value={novo.state_registration||''} onChange={e=> setNovo({...novo, state_registration:e.target.value})} placeholder="Inscrição estadual" />
+              <div />
             </div>
             <div className="font-semibold text-xs text-muted-foreground uppercase mt-2">Endereço</div>
             <div className="grid grid-cols-3 gap-2">
@@ -320,6 +427,19 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
           <DialogFooter className="p-4 pt-2 border-t bg-background sticky bottom-0">
             <Button variant="outline" onClick={()=>{setCreateOpen(false); setNovo(emptyNew);}}>Cancelar</Button>
             <Button onClick={createClient}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Diálogo de confirmação de exclusão (substitui window.confirm) */}
+      <Dialog open={!!pendingDelete} onOpenChange={(o)=>{ if(!o) setPendingDelete(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirmar exclusão</DialogTitle>
+          </DialogHeader>
+          <div className="px-4 pb-4 text-sm">Excluir cliente{pendingDelete?.name ? `: ${pendingDelete.name}` : '?'} </div>
+          <DialogFooter className="p-4 pt-2 border-t bg-background sticky bottom-0">
+            <Button variant="outline" onClick={()=>setPendingDelete(null)}>Cancelar</Button>
+            <Button onClick={async ()=>{ if(pendingDelete){ await deleteClient(pendingDelete.id); setPendingDelete(null); } }}>Excluir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
