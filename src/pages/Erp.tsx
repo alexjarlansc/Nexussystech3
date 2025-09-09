@@ -922,7 +922,7 @@ function BudgetsPlaceholder(){
       </table>
     </div>
     <div className="text-[10px] text-muted-foreground">Limite 200 resultados • adicionar paginação e exportação CSV posteriormente.</div>
-  {openErpQuoteBuilder && <div className="sr-only"><QuoteBuilder /></div>}
+  {openErpQuoteBuilder && <div><QuoteBuilder /></div>}
   </Card>;
 }
 
