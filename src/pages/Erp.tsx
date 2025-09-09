@@ -19,7 +19,6 @@ import ErpStockTransfers from '@/components/erp/ErpStockTransfers';
 import ErpStockReturns from '@/components/erp/ErpStockReturns';
 import { StockLoader } from '@/components/erp/StockLoader';
 import ProductLabels from '@/components/erp/ProductLabels';
-import QuoteBuilder from '@/components/QuoteBuilder';
 import FinancePayables from '@/components/erp/FinancePayables';
 import FinanceReceivables from '@/components/erp/FinanceReceivables';
 import FinanceDashboard from '@/components/erp/FinanceDashboard';
@@ -889,7 +888,6 @@ function BudgetsPlaceholder(){
   }
   useEffect(()=>{ load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
-  const [openErpQuoteBuilder, setOpenErpQuoteBuilder] = useState(false);
   return <Card className="p-6 space-y-4">
     <header className="flex flex-wrap gap-3 items-end">
       <div>
@@ -901,7 +899,7 @@ function BudgetsPlaceholder(){
         <Input type="date" value={period.to} onChange={e=>setPeriod(p=>({...p,to:e.target.value}))} className="w-40" />
         <Input placeholder="Número" value={search} onChange={e=>setSearch(e.target.value)} className="w-32" />
   <Button size="sm" onClick={load} disabled={loading}>{loading?'Carregando...':'Filtrar'}</Button>
-  <Button size="sm" variant="default" onClick={()=>setOpenErpQuoteBuilder(true)}>Novo Orçamento (ERP)</Button>
+        
       </div>
     </header>
     <div className="border rounded max-h-[480px] overflow-auto">
@@ -922,7 +920,6 @@ function BudgetsPlaceholder(){
       </table>
     </div>
     <div className="text-[10px] text-muted-foreground">Limite 200 resultados • adicionar paginação e exportação CSV posteriormente.</div>
-  {openErpQuoteBuilder && <div><QuoteBuilder /></div>}
   </Card>;
 }
 
