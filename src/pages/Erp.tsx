@@ -1,5 +1,6 @@
 import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2 } from 'lucide-react';
@@ -889,7 +890,8 @@ function BudgetsPlaceholder(){
   }
   useEffect(()=>{ load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
-  // novo orçamento removido da listagem
+  const { profile } = useAuth();
+  const [openNew,setOpenNew]=useState(false);
   return <Card className="p-6 space-y-4">
     <header className="flex flex-wrap gap-3 items-end">
       <div>
@@ -901,7 +903,9 @@ function BudgetsPlaceholder(){
         <Input type="date" value={period.to} onChange={e=>setPeriod(p=>({...p,to:e.target.value}))} className="w-40" />
         <Input placeholder="Número" value={search} onChange={e=>setSearch(e.target.value)} className="w-32" />
   <Button size="sm" onClick={load} disabled={loading}>{loading?'Carregando...':'Filtrar'}</Button>
-    
+      {profile?.role === 'admin' && (
+        <Button size="sm" onClick={()=>setOpenNew(true)}><Plus className="h-4 w-4 mr-2"/>Novo Orçamento</Button>
+      )}
       </div>
     </header>
     <div className="border rounded max-h-[480px] overflow-auto">
@@ -922,7 +926,7 @@ function BudgetsPlaceholder(){
       </table>
     </div>
     <div className="text-[10px] text-muted-foreground">Limite 200 resultados • adicionar paginação e exportação CSV posteriormente.</div>
-  {/* Novo Orçamento temporariamente removido */}
+  {profile?.role === 'admin' && <ErpBudgetNew open={openNew} onOpenChange={setOpenNew} />}
   </Card>;
 }
 
