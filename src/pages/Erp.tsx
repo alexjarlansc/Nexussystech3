@@ -1839,3 +1839,11 @@ function KpiCard({label,value,currency,highlight}:{label:string; value:number; c
     <div className={`text-lg font-semibold ${highlight? 'text-emerald-600 dark:text-emerald-400':''}`}>{currency? value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}): value.toLocaleString('pt-BR')}</div>
   </div>;
 }
+
+// utilitário local para extrair mensagem de erro (usado em vários catches neste arquivo)
+function extractErr(e: unknown): string {
+  if (!e) return 'Erro desconhecido';
+  if (typeof e === 'string') return e;
+  if (e instanceof Error) return e.message;
+  try { return JSON.stringify(e); } catch { return 'Erro'; }
+}

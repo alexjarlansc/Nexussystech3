@@ -246,6 +246,8 @@ export default function QuoteBuilder() {
       clientSnapshot: q.client_snapshot,
       companyId: q.company_id,
       createdBy: q.created_by,
+  // novo: flag para layout lista (sem imagens)
+  listMode: Boolean(q.list_mode),
   originOrcNumber: q.origin_orc_number,
   pedNumberCache: q.ped_number_cache || (typeof q.notes === 'string' && /\[PEDCACHE:([^\]]+)\]/.test(q.notes) ? (q.notes.match(/\[PEDCACHE:([^\]]+)\]/) || [])[1] : undefined),
     }));
@@ -883,7 +885,7 @@ export default function QuoteBuilder() {
         </tr></thead>
         <tbody>
           ${quote.items.map(it=>`<tr class="avoid-break">
-            <td class="col-img" style="text-align:center; vertical-align:middle;">${it.imageDataUrl?`<img src="${it.imageDataUrl}" alt="${escape(it.name)}" style="width:64px;height:64px;object-fit:cover;border:1px solid var(--border);border-radius:4px;" />`:'—'}</td>
+            <td class="col-img" style="text-align:center; vertical-align:middle;">${(!q.list_mode && it.imageDataUrl)?`<img src="${it.imageDataUrl}" alt="${escape(it.name)}" style="width:64px;height:64px;object-fit:cover;border:1px solid var(--border);border-radius:4px;" />`:'—'}</td>
             <td><div class="product-name">${escape(it.name)}</div>${(it.description||it.options)?`<div class="desc">${escape((it.description||'')+(it.options?"\n"+it.options:''))}</div>`:''}</td>
             <td>${it.quantity}</td>
             <td>${currency(it.unitPrice)}</td>
@@ -2104,7 +2106,7 @@ function ReceiptView({ quote }: { quote: Quote }) {
         <div className="space-y-4">
           {quote.items.map((it, i) => (
             <div key={i} className="flex gap-4 items-start border-b pb-4 last:border-b-0">
-              {it.imageDataUrl && (
+              {(!quote.listMode && it.imageDataUrl) && (
                 <img src={it.imageDataUrl} alt={it.name} className="w-28 h-28 object-cover rounded border" />
               )}
               <div className="flex-1 min-w-0">

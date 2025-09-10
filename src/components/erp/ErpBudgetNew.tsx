@@ -28,6 +28,9 @@ export default function ErpBudgetNew({ open, onOpenChange }:{ open:boolean; onOp
   const [total, setTotal] = React.useState<number>(0);
   const [showTotalOnPrint, setShowTotalOnPrint] = React.useState(true);
 
+  // novo: modo de layout do orçamento ('normal' com imagens, 'lista' sem imagens)
+  const [layoutMode, setLayoutMode] = React.useState<'normal' | 'lista'>('normal');
+
   // payment
   const [genPayment, setGenPayment] = React.useState(false);
   const [isParcelado, setIsParcelado] = React.useState(false);
@@ -160,7 +163,7 @@ export default function ErpBudgetNew({ open, onOpenChange }:{ open:boolean; onOp
     setSaving(true);
     try{
       const items = rows.map(r=>({ product_id: r.product_id || null, product_name: r.product_name || null, details: r.details || null, quantity: Number(r.quantity)||0, unit_price: Number(String(r.unit_price).replace(',','.'))||0, discount_value: Number(r.discount_value||0)||0, discount_percent: Number(r.discount_percent||0)||0, subtotal: r.subtotal }));
-      const payload = {
+          const payload = {
         type: 'ORCAMENTO',
         number: number || null,
         customer_id: selectedClient?.id || null,
@@ -173,6 +176,8 @@ export default function ErpBudgetNew({ open, onOpenChange }:{ open:boolean; onOp
         items,
         company_id: profile?.company_id || null,
         show_total_on_print: showTotalOnPrint ? true : false,
+            // persistir modo de lista (true = layout lista sem imagem)
+            list_mode: layoutMode === 'lista' ? true : false,
       };
       // salvar orçamento
       const { data: createdQuote, error } = await (supabase as any).from('quotes').insert(payload).select('*').single();
@@ -213,8 +218,16 @@ export default function ErpBudgetNew({ open, onOpenChange }:{ open:boolean; onOp
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
-        <DialogHeader><DialogTitle>Novo Orçamento</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <div className="flex items-center justify-between w-full">
+            <DialogTitle>Novo Orçamento</DialogTitle>
+            <div className="flex gap-2">
+              <Button variant={layoutMode==='normal' ? 'default' : 'ghost'} size="sm" onClick={()=>setLayoutMode('normal')}>Orçamento (normal)</Button>
+              <Button variant={layoutMode==='lista' ? 'default' : 'ghost'} size="sm" onClick={()=>setLayoutMode('lista')}>Orçamento (lista)</Button>
+            </div>
+          </div>
+        </DialogHeader>
         <div className="p-4 space-y-4">
           {/* Dados gerais */}
           <Card className="p-3">
