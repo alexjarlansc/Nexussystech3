@@ -327,6 +327,10 @@ export function ErpProducts(){
     if(isNaN(salePrice)){ toast.error('Preço inválido'); return; }
   setSaving(true);
     try {
+  // Validação obrigatória: Categoria, Setor e Sessão
+  if(!selectedCategoryId){ toast.error('Categoria é obrigatória'); setSaving(false); return; }
+  if(!selectedSectorId){ toast.error('Setor é obrigatório'); setSaving(false); return; }
+  if(!form.product_group_id){ toast.error('Sessão é obrigatória'); setSaving(false); return; }
   const effectiveImageUrl = imageUrlOverride !== undefined ? imageUrlOverride : form.image_url;
   const payload: Record<string, unknown> = {
         name: form.name.trim(),
@@ -634,30 +638,33 @@ export function ErpProducts(){
             </div>
             <div className="grid md:grid-cols-4 gap-2">
               <div>
-                <select className="h-9 border rounded px-2 w-full" value={selectedCategoryId||''} onChange={e=>{
+                <select required className="h-9 border rounded px-2 w-full" value={selectedCategoryId||''} onChange={e=>{
                     const sel = e.target.value || '';
                     setSelectedCategoryId(sel || undefined);
                     // clear lower selections
                     setSelectedSectorId(undefined);
                     setForm(f=>({...f, product_group_id: undefined, category: productGroups.find(pg=>pg.id===sel)?.name || f.category }));
                   }}>
-                  <option value="">Categoria / Setor / Sessão</option>
+                  <option value="">Selecione Categoria *</option>
                   {productGroups.filter(pg=>pg.level===1).map(c=> <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div>
-                <select className="h-9 border rounded px-2 w-full" value={selectedSectorId||''} onChange={e=>{
+                <select required disabled={!selectedCategoryId} className="h-9 border rounded px-2 w-full" value={selectedSectorId||''} onChange={e=>{
                     const sel = e.target.value || '';
                     setSelectedSectorId(sel || undefined);
                     // clear session selection
                     setForm(f=>({...f, product_group_id: undefined, category: productGroups.find(x=>x.id===sel)?.name || f.category }));
+                    // ensure category selection matches parent of sector
+                    const parent = productGroups.find(x=>x.id===sel)?.parent_id;
+                    if(parent) setSelectedCategoryId(parent);
                   }}>
-                  <option value="">Setor (opcional)</option>
-                  {productGroups.filter(pg=>pg.level===2).map(s=> <option key={s.id} value={s.id}>{productGroups.find(c=>c.id===s.parent_id)?.name ? `${productGroups.find(c=>c.id===s.parent_id)?.name} › ${s.name}` : s.name}</option>)}
+                  <option value="">Selecione Setor *</option>
+                  {productGroups.filter(pg=>pg.level===2 && pg.parent_id===selectedCategoryId).map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
               <div>
-                <select className="h-9 border rounded px-2 w-full" value={form.product_group_id||''} onChange={e=>{
+                <select required disabled={!selectedSectorId} className="h-9 border rounded px-2 w-full" value={form.product_group_id||''} onChange={e=>{
                     const sel = e.target.value || undefined;
                     const g = productGroups.find(pg=>pg.id===sel);
                     if(g && g.level===3){
@@ -671,8 +678,8 @@ export function ErpProducts(){
                       setForm(f=>({...f, product_group_id: undefined }));
                     }
                   }}>
-                  <option value="">Sessão (opcional)</option>
-                  {productGroups.filter(pg=>pg.level===3).map(ss=> <option key={ss.id} value={ss.id}>{(productGroups.find(s=>s.id===ss.parent_id)?.name||'') + ' › ' + ss.name}</option>)}
+                  <option value="">Selecione Sessão *</option>
+                  {productGroups.filter(pg=>pg.level===3 && pg.parent_id===selectedSectorId).map(ss=> <option key={ss.id} value={ss.id}>{ss.name}</option>)}
                 </select>
               </div>
               <Input placeholder="Prefixo Código (opc)" value={(form as any).code_prefix||''} onChange={e=>setForm(f=>({...f, code_prefix:e.target.value||undefined}))} />
