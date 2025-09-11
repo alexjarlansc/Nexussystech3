@@ -2,7 +2,7 @@ import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2 } from 'lucide-react';
+import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2, ChevronRight, ChevronDown } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 // Ícone simples para trocas/devoluções (setas circulares)
 const RotateIcon = () => <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 6.76 5.36L1 10" /><path d="M3.51 15A9 9 0 0 0 17.24 18.64L23 14" /></svg>;
@@ -227,81 +227,269 @@ export default function Erp() {
 }
 
 function SalesOrdersList(){
-  const [rows,setRows]=useState<Tables<'sales'>[]>([]);
+  // Suporta duas visões: flat (por produto) e hierárquica (Categoria > Setor > Sessão > Produto)
+  const [mode, setMode] = useState<'flat'|'hierarchy'>('hierarchy');
+  const [showDebugHierarchy, setShowDebugHierarchy] = useState(false);
+  const [rows,setRows]=useState<any[]>([]); // flat rows from product_stock
+  const [groups,setGroups]=useState<any[]>([]);
+  const [products,setProducts]=useState<any[]>([]);
   const [loading,setLoading]=useState(false);
-  const [error,setError]=useState<string|null>(null);
   const [search,setSearch]=useState('');
-  const [status,setStatus]=useState('');
-  const [payStatus,setPayStatus]=useState('');
-  const [page,setPage]=useState(1); const pageSize=20; const [total,setTotal]=useState(0);
+  const [expandedCats, setExpandedCats] = useState<Set<string> | null>(null);
+  const [expandedSectors, setExpandedSectors] = useState<Set<string> | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
+  const LIMIT=1500;
+
   useEffect(()=>{(async()=>{
-    setLoading(true); setError(null);
+    setLoading(true);
     try {
-      let q = (supabase as any).from('sales').select('*',{count:'exact'}).order('created_at',{ascending:false}).range((page-1)*pageSize, page*pageSize-1);
-      if (search) q = q.ilike('sale_number','%'+search+'%');
-      if (status) q = q.eq('status',status);
-      if (payStatus) q = q.eq('payment_status',payStatus);
-      const { data, error, count } = await q;
+      // 1) buscar view product_stock (já contém product_name quando migration aplicada)
+      let q = (supabase as any).from('product_stock').select('*').order('product_id').limit(LIMIT);
+      if (search) q = q.ilike('product_name','%'+search+'%').or(`product_id.ilike.%${search}%`);
+      const { data, error } = await q;
       if (error) throw error;
-      setRows(data||[]); setTotal(count||0);
-    } catch(e:any){ setError(e.message);} finally { setLoading(false); }
-  })();},[search,status,payStatus,page]);
-  const totalPages = Math.max(1, Math.ceil(total/pageSize));
-  return <Card className="p-6 space-y-4">
-    <header className="flex flex-wrap gap-3 items-end">
-      <div>
-        <h2 className="text-xl font-semibold mb-1">Pedidos de Vendas</h2>
-        <p className="text-sm text-muted-foreground">Pedidos confirmados de produtos.</p>
+      const base: any[] = data || [];
+      setRows(base);
+
+      // 2) carregar produtos (para custo médio e preço venda)
+      const ids = Array.from(new Set(base.map(r=>String(r.product_id))).values()).slice(0,2000);
+      let prodData: any[] = [];
+      if(ids.length){
+        const { data: p, error: perr } = await (supabase as any).from('products').select('id,name,code,cost_price,sale_price,price,product_group_id').in('id', ids).limit(2000);
+        if(!perr && p) prodData = p;
+      }
+      setProducts(prodData || []);
+
+      // 3) carregar product_groups para hierarquia
+      try{
+        const { data: g } = await (supabase as any).from('product_groups').select('id,name,level,parent_id').order('level').order('name');
+        setGroups(g || []);
+        // inicializa sets de expansão vazios para a hierarquia
+        setExpandedCats(new Set<string>());
+        setExpandedSectors(new Set<string>());
+  // seleciona primeira categoria por padrão
+  try{ const cats = (g||[]).filter((x:any)=>x.level===1); if(cats.length) setSelectedCategoryId(cats[0].id);}catch(_){/*noop*/}
+      } catch(_g) { setGroups([]); setExpandedCats(new Set()); setExpandedSectors(new Set()); }
+
+    } catch(e:any){ toast.error(e.message); } finally { setLoading(false); }
+  })();},[search]);
+
+  // Montar árvore hierárquica com agregações
+  function buildHierarchy(){
+    // maps
+    const groupsById = new Map(groups.map((g:any)=>[g.id,g]));
+    const sessions = groups.filter((g:any)=>g.level===3);
+    const sectors = groups.filter((g:any)=>g.level===2);
+    const categories = groups.filter((g:any)=>g.level===1);
+
+    const prodMap = new Map(products.map((p:any)=>[String(p.id), p]));
+    const stockMap = new Map(rows.map(r=>[String(r.product_id), r]));
+
+    // helper to compute metrics for a product
+    const productNode = (p: any) => {
+      const st = Number(stockMap.get(String(p.id))?.stock || 0);
+      const res = Number(stockMap.get(String(p.id))?.reserved || 0);
+      const avgCost = Number(p.cost_price || 0);
+      const salePrice = Number(p.sale_price ?? p.price ?? 0);
+      const costTotal = avgCost * st;
+      const saleTotal = salePrice * st;
+      const reservedCost = res * avgCost;
+      return { id: p.id, name: p.name, code: p.code, stock: st, reserved: res, avgCost, salePrice, costTotal, saleTotal, reservedCost };
+    };
+
+    // group aggregations
+    const sessionNodes: Record<string, any> = {};
+    sessions.forEach((s:any)=>{ sessionNodes[s.id] = { id:s.id, name:s.name, products: [], stock:0, reserved:0, costTotal:0, saleTotal:0, reservedCost:0 }; });
+    // attach products to sessions
+    products.forEach((p:any)=>{
+      const sessId = p.product_group_id;
+      const node = productNode(p);
+      if(sessId && sessionNodes[sessId]){
+        sessionNodes[sessId].products.push(node);
+        sessionNodes[sessId].stock += node.stock;
+        sessionNodes[sessId].reserved += node.reserved;
+        sessionNodes[sessId].costTotal += node.costTotal;
+        sessionNodes[sessId].saleTotal += node.saleTotal;
+        sessionNodes[sessId].reservedCost += node.reservedCost;
+      }
+    });
+
+    // build sectors with sessions
+    const sectorNodes: Record<string, any> = {};
+    sectors.forEach(s=> sectorNodes[s.id] = { id:s.id, name:s.name, sessions: [], stock:0, reserved:0, costTotal:0, saleTotal:0, reservedCost:0, parent_id: s.parent_id });
+    Object.values(sessionNodes).forEach((sn:any)=>{
+      const parent = groupsById.get(groupsById.get(sn.id)?.parent_id) || groupsById.get(sessionNodes[sn.id]?.parent_id) || null;
+      // find session group from groups array
+      const sessionGroup = groups.find((g:any)=>g.id===sn.id);
+      const sectorId = sessionGroup?.parent_id;
+      if(sectorId && sectorNodes[sectorId]){
+        sectorNodes[sectorId].sessions.push(sn);
+        sectorNodes[sectorId].stock += sn.stock;
+        sectorNodes[sectorId].reserved += sn.reserved;
+        sectorNodes[sectorId].costTotal += sn.costTotal;
+        sectorNodes[sectorId].saleTotal += sn.saleTotal;
+        sectorNodes[sectorId].reservedCost += sn.reservedCost;
+      }
+    });
+
+    // categories
+    const categoryNodes: Record<string, any> = {};
+    categories.forEach(c=> categoryNodes[c.id] = { id:c.id, name:c.name, sectors: [], stock:0, reserved:0, costTotal:0, saleTotal:0, reservedCost:0 });
+    Object.values(sectorNodes).forEach((sn:any)=>{
+      const catId = groups.find((g:any)=>g.id===sn.parent_id)?.parent_id || sn.parent_id;
+      const sectorGroup = groups.find((g:any)=>g.id===sn.id);
+      const catIdDirect = sectorGroup?.parent_id || null;
+      // actually sectors parent_id points to category id
+      const categoryId = sectorGroup?.parent_id || sn.parent_id || null;
+      // find proper category via sectorGroup.parent_id
+      const cat = groups.find((g:any)=>g.id===sectorGroup?.parent_id);
+      const cid = sectorGroup?.parent_id || null;
+      if(cid && categoryNodes[cid]){
+        categoryNodes[cid].sectors.push(sn);
+        categoryNodes[cid].stock += sn.stock;
+        categoryNodes[cid].reserved += sn.reserved;
+        categoryNodes[cid].costTotal += sn.costTotal;
+        categoryNodes[cid].saleTotal += sn.saleTotal;
+        categoryNodes[cid].reservedCost += sn.reservedCost;
+      }
+    });
+
+    return { categories: Object.values(categoryNodes) };
+  }
+
+  const totalQtd = rows.reduce((s:any,r:any)=> s + Number(r.stock||0),0);
+  const [page,setPage]=useState(1); const pageSize = 100; const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageRows = rows.slice((page-1)*pageSize, page*pageSize);
+
+  // export flatten for hierarchy
+  function flattenForExport(){
+    const h = buildHierarchy();
+    const out: any[] = [];
+    h.categories.forEach((c:any)=>{
+      c.sectors.forEach((s:any)=>{
+        s.sessions.forEach((ss:any)=>{
+          if(ss.products.length===0){
+            out.push({ category: c.name, sector: s.name, session: ss.name, product_code: '', product_name: '', stock: ss.stock, reserved: ss.reserved, avgCost: 0, salePrice:0, costTotal: ss.costTotal, saleTotal: ss.saleTotal, reservedCost: ss.reservedCost });
+          } else {
+            ss.products.forEach((p:any)=> out.push({ category: c.name, sector: s.name, session: ss.name, product_code: p.code||'', product_name: p.name||'', stock: p.stock, reserved: p.reserved, avgCost: p.avgCost, salePrice: p.salePrice, costTotal: p.costTotal, saleTotal: p.saleTotal, reservedCost: p.reservedCost }));
+          }
+        });
+      });
+    });
+    return out;
+  }
+
+  return <BaseReportWrapper title="Estoque Completo" description="Posição atual de estoque por produto (flat) ou por Cadastro > Setor > Sessão > Produto" onExport={()=> exportCsv(mode==='flat'? rows : flattenForExport(), mode==='flat'? 'estoque_completo.csv' : 'estoque_completo_hier.csv')} onExportXlsx={()=>exportXlsx(mode==='flat'? rows : flattenForExport(), mode==='flat'? 'estoque_completo.xlsx' : 'estoque_completo_hier.xlsx')}>
+    <div className="flex gap-2 mb-2 text-xs flex-wrap items-end">
+      <Input placeholder="Buscar" value={search} onChange={e=>setSearch(e.target.value)} className="w-40 h-8" />
+      <Button size="sm" variant="outline" onClick={()=>{ setSearch(''); }}>Limpar</Button>
+  {/* Visão removida — abre diretamente em hierarquia */}
+      <div className="ml-auto flex gap-4 font-medium text-[11px]">
+        <span>SKUs: {rows.length}</span>
+        <span>Total Estoque: {totalQtd}</span>
       </div>
-      <div className="flex gap-2 ml-auto flex-wrap text-xs">
-        <Input placeholder="Número" value={search} onChange={e=>{setPage(1);setSearch(e.target.value);}} className="w-32 h-8" />
-        <select value={status} onChange={e=>{setPage(1);setStatus(e.target.value);}} className="h-8 border rounded px-2">
-          <option value="">Status</option>
-          <option value="ABERTO">Aberto</option>
-          <option value="FATURADO">Faturado</option>
-          <option value="CANCELADO">Cancelado</option>
-        </select>
-        <select value={payStatus} onChange={e=>{setPage(1);setPayStatus(e.target.value);}} className="h-8 border rounded px-2">
-          <option value="">Pagamento</option>
-          <option value="PENDENTE">Pendente</option>
-          <option value="PAGO">Pago</option>
-          <option value="PARCIAL">Parcial</option>
-        </select>
-        <Button size="sm" variant="outline" onClick={()=>{setSearch('');setStatus('');setPayStatus('');setPage(1);}}>Limpar</Button>
+      <div className="ml-4 flex items-center gap-2 text-xs">
+        <label className="flex items-center gap-1"><input type="checkbox" checked={showDebugHierarchy} onChange={e=>setShowDebugHierarchy(e.target.checked)} /> Debug hierarquia</label>
       </div>
-    </header>
-    {error && <div className="text-sm text-red-500">{error}</div>}
-    <div className="border rounded overflow-auto max-h-[500px]">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/50"><tr><th className="px-2 py-1 text-left">Data</th><th className="px-2 py-1 text-left">Número</th><th className="px-2 py-1 text-left">Status</th><th className="px-2 py-1 text-left">Pagamento</th><th className="px-2 py-1 text-right">Total</th><th className="px-2 py-1 text-left">Cliente</th></tr></thead>
-        <tbody>
-          {loading && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
-          {!loading && rows.length===0 && <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">Sem pedidos</td></tr>}
-          {!loading && rows.map(r=> {
-            let clientName='-';
-            if (r.client_snapshot && typeof r.client_snapshot === 'object' && !Array.isArray(r.client_snapshot)) {
-              const snap = r.client_snapshot as any;
-              clientName = snap.name || snap.company_name || '-';
-            }
-            return <tr key={r.id} className="border-t hover:bg-muted/40">
-              <td className="px-2 py-1 whitespace-nowrap">{new Date(r.created_at).toLocaleDateString('pt-BR')}</td>
-              <td className="px-2 py-1 font-medium">{r.sale_number}</td>
-              <td className="px-2 py-1">{r.status}</td>
-              <td className="px-2 py-1">{r.payment_status}</td>
-              <td className="px-2 py-1 text-right">{Number(r.total).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-              <td className="px-2 py-1 truncate max-w-[160px]" title={clientName}>{clientName}</td>
-            </tr>})}
-        </tbody>
-      </table>
     </div>
-    <div className="flex justify-between items-center text-xs text-muted-foreground">
-      <span>Página {page} de {totalPages} • {total} registros</span>
+    <div className="border rounded max-h-[560px] overflow-auto text-xs">
+      {loading && <div className="p-4 text-center text-muted-foreground">Carregando...</div>}
+      {!loading && mode==='flat' && (
+        <table className="w-full text-xs">
+          <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Produto</th><th className="px-2 py-1 text-right">Estoque</th><th className="px-2 py-1 text-right">Reservado</th></tr></thead>
+          <tbody>
+            {!loading && rows.length===0 && <tr><td colSpan={3} className="text-center py-6 text-muted-foreground">Sem dados</td></tr>}
+            {!loading && pageRows.map(r=> <tr key={r.product_id} className="border-t"><td className="px-2 py-1">{r.product_name || r.product_id}</td><td className="px-2 py-1 text-right">{r.stock}</td><td className="px-2 py-1 text-right">{r.reserved||0}</td></tr>)}
+          </tbody>
+        </table>
+      )}
+      {!loading && mode==='hierarchy' && (
+        <div className="p-3">
+          {groups.length===0 && <div className="text-muted-foreground">Sem grupos cadastrados</div>}
+          <div className="space-y-4">
+            {buildHierarchy().categories.map((c:any)=>{
+              const open = expandedCats?.has?.(c.id);
+              return (
+                <div key={c.id} className="border rounded p-3 bg-white">
+                  <div className="flex items-center gap-3">
+                    <button onClick={()=>{ const s=new Set(expandedCats||[]); if(s.has(c.id)) s.delete(c.id); else s.add(c.id); setExpandedCats(s); }} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-slate-100">
+                      {open? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
+                    </button>
+                    <div className="font-semibold">{c.name}</div>
+                    <div className="ml-auto text-xs text-muted-foreground">Estoque: {c.stock}</div>
+                  </div>
+                  {open && <div className="mt-3 pl-8">
+                    {c.sectors.length===0 && <div className="text-muted-foreground">Sem setores</div>}
+                    {c.sectors.map((s:any)=>{
+                      const sOpen = expandedSectors?.has?.(s.id);
+                      return (
+                        <div key={s.id} className="mb-4 border rounded p-3 bg-slate-50">
+                          <div className="flex items-center gap-3">
+                            <button onClick={()=>{ const ss=new Set(expandedSectors||[]); if(ss.has(s.id)) ss.delete(s.id); else ss.add(s.id); setExpandedSectors(ss); }} className="h-6 w-6 flex items-center justify-center rounded-md hover:bg-slate-100">
+                              {sOpen? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
+                            </button>
+                            <div className="font-medium">{s.name}</div>
+                            <div className="ml-auto text-xs text-muted-foreground">Estoque: {s.stock}</div>
+                          </div>
+                          {sOpen && <div className="mt-3 pl-8">
+                            {s.sessions.map((ss:any)=> (
+                              <div key={ss.id} className="mb-4">
+                                <div className="italic text-sm mb-2">{ss.name} — Estoque: {ss.stock} • Reservado: {ss.reserved}</div>
+                                {ss.products.length===0 ? <div className="text-muted-foreground">Sem produtos</div> : (
+                                  <div className="overflow-auto border rounded">
+                                    <table className="w-full text-sm text-left">
+                                      <thead className="bg-muted/50 text-[12px]"><tr>
+                                        <th className="px-2 py-2">Código</th>
+                                        <th className="px-2 py-2">Produto</th>
+                                        <th className="px-2 py-2 text-right">Estoque</th>
+                                        <th className="px-2 py-2 text-right">Reservado</th>
+                                        <th className="px-2 py-2 text-right">Custo Médio</th>
+                                        <th className="px-2 py-2 text-right">Valor Venda</th>
+                                        <th className="px-2 py-2 text-right">Custo x Estoque</th>
+                                        <th className="px-2 py-2 text-right">Venda x Estoque</th>
+                                        <th className="px-2 py-2 text-right">Reservado x Custo</th>
+                                      </tr></thead>
+                                      <tbody>
+                                        {ss.products.map((p:any)=> (
+                                          <tr key={p.id} className="border-t hover:bg-muted/30">
+                                            <td className="px-2 py-1 align-middle text-[13px] w-24">{p.code || '-'}</td>
+                                            <td className="px-2 py-1 align-middle text-[13px] truncate">{p.name}</td>
+                                            <td className="px-2 py-1 text-right font-medium">{p.stock}</td>
+                                            <td className="px-2 py-1 text-right">{p.reserved}</td>
+                                            <td className="px-2 py-1 text-right">{Number(p.avgCost).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                                            <td className="px-2 py-1 text-right">{Number(p.salePrice).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                                            <td className="px-2 py-1 text-right">{Number(p.costTotal).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                                            <td className="px-2 py-1 text-right">{Number(p.saleTotal).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                                            <td className="px-2 py-1 text-right">{Number(p.reservedCost).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>}
+                        </div>
+                      );
+                    })}
+                  </div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+    <div className="flex justify-between items-center mt-2 text-[11px] text-muted-foreground">
+      <span>Página {page} de {totalPages}</span>
       <div className="flex gap-2">
         <Button size="sm" variant="outline" disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</Button>
         <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
       </div>
     </div>
-  </Card>;
+  </BaseReportWrapper>;
 }
 
 function ServiceSalesOrdersList(){
@@ -366,19 +554,20 @@ function ServiceSalesOrdersList(){
       </div>
     </div>
   </Card>;
-}
 
-function ErpNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
-  return (
-    <button
-      onClick={active ? undefined : onClick}
-      disabled={active}
-      className={`w-full flex items-center gap-2 px-2 py-1 rounded-md hover:bg-primary/10 text-left transition-colors ${active ? 'bg-primary/15 text-primary font-medium opacity-60 cursor-default' : 'text-slate-600 dark:text-slate-300'}`}
-    >
-      {icon}<span className="truncate">{label}</span>
-    </button>
-  );
-}
+  }
+
+  function ErpNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
+    return (
+      <button
+        onClick={active ? undefined : onClick}
+        disabled={active}
+        className={`w-full flex items-center gap-2 px-2 py-1 rounded-md hover:bg-primary/10 text-left transition-colors ${active ? 'bg-primary/15 text-primary font-medium opacity-60 cursor-default' : 'text-slate-600 dark:text-slate-300'}`}
+      >
+        {icon}<span className="truncate">{label}</span>
+      </button>
+    );
+  }
 
 function GroupTitle({ icon, label, count }: { icon: React.ReactNode; label: string; count?: number }) {
   return (
@@ -395,6 +584,11 @@ function GroupTitle({ icon, label, count }: { icon: React.ReactNode; label: stri
       {typeof count === 'number' && <span className="ml-auto relative z-10 text-[10px] font-medium rounded px-1.5 py-0.5 bg-primary/20 text-primary/90">{count}</span>}
     </div>
   );
+}
+
+// Wrapper para compatibilidade: ReportStockFull referenciado na UI
+function ReportStockFull(){
+  return <SalesOrdersList />;
 }
 
 function SectionPlaceholder({ title, description }: { title: string; description: string }) {
@@ -1266,54 +1460,6 @@ function BaseReportWrapper({ title, description, children, onExport, onExportXls
   </Card>;
 }
 
-function ReportStockFull(){
-  // MVP aprimorado: limite + soma total
-  const [rows,setRows]=useState<any[]>([]);
-  const [loading,setLoading]=useState(false);
-  const [search,setSearch]=useState('');
-  const LIMIT=1500;
-  useEffect(()=>{(async()=>{
-    setLoading(true);
-    try {
-      let q = (supabase as any).from('product_stock').select('*').order('product_id').limit(LIMIT);
-      if (search) q = q.ilike('product_id','%'+search+'%');
-      const { data, error } = await q;
-      if (error) throw error;
-      setRows(data||[]);
-    } catch(e:any){ toast.error(e.message); } finally { setLoading(false); }
-  })();},[search]);
-  const totalQtd = rows.reduce((s:any,r:any)=> s + Number(r.stock||0),0);
-  const [page,setPage]=useState(1); const pageSize = 100; const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const pageRows = rows.slice((page-1)*pageSize, page*pageSize);
-  return <BaseReportWrapper title="Estoque Completo" description="Posição atual de estoque por produto (limite 1500 registros)" onExport={()=>exportCsv(rows,'estoque_completo.csv')} onExportXlsx={()=>exportXlsx(rows,'estoque_completo.xlsx')}>
-    <div className="flex gap-2 mb-2 text-xs flex-wrap items-end">
-      <Input placeholder="Produto" value={search} onChange={e=>setSearch(e.target.value)} className="w-40 h-8" />
-      <Button size="sm" variant="outline" onClick={()=>setSearch('')}>Limpar</Button>
-      <div className="ml-auto flex gap-4 font-medium text-[11px]">
-        <span>SKUs: {rows.length}</span>
-        <span>Total Estoque: {totalQtd}</span>
-      </div>
-    </div>
-    <div className="border rounded max-h-[480px] overflow-auto">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Produto</th><th className="px-2 py-1 text-right">Estoque</th></tr></thead>
-        <tbody>
-          {loading && <tr><td colSpan={2} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
-          {!loading && rows.length===0 && <tr><td colSpan={2} className="text-center py-6 text-muted-foreground">Sem dados</td></tr>}
-          {!loading && pageRows.map(r=> <tr key={r.product_id} className="border-t"><td className="px-2 py-1">{r.product_id}</td><td className="px-2 py-1 text-right">{r.stock}</td></tr>)}
-        </tbody>
-      </table>
-    </div>
-    <div className="flex justify-between items-center mt-2 text-[11px] text-muted-foreground">
-      <span>Página {page} de {totalPages}</span>
-      <div className="flex gap-2">
-        <Button size="sm" variant="outline" disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</Button>
-        <Button size="sm" variant="outline" disabled={page===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Próxima</Button>
-      </div>
-    </div>
-  </BaseReportWrapper>;
-}
-
 function ReportSalesFull(){
   const [rows,setRows]=useState<any[]>([]); const [loading,setLoading]=useState(false);
   const [from,setFrom]=useState(''); const [to,setTo]=useState('');
@@ -1629,3 +1775,5 @@ function KpiCard({label,value,currency,highlight}:{label:string; value:number; c
     <div className={`text-lg font-semibold ${highlight? 'text-emerald-600 dark:text-emerald-400':''}`}>{currency? value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}): value.toLocaleString('pt-BR')}</div>
   </div>;
 }
+
+
