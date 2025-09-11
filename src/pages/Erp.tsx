@@ -1056,6 +1056,8 @@ function ServicesPlaceholder(){return <Card className="p-6"><h2 className="text-
 function BudgetsPlaceholder(){
   const [data,setData]=useState<any[]>([]);
   const [loading,setLoading]=useState(false);
+  const [openPreview,setOpenPreview]=useState(false);
+  const [previewHtml,setPreviewHtml]=useState<string>('');
   const [period,setPeriod]=useState({from:'',to:''});
   const [search,setSearch]=useState('');
   async function load(){
@@ -1082,6 +1084,86 @@ function BudgetsPlaceholder(){
   }
   useEffect(()=>{ load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+  async function openQuotePreview(id:string){
+    try{
+      setLoading(true);
+      const { data: q, error } = await (supabase as any).from('quotes').select('*').eq('id', id).single();
+      if(error || !q) { toast.error('Falha ao carregar orçamento'); return; }
+      // construir HTML simplificado de recibo (cupom pequeno)
+      const escape = (s:string|undefined|null)=> (s||'').toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]!));
+      const currency = (n:number)=> new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n);
+      const createdAt = new Date(q.created_at);
+      const issueDate = createdAt.toLocaleDateString('pt-BR');
+      const issueTime = createdAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const items = Array.isArray(q.items)? q.items : (typeof q.items === 'string' ? JSON.parse(q.items||'[]') : []);
+  // cliente e vendedor: suportar snapshot ou campos diretos
+  const clientSnapshot = q.client_snapshot || q.clientSnapshot || (q.client_name? { name: q.client_name, taxid: q.client_taxid, phone: q.client_phone, email: q.client_email, address: q.client_address } : null);
+  const vendor = q.vendor || q.vendor_snapshot || (q.vendor_name? { name: q.vendor_name, phone: q.vendor_phone, email: q.vendor_email } : null);
+  const companyStored = localStorage.getItem('company');
+  let companyObj:any = {};
+  try{ if(companyStored) companyObj = JSON.parse(companyStored)||{}; }catch(e){ console.warn('failed parse company from storage', e); }
+  const companyName = companyObj.name || 'Empresa';
+      // Payment entries parsing (replicar lógica do QuoteBuilder)
+      let paymentEntries:any[] = [];
+      if(q.payment_terms || q.paymentTerms || q.paymentTermsRaw || q.paymentTermsText || q.paymentTerms === ''){
+        const pt = q.payment_terms || q.paymentTerms || q.paymentTermsRaw || q.paymentTermsText || q.paymentTerms;
+        try{
+          const parsed = typeof pt === 'string' ? JSON.parse(pt) : pt;
+          if(parsed && parsed.version === 1 && Array.isArray(parsed.items)){
+            paymentEntries = parsed.items.map((it:any, idx:number)=>{
+              const label = it.kind === 'entrada' ? 'Entrada' : it.kind === 'saldo' ? 'Saldo' : `Parcela ${idx+1}`;
+              const amount = it.valueType === 'percent' ? (Number(q.total||0) * (it.value/100)) : Number(it.value);
+              const valTxt = it.valueType === 'percent' ? `${it.value}%` : currencyBRL(Number(it.value));
+              const detail = `${valTxt} em ${it.dueDays} dia(s)`;
+              return { label, detail, amount };
+            });
+          } else if(typeof pt === 'string'){
+            paymentEntries = pt.split(/\n|;/).map((l:string,i:number)=>({ label:`Parcela ${i+1}`, detail: l.trim(), amount: 0 })).filter((p:any)=>p.detail);
+          }
+        }catch(_){ if(typeof pt === 'string') paymentEntries = pt.split(/\n|;/).map((l:string,i:number)=>({ label:`Parcela ${i+1}`, detail: l.trim(), amount: 0 })).filter((p:any)=>p.detail); }
+      }
+
+      const html = `<!doctype html><html><head><meta charset='utf-8'/><title>Recibo ${escape(q.number)}</title><style>body{font-family:Arial,Helvetica,sans-serif;font-size:12px}.line{border-top:1px dashed #000;margin:6px 0}.muted{color:#555;font-size:11px}.small{font-size:11px}</style></head><body>
+        <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:12px'>
+          <div>
+            <h3 style='margin:0'>${escape(companyObj.name||companyName)}</h3>
+            ${companyObj.address?`<div class='muted small'>${escape(companyObj.address)}</div>`:''}
+            <div class='muted small'>${[companyObj.cnpj_cpf && 'CNPJ/CPF: '+escape(companyObj.cnpj_cpf), companyObj.phone, companyObj.email].filter(Boolean).join(' · ')}</div>
+          </div>
+          ${companyObj.logoDataUrl?`<div><img src='${companyObj.logoDataUrl}' style='max-height:80px;object-fit:contain'/></div>`:''}
+        </div>
+        <div style='margin-top:8px'>Orçamento: ${escape(q.number)} • Emissão: ${escape(issueDate)} • Validade: ${escape(new Date(new Date(q.created_at).getTime() + (Number(q.validity_days||q.validityDays||0)*86400000)).toLocaleDateString('pt-BR'))}</div>
+        <div class='line'></div>
+        <div>Orçamento: ${escape(q.number)}</div>
+        <div>Data: ${escape(issueDate)} ${escape(issueTime)}</div>
+        <div class='line'></div>
+        <div style='display:flex;gap:20px;flex-wrap:wrap;'>
+          <div style='min-width:220px'>
+            <div style='font-weight:600'>Cliente</div>
+            <div class='muted'>${escape(clientSnapshot?.name||q.customer_name||'-')}</div>
+            ${clientSnapshot?.taxid?`<div class='muted'>CNPJ/CPF: ${escape(clientSnapshot.taxid)}</div>`:''}
+            ${clientSnapshot?.phone?`<div class='muted'>Tel: ${escape(clientSnapshot.phone)}</div>`:''}
+            ${clientSnapshot?.email?`<div class='muted'>Email: ${escape(clientSnapshot.email)}</div>`:''}
+            ${clientSnapshot?.address?`<div class='muted'>Endereço: ${escape(clientSnapshot.address)}</div>`:''}
+          </div>
+          <div style='min-width:220px'>
+            <div style='font-weight:600'>Representante</div>
+            <div class='muted'>${escape(vendor?.name||q.vendor_name||q.vendor?.name||'-')}</div>
+            ${vendor?.phone?`<div class='muted'>Tel: ${escape(vendor.phone)}</div>`:''}
+            ${vendor?.email?`<div class='muted'>Email: ${escape(vendor.email)}</div>`:''}
+          </div>
+        </div>
+        <div class='line'></div>
+        <table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr><th style='text-align:left'>Qtd</th><th style='text-align:left'>Item</th><th style='text-align:right'>Unit</th><th style='text-align:right'>Total</th></tr></thead><tbody>${items.map((it:any)=>`<tr><td>${escape(it.quantity)}</td><td>${escape((it.name||it.description)||'-')}</td><td style='text-align:right'>${currency(Number(it.unitPrice||it.price||0))}</td><td style='text-align:right'>${currency(Number(it.subtotal||it.total||0))}</td></tr>`).join('')}</tbody></table>
+        <div class='line'></div>
+        <div style='text-align:right;font-weight:700'>Total: ${currency(Number(q.total||0))}</div>
+        ${paymentEntries.length?`<h3 style='margin-top:18px'>Condições de Pagamento</h3><table style='width:100%;border-collapse:collapse'><thead><tr><th style='text-align:left'>Parcela</th><th>Detalhes</th><th style='text-align:right'>Valor</th></tr></thead><tbody>${paymentEntries.map(p=>`<tr><td style='font-weight:600'>${escape(p.label)}</td><td>${escape(p.detail)}</td><td style='text-align:right'>${currency(Number(p.amount||0))}</td></tr>`).join('')}</tbody></table>`:''}
+      </body></html>`;
+      setPreviewHtml(html);
+      setOpenPreview(true);
+    }catch(e:any){ console.error(e); toast.error('Erro ao carregar pré-visualização'); }
+    finally{ setLoading(false); }
+  }
   return <Card className="p-6 space-y-4">
     <header className="flex flex-wrap gap-3 items-end">
       <div>
@@ -1095,11 +1177,11 @@ function BudgetsPlaceholder(){
         <Button size="sm" onClick={load} disabled={loading}>{loading?'Carregando...':'Filtrar'}</Button>
       </div>
     </header>
-    <div className="border rounded max-h-[480px] overflow-auto">
+      <div className="border rounded max-h-[480px] overflow-auto">
       <table className="w-full text-xs">
         <thead className="bg-muted/50 sticky top-0"><tr><th className="px-2 py-1 text-left">Data</th><th className="px-2 py-1 text-left">Número</th><th className="px-2 py-1 text-left">Cliente</th><th className="px-2 py-1 text-left">Tipo</th><th className="px-2 py-1 text-right">Total</th><th className="px-2 py-1">Origem</th></tr></thead>
         <tbody>
-          {data.map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
+          {data.map(r=> <tr key={r.id} onClick={()=>openQuotePreview(r.id)} className="cursor-pointer border-t hover:bg-muted/40">
             <td className="px-2 py-1 whitespace-nowrap">{new Date(r.created_at).toLocaleDateString('pt-BR')}</td>
             <td className="px-2 py-1 font-medium">{r.number}</td>
             <td className="px-2 py-1 truncate max-w-[140px]" title={r.customer_name||''}>{r.customer_name||'-'}</td>
@@ -1112,6 +1194,20 @@ function BudgetsPlaceholder(){
         </tbody>
       </table>
     </div>
+      <Dialog open={openPreview} onOpenChange={(o)=>{ if(!o) setOpenPreview(false); }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Pré-visualização do Recibo</DialogTitle></DialogHeader>
+          <div className="prose max-w-none">
+            <div dangerouslySetInnerHTML={{__html: previewHtml}} />
+          </div>
+          <DialogFooter>
+            <div className="flex gap-2">
+              <Button onClick={()=>{ const w=window.open('','_blank'); if(w){ w.document.open(); w.document.write(previewHtml); w.document.close(); } }}>Abrir em nova janela</Button>
+              <Button variant="outline" onClick={()=>setOpenPreview(false)}>Fechar</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     <div className="text-[10px] text-muted-foreground">Limite 200 resultados • adicionar paginação e exportação CSV posteriormente.</div>
   </Card>;
 }
