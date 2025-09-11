@@ -1002,17 +1002,8 @@ export default function QuoteBuilder() {
         <div className="lg:col-span-2 space-y-2 md:space-y-4">
           <Card className="card-elevated p-2 sm:p-4 md:p-6">
             <div className="flex flex-col sm:flex-row flex-wrap items-center gap-2 sm:gap-3">
-              <div className="inline-flex flex-col sm:flex-row rounded-md border overflow-hidden w-full sm:w-auto mb-2 sm:mb-0">
-                <button
-                  className={`px-4 py-2 text-sm ${type==='ORCAMENTO' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
-                  onClick={() => setType('ORCAMENTO')}
-                  aria-pressed={type==='ORCAMENTO'}
-                >Orçamento</button>
-                <button
-                  className={`px-4 py-2 text-sm ${type==='PEDIDO' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
-                  onClick={() => setType('PEDIDO')}
-                  aria-pressed={type==='PEDIDO'}
-                >Pedido</button>
+              <div className="inline-flex items-center rounded-md border bg-background px-3 py-2 mb-2 sm:mb-0">
+                <span className="text-sm font-semibold text-foreground">Orçamento</span>
               </div>
               {/* Seletor de layout do Orçamento */}
               <div className="flex items-center gap-2">
