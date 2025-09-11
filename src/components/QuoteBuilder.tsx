@@ -886,7 +886,7 @@ export default function QuoteBuilder() {
         <tbody>
           ${quote.items.map(it=>`<tr class="avoid-break">
             ${quoteLayout === 'SMALL' ? `<td class="col-img" style="text-align:center; vertical-align:middle;">${it.imageDataUrl?`<img src="${it.imageDataUrl}" alt="${escape(it.name)}" style="width:64px;height:64px;object-fit:cover;border:1px solid var(--border);border-radius:4px;" />`:'—'}</td>` : ''}
-            <td><div class="product-name">${escape(it.name)}</div></td>
+            <td><div class="product-name">${escape(it.name)}</div>${quoteLayout === 'SMALL' && (it.description||it.options) ? `<div class="desc">${escape((it.description||'')+(it.options?"\n"+it.options:''))}</div>` : ''}</td>
             <td>${it.quantity}</td>
             <td>${currency(it.unitPrice)}</td>
             <td>${currency(it.subtotal)}</td>
@@ -904,7 +904,7 @@ export default function QuoteBuilder() {
         <thead><tr><th style="width:20%">Parcela</th><th>Detalhes</th><th style="width:18%">Valor (R$)</th></tr></thead>
         <tbody>${paymentEntries.map(p=>`<tr><td style="font-weight:600;">${escape(p.label)}</td><td>${escape(p.detail)}</td><td>${currency(p.amount)}</td></tr>`).join('')}</tbody>
       </table>`:''}
-      
+  ${quoteLayout === 'SMALL' ? (quote.notes?`<h3 style="margin-top:22px;">Observações</h3><div class="notes">${escape(quote.notes)}</div>`:'') : ''}
       <div class="signatures">
         <div class="sig"><div class="sig-line"></div><div class="small muted">Assinatura do Vendedor</div><div class="small" style="margin-top:4px;">${escape(quote.vendor?.name||'')}</div></div>
         <div class="sig"><div class="sig-line"></div><div class="small muted">Assinatura do Cliente</div><div class="small" style="margin-top:4px;">${escape(quote.clientSnapshot?.name||'')}</div></div>
