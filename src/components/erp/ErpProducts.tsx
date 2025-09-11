@@ -20,7 +20,7 @@
     return +(cost * (1 + margin/100)).toFixed(2);
   }
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,7 @@ interface ProductForm extends Partial<Product> {
   code_prefix?: string;
   stock_qty?: number;
   margin?: number;
+  options?: string | null;
 }
 
 const UNITS = ['UN','CX','KG','MT','LT','PC'];
@@ -68,11 +69,13 @@ export function ErpProducts(){
   const [form,setForm]=useState<ProductForm>(makeEmpty());
   const [imageFile,setImageFile]=useState<File|null>(null);
   const [confirmDelete,setConfirmDelete]=useState<null|Product>(null);
+  const [optionalsOpen, setOptionalsOpen] = useState(false);
+  const [optionGroups, setOptionGroups] = useState<{ id?: string; name: string; items: { id?: string; name: string; value?: string; showInPdf?: boolean }[] }[]>([]);
   const [extendedCols,setExtendedCols]=useState(true); // se false não enviar campos novos
   const [companyId,setCompanyId]=useState<string|undefined>(undefined);
 
   type ProductRow = Product & { created_at?: string };
-  async function load(pageOverride?: number){
+  const load = useCallback(async (pageOverride?: number) => {
     const currentPage = pageOverride ?? page;
     setLoading(true);
     try {
@@ -208,14 +211,13 @@ export function ErpProducts(){
       setRows(products);
     } catch(e:unknown){ const msg = e instanceof Error? e.message: String(e); toast.error('Falha ao carregar produtos: '+msg); }
     finally { setLoading(false); }
-  }
-  async function loadSuppliers(){
-  // carregar fornecedores visíveis para o usuário
-  const { data, error }:{ data: Pick<Supplier,'id'|'name'>[]|null; error: unknown } = await (supabase as unknown as { from: any }).from('suppliers').select('id,name').eq('is_active', true).limit(200);
+  }, [page, debouncedSearch, profile, stockViewColumns]);
+  const loadSuppliers = useCallback(async ()=>{
+    // carregar fornecedores visíveis para o usuário
+    const { data, error }:{ data: Pick<Supplier,'id'|'name'>[]|null; error: unknown } = await (supabase as unknown as { from: any }).from('suppliers').select('id,name').eq('is_active', true).limit(200);
     if(!error) setSuppliers(data||[]);
-  }
-  useEffect(()=>{ load(0); loadSuppliers(); setPage(0); // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[]);
+  }, []);
+  useEffect(()=>{ load(0); loadSuppliers(); setPage(0); },[load, loadSuppliers]);
 
   // carregar grupos de produto (hierarquia) para os selects em cascata
   async function loadProductGroups(){
@@ -242,7 +244,6 @@ export function ErpProducts(){
       setSelectedSectorId(undefined);
       setSelectedCategoryId(undefined);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[productGroups, form.product_group_id]);
 
   // DEBUG: logar resumo de rows quando mudam para diagnosticar imagens aplicadas indevidamente
@@ -256,8 +257,7 @@ export function ErpProducts(){
   useEffect(()=>{
     const t = setTimeout(()=>{ setDebouncedSearch(search.trim()); setPage(0); load(0); }, 400);
     return ()=> clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[search]);
+  },[search, load]);
   // Autocomplete de produto na busca
   useEffect(() => {
     if (!search) { setProdSearchSuggestions([]); return; }
@@ -358,6 +358,7 @@ export function ErpProducts(){
         cofins_rate: form.cofins_rate? Number(form.cofins_rate):null,
   // garantir persistência da imagem (antes não era enviada no payload)
   image_url: effectiveImageUrl || null,
+  options: form.options || null,
       };
       // Assegura que novos produtos sejam atribuídos à company do usuário quando aplicável
       if(profile && profile.role !== 'admin' && profile.company_id) {
@@ -431,6 +432,7 @@ export function ErpProducts(){
     setEditing(null);
     setImageFile(null);
     setForm(makeEmpty());
+  setOptionGroups([]);
     setOpen(true);
   }
   function normalizeNumber(v: unknown): number|undefined {
@@ -471,6 +473,17 @@ export function ErpProducts(){
   setEditing({ ...p });
   setForm(scrubbed);
     setOpen(true);
+    // inicializar opcionais se existirem
+    try {
+      const raw = (p as any).options;
+      if(raw && typeof raw === 'string' && raw.trim().startsWith('{')){
+        const parsed = JSON.parse(raw);
+        if(parsed && parsed.version === 1 && Array.isArray(parsed.groups)) setOptionGroups(parsed.groups);
+        else setOptionGroups([]);
+      } else {
+        setOptionGroups([]);
+      }
+    } catch(e){ setOptionGroups([]); }
   }
   async function toggleStatus(p:Product){
     try {
@@ -678,6 +691,10 @@ export function ErpProducts(){
               )}
             </div>
             <Textarea placeholder="Descrição / Observações" value={form.description||''} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={3} />
+            <div className="flex gap-2 items-center">
+              <Button size="sm" variant="outline" onClick={()=>setOptionalsOpen(true)}>Opcionais do Produto</Button>
+              <div className="text-xs text-muted-foreground">Gerenciar grupos e itens opcionais (nome, valor e visibilidade no PDF)</div>
+            </div>
           </section>}
           {!extendedCols && <section className="space-y-2">
             <h3 className="font-semibold text-sm">Básico</h3>
@@ -844,12 +861,62 @@ export function ErpProducts(){
               setForm(f=>({...f, image_url: uploadedUrl}));
             }
             // salvar e atualizar apenas a linha alterada em memória
+             // incluir opcionais serializados
+             const optionsPayload = optionGroups && optionGroups.length ? JSON.stringify({ version: 1, groups: optionGroups }) : null;
+             setForm(f=>({...f, options: optionsPayload}));
              await save(uploadedUrl);
             // Observação: não aplicamos mais a URL localmente a `rows` aqui para evitar
             // efeitos colaterais — o método `save()` chama `load()` que recarrega a lista
             // do backend e garante consistência. Mantemos logs de upload para debug.
             if(import.meta.env.DEV) console.debug('[ErpProducts] upload finished, relying on load() to refresh rows', { editingId, uploadedUrl });
           }} disabled={saving}>{saving? 'Salvando...':'Salvar'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Modal simples para gerenciar opcionais do produto */}
+    <Dialog open={optionalsOpen} onOpenChange={setOptionalsOpen}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Opcionais do Produto</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="flex flex-col gap-2">
+            {optionGroups.map((g, gi)=> (
+              <div key={gi} className="border rounded p-2">
+                <div className="flex gap-2 items-center">
+                  <Input value={g.name} onChange={e=>{ const v=e.target.value; setOptionGroups(og=> og.map((x,i)=> i===gi? {...x, name:v}: x)); }} placeholder="Nome do grupo" />
+                  <Button size="sm" variant="ghost" onClick={()=> setOptionGroups(og=>og.filter((_,i)=>i!==gi))}>Remover Grupo</Button>
+                </div>
+                <div className="mt-2 space-y-2">
+                  {g.items.map((it, ii)=> (
+                    <div key={ii} className="flex gap-2 items-center">
+                      <Input value={it.name} onChange={e=>{ const v=e.target.value; setOptionGroups(og=> og.map((x,xi)=> xi===gi? {...x, items: x.items.map((it2,i2)=> i2===ii? {...it2, name:v}: it2)} : x)); }} placeholder="Nome do item" />
+                      <Input value={it.value||''} onChange={e=>{ const v=e.target.value; setOptionGroups(og=> og.map((x,xi)=> xi===gi? {...x, items: x.items.map((it2,i2)=> i2===ii? {...it2, value:v}: it2)} : x)); }} placeholder="Valor (opcional)" />
+                      <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={!!it.showInPdf} onChange={e=>{ const v=e.target.checked; setOptionGroups(og=> og.map((x,xi)=> xi===gi? {...x, items: x.items.map((it2,i2)=> i2===ii? {...it2, showInPdf: v}: it2)} : x)); }} /> Exibir no PDF</label>
+                      <Button size="sm" variant="ghost" onClick={()=> setOptionGroups(og=> og.map((x,xi)=> xi===gi? {...x, items: x.items.filter((_,i)=>i!==ii)}: x))}>Remover</Button>
+                    </div>
+                  ))}
+                  <div className="flex gap-2 mt-1">
+                    <Button size="sm" onClick={()=> setOptionGroups(og=> og.map((x,xi)=> xi===gi? {...x, items: [...x.items, { name: '', value: '', showInPdf: true }]} : x))}>Adicionar Item</Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={()=> setOptionGroups(og=>[...og, { name: '', items: [] }])}>Adicionar Grupo</Button>
+            <Button size="sm" variant="outline" onClick={()=>{ setOptionGroups([]); }}>Limpar</Button>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setOptionalsOpen(false)}>Fechar</Button>
+          <Button onClick={()=>{
+            // salvar opcionais no form em formato serializado
+            const payload = optionGroups && optionGroups.length ? JSON.stringify({ version: 1, groups: optionGroups }) : null;
+            setForm(f=>({...f, options: payload}));
+            setOptionalsOpen(false);
+          }}>Salvar Opcionais</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

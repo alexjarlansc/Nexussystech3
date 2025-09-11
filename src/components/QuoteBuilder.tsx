@@ -367,7 +367,27 @@ export default function QuoteBuilder() {
           code: p.code || undefined,
           name: p.name,
           description: p.description || '',
-          options: p.options || '',
+          options: (()=>{
+            try{
+              if(!p.options) return '';
+              // try parse structured options
+              if(typeof p.options === 'string' && p.options.trim().startsWith('{')){
+                const parsed = JSON.parse(p.options);
+                if(parsed && parsed.version===1 && Array.isArray(parsed.groups)){
+                  // build short textual representation including only items flagged showInPdf
+                  return (parsed.groups as unknown[]).map(g=>{
+                    const gg = g as unknown as { name?: string; items?: unknown[] };
+                    const items = Array.isArray(gg.items) ? gg.items as unknown[] : [];
+                    const shown = items.map(it=> it as unknown as { name?: string; value?: string; showInPdf?: boolean })
+                      .filter(it=> it && !!it.showInPdf)
+                      .map(it=> it.value ? `${it.name}=${it.value}` : (it.name || ''));
+                    return (gg.name || '') + (shown.length ? (': ' + shown.join(', ')) : '');
+                  }).filter(Boolean).join(' | ');
+                }
+              }
+              return p.options || '';
+            }catch(e){ return String(p.options||''); }
+          })(),
           imageDataUrl: p.image_url ? p.image_url : undefined,
           price: isNaN(basePriceNum) ? 0 : basePriceNum,
           cost_price: p.cost_price != null ? Number(p.cost_price) : undefined,
