@@ -90,6 +90,8 @@ export default function QuoteBuilder() {
   }, [generatedToken]);
   const { profile, user, company } = useAuth();
   const [type, setType] = useState<QuoteType>('ORCAMENTO');
+  // layout do orçamento: SMALL -> com fotos; LARGE -> lista sem fotos (para orçamentos grandes)
+  const [quoteLayout, setQuoteLayout] = useState<'SMALL' | 'LARGE'>('SMALL');
   const [validityDays, setValidityDays] = useState(7);
   // Estados para controle de desconto com token
   const [discountToken, setDiscountToken] = useState('');
@@ -875,7 +877,7 @@ export default function QuoteBuilder() {
       <h2>Produtos / Serviços</h2>
       <table class="avoid-break">
         <thead><tr>
-          <th class="col-img">Imagem</th>
+          ${quoteLayout === 'SMALL' ? '<th class="col-img">Imagem</th>' : ''}
           <th style="width:42%">Descrição</th>
             <th style="width:10%">Qtd</th>
             <th style="width:16%">Unitário</th>
@@ -883,7 +885,7 @@ export default function QuoteBuilder() {
         </tr></thead>
         <tbody>
           ${quote.items.map(it=>`<tr class="avoid-break">
-            <td class="col-img" style="text-align:center; vertical-align:middle;">${it.imageDataUrl?`<img src="${it.imageDataUrl}" alt="${escape(it.name)}" style="width:64px;height:64px;object-fit:cover;border:1px solid var(--border);border-radius:4px;" />`:'—'}</td>
+            ${quoteLayout === 'SMALL' ? `<td class="col-img" style="text-align:center; vertical-align:middle;">${it.imageDataUrl?`<img src="${it.imageDataUrl}" alt="${escape(it.name)}" style="width:64px;height:64px;object-fit:cover;border:1px solid var(--border);border-radius:4px;" />`:'—'}</td>` : ''}
             <td><div class="product-name">${escape(it.name)}</div>${(it.description||it.options)?`<div class="desc">${escape((it.description||'')+(it.options?"\n"+it.options:''))}</div>`:''}</td>
             <td>${it.quantity}</td>
             <td>${currency(it.unitPrice)}</td>
@@ -1011,6 +1013,21 @@ export default function QuoteBuilder() {
                   onClick={() => setType('PEDIDO')}
                   aria-pressed={type==='PEDIDO'}
                 >Pedido</button>
+              </div>
+              {/* Seletor de layout do Orçamento */}
+              <div className="flex items-center gap-2">
+                <div className="inline-flex rounded-md border overflow-hidden">
+                  <button
+                    className={`px-3 py-2 text-sm ${quoteLayout==='SMALL' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
+                    onClick={() => setQuoteLayout('SMALL')}
+                    aria-pressed={quoteLayout==='SMALL'}
+                  >Pequeno (com fotos)</button>
+                  <button
+                    className={`px-3 py-2 text-sm ${quoteLayout==='LARGE' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
+                    onClick={() => setQuoteLayout('LARGE')}
+                    aria-pressed={quoteLayout==='LARGE'}
+                  >Grande (lista)</button>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Label htmlFor="valid">Validade</Label>
