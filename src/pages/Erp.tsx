@@ -60,6 +60,7 @@ type SectionKey =
   | 'purchases_xml'
   | 'purchases_returns'
   | 'purchases_history'
+  | 'purchases_requests'
   | 'fin_payables'
   | 'fin_receivables'
   | 'fin_payroll'
@@ -72,6 +73,8 @@ type SectionKey =
 export default function Erp() {
   const [section, setSection] = useState<SectionKey>('dashboard');
   const [quotesCount, setQuotesCount] = useState<number>(0);
+  const [purchaseRequestsCount, setPurchaseRequestsCount] = useState<number>(0);
+  const [purchasesRequestsDraft, setPurchasesRequestsDraft] = useState<string[] | null>(null);
 
   // Carrega contagem inicial e assina mudanças de orçamentos
   useEffect(() => {
@@ -93,6 +96,53 @@ export default function Erp() {
       })
       .subscribe();
     return () => { active = false; (supabase as any).removeChannel(channel); };
+  }, []);
+
+  // Event listener para abrir seção de solicitações com itens selecionados
+  useEffect(()=>{
+    function handler(e: Event){
+      try{
+        // @ts-expect-error accessing custom event detail
+        const ids = (e as CustomEvent)?.detail?.ids as string[] | undefined;
+        const valid = Array.isArray(ids) ? ids : null;
+        if(valid){ setPurchasesRequestsDraft(valid); setSection('purchases_requests'); localStorage.removeItem('erp:purchase_requests_initial'); }
+      }catch(err){ console.warn('erp:open-purchase-requests handler error', err); }
+    }
+    window.addEventListener('erp:open-purchase-requests', handler as EventListener);
+    // fallback read localStorage on mount
+    try{
+      const stored = localStorage.getItem('erp:purchase_requests_initial');
+      if(stored){
+        const parsed = JSON.parse(stored) as string[];
+        if(Array.isArray(parsed)){
+          setPurchasesRequestsDraft(parsed);
+          setSection('purchases_requests');
+          localStorage.removeItem('erp:purchase_requests_initial');
+        }
+      }
+    } catch(err){ console.warn('reading erp:purchase_requests_initial failed', err); }
+    return ()=> window.removeEventListener('erp:open-purchase-requests', handler as EventListener);
+  }, []);
+
+  // contagem de Solicitações de Compras (se existir a tabela)
+  useEffect(() => {
+    let active = true;
+    async function loadReqCount() {
+      try {
+        const { count } = await (supabase as any)
+          .from('purchase_requests')
+          .select('id', { count: 'exact', head: true });
+        if (active) setPurchaseRequestsCount(count || 0);
+      } catch (_) { if (active) setPurchaseRequestsCount(0); }
+    }
+    loadReqCount();
+    try {
+      const ch = (supabase as any)
+        .channel('purchase-requests-count')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_requests' }, () => { loadReqCount(); })
+        .subscribe();
+      return () => { active = false; (supabase as any).removeChannel(ch); };
+    } catch (_) { return () => { active = false; }; }
   }, []);
 
   // Mantemos seção acessível mesmo sem orçamentos (apenas mostra vazio)
@@ -155,6 +205,7 @@ export default function Erp() {
             <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Compras" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Lançamento de Compra" active={section==='purchases_list'} onClick={()=>setSection('purchases_list')} />
+              <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Solicitações de compras" active={section==='purchases_requests'} onClick={()=>setSection('purchases_requests')} badge={purchaseRequestsCount} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Gerar via XML" active={section==='purchases_xml'} onClick={()=>setSection('purchases_xml')} />
               <ErpNavItem icon={<RotateIcon /> as any} label="Troca / Devolução" active={section==='purchases_returns'} onClick={()=>setSection('purchases_returns')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Histórico de Compras" active={section==='purchases_history'} onClick={()=>setSection('purchases_history')} />
@@ -207,6 +258,8 @@ export default function Erp() {
               {section === 'sales_orders' && <SalesOrdersList />}
               {section === 'service_sales_orders' && <ServiceSalesOrdersList />}
               {section === 'purchases_list' && <ErpPurchasesList />}
+              {section === 'purchases_requests' && <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Solicitações de Compras</h2><p className="text-sm text-muted-foreground">Lista de solicitações pendentes. Implementar CRUD quando especificado.</p></Card>}
+              {section === 'purchases_requests' && <PurchasesRequestsEditor initialIds={purchasesRequestsDraft || []} clearDraft={()=>setPurchasesRequestsDraft(null)} />}
               {section === 'purchases_xml' && <ErpPurchaseXmlImport />}
               {section === 'purchases_returns' && <ErpPurchaseReturns />}
               {section === 'purchases_history' && <ErpPurchasesList />}
@@ -557,7 +610,7 @@ function ServiceSalesOrdersList(){
 
   }
 
-  function ErpNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
+  function ErpNavItem({ icon, label, active, onClick, badge }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void; badge?: number }) {
     return (
       <button
         onClick={active ? undefined : onClick}
@@ -565,6 +618,7 @@ function ServiceSalesOrdersList(){
         className={`w-full flex items-center gap-2 px-2 py-1 rounded-md hover:bg-primary/10 text-left transition-colors ${active ? 'bg-primary/15 text-primary font-medium opacity-60 cursor-default' : 'text-slate-600 dark:text-slate-300'}`}
       >
         {icon}<span className="truncate">{label}</span>
+        {typeof badge === 'number' && <span className="ml-auto text-[11px] font-medium rounded px-1.5 py-0.5 bg-primary/20 text-primary/90">{badge}</span>}
       </button>
     );
   }
@@ -940,6 +994,68 @@ function ProductsPricingPlaceholder(){
     {!product && <div className="text-[11px] text-muted-foreground">Busque um produto para iniciar o cálculo.</div>}
     <div className="text-[10px] text-muted-foreground">Modelo simples: Preço = Custo*(1+Margem%) + (Tributação% sobre base). Ajuste conforme regras fiscais específicas depois.</div>
   </Card>;
+}
+
+function PurchasesRequestsEditor({ initialIds, clearDraft }: { initialIds: string[]; clearDraft: ()=>void }){
+  const [rows, setRows] = useState<{ product_id?: string; product_name?: string; qty:number; notes?:string }[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(()=>{
+    async function load(){
+      if(!initialIds || initialIds.length===0) return;
+      try{
+        const { data } = await (supabase as any).from('products').select('id,name,code').in('id', initialIds).limit(500);
+        const map = new Map((data||[]).map((p:any)=>[p.id,{ name: p.name, code: p.code }]));
+        const initial = initialIds.map(id=>({ product_id: id, product_name: map.get(id)?.name||id, product_code: map.get(id)?.code||id, qty: 1 } as any));
+        setRows(initial as any);
+      }catch(e){ console.warn('load product names failed', e); setRows(initialIds.map(id=>({ product_id:id, product_name:id, qty:1 }))); }
+    }
+    load();
+  },[initialIds]);
+
+  function addRow(){ setRows(r=>[...r,{ qty:1 } as any]); }
+  function removeRow(i:number){ setRows(r=>r.filter((_,idx)=>idx!==i)); }
+  function updateRow(i:number, patch: Partial<{ product_id:string; product_name:string; qty:number; notes?:string }>){
+    setRows(r=>{ const n = r.map(x=>({...x})); n[i] = { ...n[i], ...patch }; return n; });
+  }
+
+  async function saveAll(){
+    if(rows.length===0){ toast.error('Nada para salvar'); return; }
+    setLoading(true);
+    try{
+      // Inserir um registro por item para facilitar rastreio individual
+      const now = new Date().toISOString();
+      const batch = rows.map(r=>({ product_id: r.product_id || null, product_code: (r as any).product_code || null, qty: Number(r.qty)||0, notes: r.notes||null, status: 'PENDENTE', created_at: now }));
+      const { error } = await (supabase as any).from('purchase_requests').insert(batch);
+      if(error){ toast.error('Falha ao salvar solicitações: '+String((error as any)?.message||error)); setLoading(false); return; }
+      toast.success('Solicitações criadas: '+batch.length);
+      setRows([]); clearDraft();
+    }catch(e){ toast.error('Falha ao salvar'); }
+    finally{ setLoading(false); }
+  }
+
+  return (
+    <Card className="p-4">
+      <h2 className="text-lg font-semibold mb-2">Solicitações de Compras - Editor</h2>
+      <div className="text-sm text-muted-foreground mb-4">Adicione/edite lançamentos manualmente ou revise os itens importados da grade.</div>
+      <div className="space-y-2">
+        {rows.map((r,idx)=> (
+          <div key={idx} className="flex gap-2 items-center">
+            <input placeholder="Código do produto" value={r.product_code||r.product_id||''} onChange={e=>updateRow(idx,{ product_id: e.target.value, product_code: e.target.value })} className="border rounded px-2 py-1 text-sm w-24 sm:w-36 md:w-48" />
+            <div className="text-sm truncate" style={{minWidth:200}}>{r.product_name}</div>
+            <input type="number" aria-label={`Quantidade ${idx+1}`} className="border rounded px-2 py-1 text-sm w-20" value={String(r.qty)} readOnly tabIndex={-1} />
+            <input placeholder="Notas" value={r.notes||''} onChange={e=>updateRow(idx,{ notes: e.target.value })} className="border rounded px-2 py-1 text-sm flex-1" />
+            <Button size="sm" variant="outline" onClick={()=>removeRow(idx)}>Remover</Button>
+          </div>
+        ))}
+        {rows.length===0 && <div className="text-sm text-muted-foreground">Nenhum item carregado.</div>}
+      </div>
+      <div className="mt-4 flex items-center gap-2">
+        <Button size="sm" onClick={addRow}>Adicionar Linha</Button>
+        <Button size="sm" variant="outline" onClick={saveAll} disabled={loading}>{loading? 'Salvando...':'Salvar Solicitações'}</Button>
+      </div>
+    </Card>
+  );
 }
 // Breakdown de tributos e margem líquida
 function Breakdown({cost, margin, icms, pis, cofins, saleComputed, calcMode, saleInput}:{cost: number|undefined; margin: number|undefined; icms:number|undefined; pis:number|undefined; cofins:number|undefined; saleComputed:number|undefined; calcMode:'forward'|'reverse'; saleInput:number|undefined;}){
