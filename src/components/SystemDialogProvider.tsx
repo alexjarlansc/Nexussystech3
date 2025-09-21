@@ -6,6 +6,8 @@ type SysConfirmDetail = {
   id?: string;
   title?: string;
   message: string;
+  forwardEvent?: string;
+  forwardPayload?: unknown;
 };
 
 export default function SystemDialogProvider({ children }: { children: React.ReactNode }){
@@ -27,6 +29,13 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
     console.debug('[SystemDialogProvider] reply', { id: pending?.id, ok: result });
     if(pending && pending.id){
       window.dispatchEvent(new CustomEvent('system:confirm:reply', { detail: { id: pending.id, ok: result } }));
+    }
+    // if caller provided a forward event, dispatch it when confirmed
+    if(result && pending?.forwardEvent){
+      try{
+        console.debug('[SystemDialogProvider] forwarding event', pending.forwardEvent, pending.forwardPayload);
+        window.dispatchEvent(new CustomEvent(pending.forwardEvent, { detail: pending.forwardPayload }));
+      }catch(e){ console.debug('[SystemDialogProvider] forward dispatch failed', e); }
     }
     setOpen(false);
     setPending(null);
