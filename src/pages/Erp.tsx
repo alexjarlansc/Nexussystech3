@@ -20,6 +20,7 @@ import ErpStockTransfers from '@/components/erp/ErpStockTransfers';
 import ErpStockReturns from '@/components/erp/ErpStockReturns';
 import { StockLoader } from '@/components/erp/StockLoader';
 import ProductLabels from '@/components/erp/ProductLabels';
+import ErpInventory from '@/components/erp/ErpInventory';
 import FinancePayables from '@/components/erp/FinancePayables';
 import FinanceReceivables from '@/components/erp/FinanceReceivables';
 import FinanceDashboard from '@/components/erp/FinanceDashboard';
@@ -71,7 +72,8 @@ type SectionKey =
   | 'report_stock_full'
   | 'report_sales_full'
   | 'report_finance_full'
-  | 'reports_dashboard';
+  | 'reports_dashboard'
+  | 'inventory';
 
 export default function Erp() {
   const auth = useAuth();
@@ -187,6 +189,7 @@ export default function Erp() {
             <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Estoque" active={section==='stock'} onClick={()=>setSection('stock')} />
+              <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Inventário" active={section==='inventory'} onClick={()=>setSection('inventory')} />
               <ErpNavItem icon={<Wrench className='h-4 w-4' />} label="Serviços" active={section==='services'} onClick={()=>setSection('services')} />
             </div>
             <GroupTitle icon={<Boxes className="h-3.5 w-3.5" />} label="Estoque" />
@@ -261,6 +264,7 @@ export default function Erp() {
               {section === 'product_variations' && <ProductsReplenish />}
               {section === 'product_labels' && <ProductLabels />}
               {section === 'stock' && <StockPlaceholder />}
+              {section === 'inventory' && <ErpInventory />}
               {section === 'stock_movements' && <ErpStockMovements />}
               {section === 'services' && <ServicesPlaceholder />}
               {section === 'stock_adjustments' && <ErpStockAdjustments />}
