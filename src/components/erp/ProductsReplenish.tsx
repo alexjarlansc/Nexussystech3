@@ -196,10 +196,16 @@ export default function ProductsReplenish(){
                   const promise = new Promise<boolean>((resolve) => {
                     function replyHandler(ev: Event){
                       const d = (ev as CustomEvent)?.detail as { id?: string; ok?: boolean } | undefined;
+                      console.debug('[ProductsReplenish] system:confirm:reply received', d);
                       if(d?.id === reqId){ window.removeEventListener('system:confirm:reply', replyHandler as EventListener); resolve(Boolean(d.ok)); }
                     }
                     window.addEventListener('system:confirm:reply', replyHandler as EventListener);
+                    // safety timeout to log if no reply arrives
+                    setTimeout(()=>{
+                      console.debug('[ProductsReplenish] system:confirm reply timeout for', reqId);
+                    }, 10000);
                   });
+                  console.debug('[ProductsReplenish] dispatching system:confirm', { reqId, msg: confirmMsg });
                   window.dispatchEvent(new CustomEvent('system:confirm', { detail: { id: reqId, title: 'Confirmação', message: confirmMsg } }));
                   promise.then((ok) => {
                     if(!ok) return;
