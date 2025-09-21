@@ -227,6 +227,10 @@ export default function Erp() {
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Vendas completo" active={section==='report_sales_full'} onClick={()=>setSection('report_sales_full')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Financeiro completo" active={section==='report_finance_full'} onClick={()=>setSection('report_finance_full')} />
             </div>
+            <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Configurações" />
+            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+              <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Configurações" active={section==='configurations'} onClick={()=>setSection('configurations')} />
+            </div>
           </nav>
           <div className="p-3 border-t text-[10px] text-muted-foreground">
             MVP inicial do módulo ERP • Expandir funções posteriormente
@@ -258,6 +262,7 @@ export default function Erp() {
               {section === 'sales_orders' && <SalesOrdersList />}
               {section === 'service_sales_orders' && <ServiceSalesOrdersList />}
               {section === 'purchases_list' && <ErpPurchasesList />}
+              {section === 'configurations' && <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Configurações</h2><p className="text-sm text-muted-foreground">Área de configurações do ERP (placeholder).</p></Card>}
               {section === 'purchases_requests' && <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Solicitações de Compras</h2><p className="text-sm text-muted-foreground">Lista de solicitações pendentes. Implementar CRUD quando especificado.</p></Card>}
               {section === 'purchases_requests' && <PurchasesRequestsEditor initialIds={purchasesRequestsDraft || []} clearDraft={()=>setPurchasesRequestsDraft(null)} />}
               {section === 'purchases_xml' && <ErpPurchaseXmlImport />}
@@ -1027,7 +1032,31 @@ function PurchasesRequestsEditor({ initialIds, clearDraft }: { initialIds: strin
       const now = new Date().toISOString();
       const batch = rows.map(r=>({ product_id: r.product_id || null, product_code: (r as any).product_code || null, qty: Number(r.qty)||0, notes: r.notes||null, status: 'PENDENTE', created_at: now }));
       const { error } = await (supabase as any).from('purchase_requests').insert(batch);
-      if(error){ toast.error('Falha ao salvar solicitações: '+String((error as any)?.message||error)); setLoading(false); return; }
+      if(error){
+        const msg = String((error as any)?.message || error || '');
+        // Detect missing table error from Supabase/Postgres schema cache
+        if(msg.includes("Could not find the table 'public.purchase_requests' in the schema cache")){
+          try{
+            // persist a local history so admin/support can review later
+            const existing = localStorage.getItem('purchase_requests_history');
+            const arr = existing ? JSON.parse(existing) as any[] : [];
+            arr.push({ id: Math.random().toString(36).slice(2), created_at: new Date().toISOString(), batch, note: 'saved-locally-due-to-missing-table' });
+            localStorage.setItem('purchase_requests_history', JSON.stringify(arr));
+            toast.success('Tabela ausente: histórico local gerado para revisão (purchase_requests_history).');
+            setRows([]); clearDraft();
+            setLoading(false);
+            return;
+          }catch(e){
+            console.error('failed to write local purchase_requests_history', e);
+            toast.error('Falha ao salvar solicitações e ao gerar histórico local');
+            setLoading(false);
+            return;
+          }
+        }
+        toast.error('Falha ao salvar solicitações: '+msg);
+        setLoading(false);
+        return;
+      }
       toast.success('Solicitações criadas: '+batch.length);
       setRows([]); clearDraft();
     }catch(e){ toast.error('Falha ao salvar'); }
