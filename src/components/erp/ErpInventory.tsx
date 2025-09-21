@@ -1,8 +1,9 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from '@/components/ui/sonner';
 
 type Row = {
   id: number;
@@ -89,6 +90,52 @@ export default function ErpInventory({ initialRows }: { initialRows?: Row[] }){
 
   function clearAll(){ setRows(initial); }
 
+  // Listen for inventory finalize events (forwarded by SystemDialogProvider)
+  useEffect(()=>{
+    async function handler(e: Event){
+      try{
+        const ce = e as any;
+        const payload = ce.detail;
+        if(!payload) return;
+        const record = {
+          items: JSON.stringify(payload.rows || []),
+          description: payload.description || null,
+          created_at: new Date().toISOString(),
+          user_id: payload.user_id || null,
+          user_name: payload.user_name || null,
+        };
+        const { data, error } = await (supabase as any).from('inventories').insert(record).select().maybeSingle();
+        if(error){
+          console.error('Error saving inventory', error);
+          toast.error('Erro ao salvar inventário: ' + (error.message || ''));
+        } else {
+          toast.success('Inventário salvo com sucesso');
+          try{ window.dispatchEvent(new CustomEvent('inventory:finalized', { detail: data })); }catch(_){/*noop*/}
+        }
+      }catch(err){ console.error('inventory finalize handler failed', err); toast.error('Erro interno ao finalizar'); }
+    }
+    window.addEventListener('inventory:finalize', handler as EventListener);
+    return ()=> window.removeEventListener('inventory:finalize', handler as EventListener);
+  }, []);
+
+  // If another part of the app requests a finalize (e.g. header button), trigger system confirm using current rows
+  useEffect(()=>{
+    function reqHandler(e: Event){
+      try{
+        // dispatch system confirm forwarding to inventory:finalize with current rows
+        window.dispatchEvent(new CustomEvent('system:confirm', { detail: {
+          id: 'finalize-inventory',
+          title: 'Finalizar inventário',
+          message: 'Deseja concluir o inventário? Esta ação salvará o resultado e não poderá ser desfeita.',
+          forwardEvent: 'inventory:finalize',
+          forwardPayload: { rows }
+        }}));
+      }catch(e){ console.debug('request finalize dispatch failed', e); }
+    }
+    window.addEventListener('request:inventory:confirm', reqHandler as EventListener);
+    return ()=> window.removeEventListener('request:inventory:confirm', reqHandler as EventListener);
+  }, [rows]);
+
   return (
     <Card className="p-3">
       <div className="flex items-start gap-3 mb-2">
@@ -97,7 +144,21 @@ export default function ErpInventory({ initialRows }: { initialRows?: Row[] }){
           <div className="text-xs text-muted-foreground">Preencha a contagem física — subtotais atualizam automaticamente.</div>
         </div>
         <div className="ml-auto">
-          <Button size="sm" variant="outline" onClick={clearAll}>Limpar</Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={clearAll}>Limpar</Button>
+            <Button size="sm" variant="destructive" onClick={()=>{
+              // dispatch system confirm event which will forward inventory:finalize when OK
+              try{
+                window.dispatchEvent(new CustomEvent('system:confirm', { detail: {
+                  id: 'finalize-inventory',
+                  title: 'Finalizar inventário',
+                  message: 'Deseja concluir o inventário? Esta ação salvará o resultado e não poderá ser desfeita.',
+                  forwardEvent: 'inventory:finalize',
+                  forwardPayload: { rows }
+                }}));
+              }catch(e){ console.debug('dispatch confirm failed', e); }
+            }}>Finalizar inventário</Button>
+          </div>
         </div>
       </div>
 
@@ -191,3 +252,5 @@ export default function ErpInventory({ initialRows }: { initialRows?: Row[] }){
     </Card>
   );
 }
+
+// listener moved into component; no exported helpers here

@@ -81,6 +81,10 @@ export default function Erp() {
   const [quotesCount, setQuotesCount] = useState<number>(0);
   const [purchaseRequestsCount, setPurchaseRequestsCount] = useState<number>(0);
   const [purchasesRequestsDraft, setPurchasesRequestsDraft] = useState<string[] | null>(null);
+  const [showNewInventory, setShowNewInventory] = useState<boolean>(false);
+  const [showInventoryHistory, setShowInventoryHistory] = useState<boolean>(false);
+  const [inventoryHistory, setInventoryHistory] = useState<any[] | null>(null);
+  const [selectedInventory, setSelectedInventory] = useState<any | null>(null);
 
   // Carrega contagem inicial e assina mudanças de orçamentos
   useEffect(() => {
@@ -264,7 +268,39 @@ export default function Erp() {
               {section === 'product_variations' && <ProductsReplenish />}
               {section === 'product_labels' && <ProductLabels />}
               {section === 'stock' && <StockPlaceholder />}
-              {section === 'inventory' && <ErpInventory />}
+              {section === 'inventory' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold">Inventário</h2>
+                      <p className="text-sm text-muted-foreground">Inicie um novo inventário ou veja o histórico de inventários realizados.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" onClick={() => { setShowInventoryHistory(true); /* load when opening */ }}>
+                        Histórico de Inventários
+                      </Button>
+                      <Button onClick={() => setShowNewInventory(true)}>
+                        Novo Inventário
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* When user chooses Novo Inventário show the existing component */}
+                  {showNewInventory ? (
+                    <div>
+                      <div className="mb-3">
+                        <Button variant="ghost" onClick={() => setShowNewInventory(false)}>Voltar</Button>
+                      </div>
+                      <ErpInventory />
+                    </div>
+                  ) : (
+                    <Card className="p-6">
+                      <h3 className="text-lg font-medium">Tela de Inventário</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">Clique em "Novo Inventário" para abrir a tela e iniciar a contagem (preenchimento físico).</p>
+                    </Card>
+                  )}
+                </div>
+              )}
               {section === 'stock_movements' && <ErpStockMovements />}
               {section === 'services' && <ServicesPlaceholder />}
               {section === 'stock_adjustments' && <ErpStockAdjustments />}
@@ -298,6 +334,107 @@ export default function Erp() {
           </ScrollArea>
         </main>
       </div>
+      {/* Inventory History Dialog */}
+      <Dialog open={showInventoryHistory} onOpenChange={(open)=>{ setShowInventoryHistory(open); if(open){ (async()=>{
+        try{
+          const { data } = await (supabase as any).from('inventories').select('*').order('created_at', {ascending:false}).limit(200);
+          setInventoryHistory(data || []);
+        }catch(e){ setInventoryHistory([]); }
+      })(); } }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Histórico de Inventários</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {inventoryHistory && inventoryHistory.length === 0 && <p className="text-sm text-muted-foreground">Nenhum inventário encontrado.</p>}
+            {inventoryHistory && inventoryHistory.length > 0 && (
+              <div className="overflow-auto max-h-96">
+                <table className="w-full table-auto">
+                  <thead className="text-left text-sm text-slate-600">
+                    <tr>
+                      <th className="p-2">#</th>
+                      <th className="p-2">Data</th>
+                      <th className="p-2">Usuário</th>
+                      <th className="p-2">Descrição</th>
+                      <th className="p-2">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventoryHistory.map((it:any, idx:number)=> (
+                      <tr key={it.id} className="border-t">
+                        <td className="p-2 align-top">{idx+1}</td>
+                        <td className="p-2 align-top">{new Date(it.created_at).toLocaleString()}</td>
+                        <td className="p-2 align-top">{it.user_name || it.user_id || '-'}</td>
+                        <td className="p-2 align-top">{it.description || '-'}</td>
+                        <td className="p-2 align-top">
+                          <div className="flex gap-2">
+                            <Button variant="ghost" onClick={()=> setSelectedInventory(it)}>Ver</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={()=> setShowInventoryHistory(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Selected inventory details modal */}
+      <Dialog open={!!selectedInventory} onOpenChange={(open)=>{ if(!open) setSelectedInventory(null); }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Detalhes do Inventário</DialogTitle>
+          </DialogHeader>
+          <div>
+            {selectedInventory ? (
+              <div className="space-y-3">
+                <p className="text-sm">Data: {new Date(selectedInventory.created_at).toLocaleString()}</p>
+                <p className="text-sm">Usuário: {selectedInventory.user_name || selectedInventory.user_id}</p>
+                <p className="text-sm">Descrição: {selectedInventory.description || '-'}</p>
+                <div className="overflow-auto max-h-80">
+                  {/* If inventories store items as JSON in 'items' field */}
+                  {selectedInventory.items ? (
+                    <table className="w-full table-auto text-sm">
+                      <thead>
+                        <tr className="text-left text-slate-600">
+                          <th className="p-1">Código</th>
+                          <th className="p-1">Descrição</th>
+                          <th className="p-1">Sistema</th>
+                          <th className="p-1">Físico</th>
+                          <th className="p-1">Faltas</th>
+                          <th className="p-1">Sobras</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {JSON.parse(selectedInventory.items).map((it:any, i:number)=>(
+                          <tr key={i} className="border-t">
+                            <td className="p-1">{it.code}</td>
+                            <td className="p-1">{it.description}</td>
+                            <td className="p-1">{it.system}</td>
+                            <td className="p-1">{it.physical}</td>
+                            <td className="p-1">{it.faltas}</td>
+                            <td className="p-1">{it.sobras}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Nenhum item armazenado para este inventário.</p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={()=> setSelectedInventory(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
