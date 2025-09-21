@@ -188,7 +188,7 @@ export default function ProductsReplenish(){
             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
               <Button size="sm" variant="outline" onClick={printReport}>Imprimir</Button>
               <Button size="sm" variant="outline" onClick={()=>exportXlsx(rows.map(r=>({produto:r.name, custo_medio:r.price, qtd_fixo:r.stock_max, estoque:r.available, falta:(r as unknown as { missing?: number }).missing})))}>Gerar Excel</Button>
-              <Button size="sm" variant="outline" onClick={()=>{
+              <Button size="sm" variant="outline" onClick={async ()=>{
                 try {
                   const ids = Array.from(selectedIds.values());
                   if(!ids.length){ toast.error('Nenhum produto selecionado para gerar grade'); return; }
