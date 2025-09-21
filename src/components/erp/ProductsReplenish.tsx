@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/sonner';
 import type { Product } from '@/types';
@@ -16,6 +17,8 @@ export default function ProductsReplenish(){
   const [loading,setLoading] = useState(false);
   const [filter,setFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showConfirmOpenRequests, setShowConfirmOpenRequests] = useState(false);
+  const [pendingIds, setPendingIds] = useState<string[]|null>(null);
 
   function toggleSelect(id: string){
     setSelectedIds(s=>{ const n = new Set(Array.from(s)); if(n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -191,9 +194,7 @@ export default function ProductsReplenish(){
                   if(!ids.length){ toast.error('Nenhum produto selecionado para gerar grade'); return; }
                   const confirmMsg = `Deseja abrir Solicitações de Compras com ${ids.length} produto(s) selecionado(s)?`;
                   if(!window.confirm(confirmMsg)) return;
-                  // dispatch event for parent to handle
                   window.dispatchEvent(new CustomEvent('erp:open-purchase-requests', { detail: { ids } }));
-                  // fallback: localStorage
                   localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids));
                 } catch(e){ toast.error('Erro ao tentar gerar grade'); }
               }}>Gerar Grade</Button>
@@ -203,6 +204,33 @@ export default function ProductsReplenish(){
         </div>
       </div>
     )}
+    {/* In-app confirmation dialog to open purchase requests */}
+    <Dialog open={showConfirmOpenRequests} onOpenChange={(o)=>{ if(!o) { setShowConfirmOpenRequests(false); setPendingIds(null); } }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Confirmar ação</DialogTitle>
+        </DialogHeader>
+        <div className="py-2">
+          <p>Deseja abrir Solicitações de Compras com {pendingIds?.length ?? 0} produto(s) selecionado(s)?</p>
+        </div>
+        <DialogFooter>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={()=>{ setShowConfirmOpenRequests(false); setPendingIds(null); }}>Cancelar</Button>
+            <Button size="sm" variant="default" onClick={()=>{
+              try{
+                const ids = pendingIds ?? [];
+                if(!ids.length){ toast.error('Nenhum produto selecionado para gerar grade'); setShowConfirmOpenRequests(false); setPendingIds(null); return; }
+                window.dispatchEvent(new CustomEvent('erp:open-purchase-requests', { detail: { ids } }));
+                localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids));
+                setShowConfirmOpenRequests(false);
+                setPendingIds(null);
+                toast.success('Solicitações de Compras abertas');
+              }catch(e){ toast.error('Erro ao abrir Solicitações de Compras'); }
+            }}>Abrir Solicitações</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </>
   );
 }
