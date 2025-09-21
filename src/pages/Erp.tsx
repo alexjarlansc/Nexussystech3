@@ -1,4 +1,5 @@
 import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
+import { useAuth } from '@/hooks/useAuth';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -60,6 +61,7 @@ type SectionKey =
   | 'purchases_xml'
   | 'purchases_returns'
   | 'purchases_history'
+  | 'configurations'
   | 'purchases_requests'
   | 'fin_payables'
   | 'fin_receivables'
@@ -71,6 +73,7 @@ type SectionKey =
   | 'reports_dashboard';
 
 export default function Erp() {
+  const auth = useAuth();
   const [section, setSection] = useState<SectionKey>('dashboard');
   const [quotesCount, setQuotesCount] = useState<number>(0);
   const [purchaseRequestsCount, setPurchaseRequestsCount] = useState<number>(0);
@@ -227,10 +230,14 @@ export default function Erp() {
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Vendas completo" active={section==='report_sales_full'} onClick={()=>setSection('report_sales_full')} />
               <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Financeiro completo" active={section==='report_finance_full'} onClick={()=>setSection('report_finance_full')} />
             </div>
-            <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Configurações" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Configurações" active={section==='configurations'} onClick={()=>setSection('configurations')} />
-            </div>
+            {auth?.profile?.role === 'admin' && (
+              <>
+                <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Configurações" />
+                <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                  <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Configurações" active={section==='configurations'} onClick={()=>setSection('configurations')} />
+                </div>
+              </>
+            )}
           </nav>
           <div className="p-3 border-t text-[10px] text-muted-foreground">
             MVP inicial do módulo ERP • Expandir funções posteriormente
@@ -262,7 +269,9 @@ export default function Erp() {
               {section === 'sales_orders' && <SalesOrdersList />}
               {section === 'service_sales_orders' && <ServiceSalesOrdersList />}
               {section === 'purchases_list' && <ErpPurchasesList />}
-              {section === 'configurations' && <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Configurações</h2><p className="text-sm text-muted-foreground">Área de configurações do ERP (placeholder).</p></Card>}
+              {section === 'configurations' && auth?.profile?.role === 'admin' && (
+                <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Configurações</h2><p className="text-sm text-muted-foreground">Área de configurações do ERP (placeholder).</p></Card>
+              )}
               {section === 'purchases_requests' && <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Solicitações de Compras</h2><p className="text-sm text-muted-foreground">Lista de solicitações pendentes. Implementar CRUD quando especificado.</p></Card>}
               {section === 'purchases_requests' && <PurchasesRequestsEditor initialIds={purchasesRequestsDraft || []} clearDraft={()=>setPurchasesRequestsDraft(null)} />}
               {section === 'purchases_xml' && <ErpPurchaseXmlImport />}
