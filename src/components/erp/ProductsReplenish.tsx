@@ -143,9 +143,9 @@ export default function ProductsReplenish(){
               <tr key={r.id} className="bg-white/60 border rounded mb-2">
                 <td className="px-3 py-2 font-mono">{r.code}</td>
                 <td className="px-3 py-2 truncate">{r.name}</td>
-                <td className="px-3 py-2 text-right font-semibold">{(r as unknown as { missing?: number }).missing}</td>
+                <td className="px-3 py-2 text-right font-semibold">{r.available ?? 0}</td>
                 <td className="px-3 py-2 text-right">{r.stock_max ?? 0}</td>
-                <td className="px-3 py-2 text-right">{r.available ?? 0}</td>
+                <td className="px-3 py-2 text-right">{(r as unknown as { missing?: number }).missing}</td>
               </tr>
             ))}
             {rows.length===0 && <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">Nenhum item precisa reposição</td></tr>}
