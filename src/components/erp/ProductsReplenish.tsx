@@ -204,7 +204,13 @@ export default function ProductsReplenish(){
                     window.removeEventListener('system:confirm:reply', replyHandler as EventListener);
                     if(d.ok){
                       try{ localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids)); }catch(_){/* noop */}
-                      window.dispatchEvent(new CustomEvent('system:message', { detail: { title: 'Concluído', message: 'Solicitações de compras criadas com sucesso.', durationMs: 3000 } }));
+                      // close the report overlay and clear selection so UI returns to Grades / Variações
+                      try{ setShowReport(false); }catch(_){/* noop */}
+                      try{ setSelectedIds(new Set()); }catch(_){/* noop */}
+                      // dispatch message after a short delay to ensure confirm dialog fully closed
+                      setTimeout(()=>{
+                        window.dispatchEvent(new CustomEvent('system:message', { detail: { title: 'Concluído', message: 'Solicitações de compras criadas com sucesso.', durationMs: 3000 } }));
+                      }, 200);
                     }
                   }
                   window.addEventListener('system:confirm:reply', replyHandler as EventListener);
