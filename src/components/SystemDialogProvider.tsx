@@ -15,6 +15,7 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
   useEffect(()=>{
     function handler(e: Event){
       const ce = e as CustomEvent<SysConfirmDetail>;
+      console.debug('[SystemDialogProvider] received system:confirm', ce.detail);
       setPending(ce.detail);
       setOpen(true);
     }
@@ -23,6 +24,7 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
   },[]);
 
   function reply(result: boolean){
+    console.debug('[SystemDialogProvider] reply', { id: pending?.id, ok: result });
     if(pending && pending.id){
       window.dispatchEvent(new CustomEvent('system:confirm:reply', { detail: { id: pending.id, ok: result } }));
     }
@@ -44,7 +46,7 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
           <DialogFooter>
             <div className="flex gap-2 justify-end">
               <Button size="sm" variant="outline" onClick={()=>reply(false)}>Cancelar</Button>
-              <Button size="sm" variant="default" onClick={()=>reply(true)}>OK</Button>
+              <Button autoFocus size="sm" variant="default" onClick={()=>reply(true)}>OK</Button>
             </div>
           </DialogFooter>
         </DialogContent>
