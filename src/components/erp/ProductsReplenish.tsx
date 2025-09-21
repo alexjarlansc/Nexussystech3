@@ -43,7 +43,7 @@ export default function ProductsReplenish(){
         <table border="1" cellpadding="6" style="border-collapse:collapse;width:100%;font-family:Arial,Helvetica,sans-serif;font-size:12px;">
           <thead><tr><th style="text-align:left">Produto</th><th style="text-align:right">Custo Médio</th><th style="text-align:right">Qtd Fixo</th><th style="text-align:right">Estoque</th><th style="text-align:right">Falta</th></tr></thead>
           <tbody>
-        ${rows.map(r=>`<tr><td>${String(r.name||'')}</td><td style="text-align:right">${formatBRL((r as unknown as { price?: number }).price)}</td><td style="text-align:right">${r.stock_max??0}</td><td style="text-align:right">${r.available??0}</td><td style="text-align:right">${(r as unknown as { missing?: number }).missing ?? 0}</td></tr>`).join('')}
+      ${rows.map(r=>`<tr><td>${String(r.name||'')}</td><td style="text-align:right">${formatBRL((r as unknown as { price?: number }).price)}</td><td style="text-align:right">${r.stock_max??0}</td><td style="text-align:right">${(r as unknown as { missing?: number }).missing ?? 0}</td><td style="text-align:right">${r.available??0}</td></tr>`).join('')}
           </tbody>
         </table>
       </body>
@@ -143,9 +143,9 @@ export default function ProductsReplenish(){
               <tr key={r.id} className="bg-white/60 border rounded mb-2">
                 <td className="px-3 py-2 font-mono">{r.code}</td>
                 <td className="px-3 py-2 truncate">{r.name}</td>
-                <td className="px-3 py-2 text-right font-semibold">{r.available ?? 0}</td>
+                <td className="px-3 py-2 text-right font-semibold">{(r as unknown as { missing?: number }).missing}</td>
                 <td className="px-3 py-2 text-right">{r.stock_max ?? 0}</td>
-                <td className="px-3 py-2 text-right">{(r as unknown as { missing?: number }).missing}</td>
+                <td className="px-3 py-2 text-right">{r.available ?? 0}</td>
               </tr>
             ))}
             {rows.length===0 && <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">Nenhum item precisa reposição</td></tr>}
@@ -159,15 +159,15 @@ export default function ProductsReplenish(){
           <h2 style={{fontWeight:'bold',fontSize:20,marginBottom:16}}>Relatório de Reposição</h2>
           <table style={{width:'100%',fontSize:14,borderCollapse:'separate'}}>
             <thead>
-              <tr>
-                <th style={{padding:'8px'}}><input type="checkbox" aria-label="Selecionar todos" checked={rows.length>0 && selectedIds.size===rows.length} onChange={toggleSelectAll} /></th>
-                <th style={{textAlign:'left',padding:'8px 12px',whiteSpace:'nowrap'}}>Produto</th>
-                <th style={{textAlign:'right',padding:'8px 12px',whiteSpace:'nowrap'}}>Custo Médio</th>
-                <th style={{textAlign:'right',padding:'8px 12px',whiteSpace:'nowrap'}}>Qtd Fixo</th>
-                <th style={{textAlign:'right',padding:'8px 12px',whiteSpace:'nowrap'}}>Estoque</th>
-                <th style={{textAlign:'right',padding:'8px 12px',whiteSpace:'nowrap'}}>Falta</th>
-              </tr>
-            </thead>
+                <tr>
+                  <th style={{padding:'8px'}}><input type="checkbox" aria-label="Selecionar todos" checked={rows.length>0 && selectedIds.size===rows.length} onChange={toggleSelectAll} /></th>
+                  <th style={{textAlign:'left',padding:'8px 12px',whiteSpace:'nowrap'}}>Produto</th>
+                  <th style={{textAlign:'right',padding:'8px 12px',whiteSpace:'nowrap'}}>Custo Médio</th>
+                  <th style={{textAlign:'right',padding:'8px 12px',whiteSpace:'nowrap'}}>Qtd Fixo</th>
+                  <th style={{textAlign:'right',padding:'8px 12px',whiteSpace:'nowrap'}}>Estoque</th>
+                  <th style={{textAlign:'right',padding:'8px 12px',whiteSpace:'nowrap'}}>Falta</th>
+                </tr>
+              </thead>
             <tbody>
               {rows.map(r=>(
                 <tr key={r.id}>
@@ -175,8 +175,8 @@ export default function ProductsReplenish(){
                   <td style={{padding:'6px 12px'}}>{r.name}</td>
                   <td style={{textAlign:'right',padding:'6px 12px'}}>{formatBRL((r as unknown as { price?: number }).price)}</td>
                   <td style={{textAlign:'right',padding:'6px 12px'}}>{Number(r.stock_max ?? 0).toLocaleString('pt-BR')}</td>
-                  <td style={{textAlign:'right',padding:'6px 12px'}}>{Number(r.available ?? 0).toLocaleString('pt-BR')}</td>
                   <td style={{textAlign:'right',padding:'6px 12px'}}>{Number((r as unknown as { missing?: number }).missing ?? 0).toLocaleString('pt-BR')}</td>
+                  <td style={{textAlign:'right',padding:'6px 12px'}}>{Number(r.available ?? 0).toLocaleString('pt-BR')}</td>
                 </tr>
               ))}
             </tbody>
@@ -185,7 +185,7 @@ export default function ProductsReplenish(){
             <div className="text-sm text-muted-foreground">Selecionados: {selectedIds.size}</div>
             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
               <Button size="sm" variant="outline" onClick={printReport}>Imprimir</Button>
-              <Button size="sm" variant="outline" onClick={()=>exportXlsx(rows.map(r=>({produto:r.name, custo_medio:r.price, qtd_fixo:r.stock_max, estoque:r.available, falta:(r as unknown as { missing?: number }).missing})))}>Gerar Excel</Button>
+              <Button size="sm" variant="outline" onClick={()=>exportXlsx(rows.map(r=>({produto:r.name, custo_medio:r.price, qtd_fixo:r.stock_max, estoque:(r as unknown as { missing?: number }).missing, falta:r.available})))}>Gerar Excel</Button>
               <Button size="sm" variant="outline" onClick={()=>{
                 try {
                   const ids = Array.from(selectedIds.values());
