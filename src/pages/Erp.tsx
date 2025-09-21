@@ -62,6 +62,7 @@ type SectionKey =
   | 'purchases_returns'
   | 'purchases_history'
   | 'configurations'
+  | 'access_control'
   | 'purchases_requests'
   | 'fin_payables'
   | 'fin_receivables'
@@ -235,6 +236,7 @@ export default function Erp() {
                 <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Configurações" />
                 <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
                   <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Configurações" active={section==='configurations'} onClick={()=>setSection('configurations')} />
+                  <ErpNavItem icon={<Users className='h-4 w-4' />} label="Controle de Acesso" active={section==='access_control'} onClick={()=>setSection('access_control')} />
                 </div>
               </>
             )}
@@ -271,6 +273,9 @@ export default function Erp() {
               {section === 'purchases_list' && <ErpPurchasesList />}
               {section === 'configurations' && auth?.profile?.role === 'admin' && (
                 <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Configurações</h2><p className="text-sm text-muted-foreground">Área de configurações do ERP (placeholder).</p></Card>
+              )}
+              {section === 'access_control' && auth?.profile?.role === 'admin' && (
+                <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Controle de Acesso</h2><p className="text-sm text-muted-foreground">Gerencie papéis, permissões e grupos de acesso (placeholder).</p></Card>
               )}
               {section === 'purchases_requests' && <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Solicitações de Compras</h2><p className="text-sm text-muted-foreground">Lista de solicitações pendentes. Implementar CRUD quando especificado.</p></Card>}
               {section === 'purchases_requests' && <PurchasesRequestsEditor initialIds={purchasesRequestsDraft || []} clearDraft={()=>setPurchasesRequestsDraft(null)} />}
