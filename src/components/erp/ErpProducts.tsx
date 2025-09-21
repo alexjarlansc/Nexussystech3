@@ -70,13 +70,18 @@ export function ErpProducts(){
   const [imageFile,setImageFile]=useState<File|null>(null);
   const [confirmDelete,setConfirmDelete]=useState<null|Product>(null);
   const [optionalsOpen, setOptionalsOpen] = useState(false);
+  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  const [supplierQuery, setSupplierQuery] = useState('');
   const [optionGroups, setOptionGroups] = useState<{ id?: string; name: string; items: { id?: string; name: string; value?: string; showInPdf?: boolean }[] }[]>([]);
   const [extendedCols,setExtendedCols]=useState(true); // se false não enviar campos novos
+  const [hasCodePrefix, setHasCodePrefix] = useState<boolean|null>(null);
   const [companyId,setCompanyId]=useState<string|undefined>(undefined);
 
   type ProductRow = Product & { created_at?: string };
   const load = useCallback(async (pageOverride?: number) => {
     const currentPage = pageOverride ?? page;
+    // se ainda não sabemos se code_prefix existe, aguardar para evitar erro SQL
+    if(hasCodePrefix === null) return;
     setLoading(true);
     try {
       // Capturar colunas da view product_stock apenas uma vez (primeiro load) para debug
@@ -98,7 +103,7 @@ export function ErpProducts(){
       try { await (supabase as any).rpc('ensure_profile'); } catch(err) { if(import.meta.env.DEV) console.warn('ensure_profile rpc indisponível', err); }
       let q = (supabase as any)
         .from('products')
-        .select('id,code,name,unit,sale_price,price,cost_price,status,image_url,created_at')
+  .select(`id,code,name,unit,sale_price,price,cost_price,status,image_url,created_at,product_group_id,category,description${hasCodePrefix? ',code_prefix': ''}`)
         .order('created_at',{ascending:false});
       // Se usuário não é admin, filtrar por company_id para isolar dados por empresa
       if(profile && profile.role !== 'admin' && profile.company_id) {
@@ -209,13 +214,41 @@ export function ErpProducts(){
         console.log('[DEBUG products images]', sampleDebug);
       }
       setRows(products);
-    } catch(e:unknown){ const msg = e instanceof Error? e.message: String(e); toast.error('Falha ao carregar produtos: '+msg); }
+    } catch(e:unknown){
+      // Formatar objetos de erro complexos para mensagem legível
+      let msg = '';
+      try {
+        if(e instanceof Error) msg = e.message;
+        else if(typeof e === 'string') msg = e;
+        else if(e && typeof e === 'object'){
+          // priorizar propriedades comuns de erros retornados por supabase/pg
+          const anyE = e as any;
+          msg = anyE.message || anyE.error || anyE.details || anyE.statusText || anyE.status || '';
+          if(!msg) msg = JSON.stringify(anyE);
+        } else msg = String(e);
+      } catch(_){ msg = String(e); }
+      // encurtar mensagens muito longas
+      if(msg.length > 300) msg = msg.slice(0,300) + '...';
+      toast.error('Falha ao carregar produtos: '+msg);
+    }
     finally { setLoading(false); }
-  }, [page, debouncedSearch, profile, stockViewColumns]);
+  }, [page, debouncedSearch, profile, stockViewColumns, hasCodePrefix]);
   const loadSuppliers = useCallback(async ()=>{
     // carregar fornecedores visíveis para o usuário
     const { data, error }:{ data: Pick<Supplier,'id'|'name'>[]|null; error: unknown } = await (supabase as unknown as { from: any }).from('suppliers').select('id,name').eq('is_active', true).limit(200);
-    if(!error) setSuppliers(data||[]);
+    if(!error) {
+      // Filtrar entradas placeholder/importadas que contenham nome 'Fornecedor Padrão'
+      const filtered = (data||[]).filter(s => {
+        try {
+          const name = String(s.name || '').trim();
+          if(!name) return false;
+          if(/^\s*fornecedor padrão\s*$/i.test(name)) return false;
+          if(/^\s*selecione fornecedor\s*$/i.test(name)) return false;
+          return true;
+        } catch { return !!s.name; }
+      });
+      setSuppliers(filtered);
+    }
   }, []);
   useEffect(()=>{ load(0); loadSuppliers(); setPage(0); },[load, loadSuppliers]);
 
@@ -289,6 +322,11 @@ export function ErpProducts(){
         setExtendedCols(false);
         if(import.meta.env.DEV) console.warn('Colunas estendidas ausentes, ocultando campos avançados. Aplique migration 20250831150000_extend_products_fields.sql');
       }
+      // testar se coluna code_prefix existe para evitar PGRST204
+      try {
+        const cp = await (supabase as unknown as { from:any }).from('products').select('code_prefix').limit(1);
+        setHasCodePrefix(!cp.error);
+      } catch(_){ setHasCodePrefix(false); }
     })();
   },[]);
 
@@ -321,8 +359,8 @@ export function ErpProducts(){
   const salePrice = Number(form.sale_price||form.price||0);
     // Evitar herdar imagem de edição anterior ao criar novo (se usuário abriu 'Novo' após editar)
     if(!editing && !imageFile && form.image_url){
-      // limpar imagem herdada silenciosamente
-      form.image_url = undefined;
+      // limpar imagem herdada silenciosamente usando setForm para atualizar state corretamente
+      setForm(f => ({ ...f, image_url: undefined }));
     }
     if(isNaN(salePrice)){ toast.error('Preço inválido'); return; }
   setSaving(true);
@@ -331,11 +369,15 @@ export function ErpProducts(){
   if(!selectedCategoryId){ toast.error('Categoria é obrigatória'); setSaving(false); return; }
   if(!selectedSectorId){ toast.error('Setor é obrigatório'); setSaving(false); return; }
   if(!form.product_group_id){ toast.error('Sessão é obrigatória'); setSaving(false); return; }
+  // Fornecedor obrigatório
+  if(!form.default_supplier_id){ toast.error('Fornecedor padrão é obrigatório'); setSaving(false); return; }
   const effectiveImageUrl = imageUrlOverride !== undefined ? imageUrlOverride : form.image_url;
   const payload: Record<string, unknown> = {
         name: form.name.trim(),
         description: form.description||null,
   code: (form.code && form.code !== 'sample_code') ? form.code : null,
+    // código do fabricante (opcional)
+    ...(hasCodePrefix ? { code_prefix: form.code_prefix ?? null } : {}),
         category: form.category||null,
   product_group_id: form.product_group_id||null,
         brand: form.brand||null,
@@ -372,6 +414,7 @@ export function ErpProducts(){
       }
       if(!extendedCols){
         const allowed = ['name','description','price','sale_price','status'];
+        if(hasCodePrefix) allowed.push('code_prefix');
         Object.keys(payload).forEach(k=>{ if(!allowed.includes(k)) delete payload[k]; });
         if(profile && profile.role !== 'admin' && profile.company_id) payload.company_id = profile.company_id; // garantir
       }
@@ -420,8 +463,22 @@ export function ErpProducts(){
       }
       if(resp.error) throw resp.error;
   toast.success(editing?'Produto atualizado':'Produto criado');
-  // resetar somente após garantir que imagem persistiu
-  setOpen(false); setEditing(null); setForm(makeEmpty()); load();
+  // Atualizar lista local imediatamente com o registro salvo para manter informações visíveis
+  if(resp.data){
+    const saved = resp.data as ProductRow;
+    setRows(prev => {
+      if(editing){
+        return prev.map(r => r.id === saved.id ? { ...r, ...saved } : r);
+      } else {
+        // inserir novo produto no topo da lista
+        return [saved, ...prev];
+      }
+    });
+  }
+  // resetar formulário e fechar modal
+  setOpen(false); setEditing(null); setForm(makeEmpty());
+  // ainda recarregamos em background para garantir consistência com DB
+  load();
     } catch(e:unknown){ toast.error(extractErr(e)); if(import.meta.env.DEV) console.error('save product error', e); }
     setSaving(false);
   }
@@ -462,7 +519,8 @@ export function ErpProducts(){
       Object.entries(norm).map(([k,v])=> {
         if(v && typeof v === 'object') {
           if (v instanceof Date) return [k, v.toISOString().slice(0,10)];
-          return [k, ''];
+            // preserve arrays/objects for some known fields? default to empty string
+            return [k, ''];
         }
         return [k,v];
       })
@@ -474,8 +532,44 @@ export function ErpProducts(){
   if(scrubbed.code === 'sample_code') scrubbed.code = '';
   if(import.meta.env.DEV) console.log('Editar produto raw:', p);
   // clonar para evitar mutação por referência direta ao objeto listado em `rows`
+  // garantir que description e code_prefix sejam preservados e tipados corretamente
+  try {
+    const anyNorm = norm as any;
+    if('description' in anyNorm) scrubbed.description = anyNorm.description == null ? '' : String(anyNorm.description);
+    if('code_prefix' in anyNorm) scrubbed.code_prefix = anyNorm.code_prefix == null ? undefined : String(anyNorm.code_prefix);
+    if('code' in anyNorm) scrubbed.code = anyNorm.code == null ? '' : String(anyNorm.code);
+  } catch(_){ /* ignore */ }
   setEditing({ ...p });
   setForm(scrubbed);
+  // tentar obter versão mais fiel do backend (incluindo code_prefix quando existir)
+  (async ()=>{
+    try{
+      // tentar sempre buscar code_prefix diretamente (pode não ter sido detectado ainda)
+      const selectCols = `id,code,name,unit,sale_price,price,cost_price,status,image_url,created_at,product_group_id,category,description,code_prefix`;
+      const { data: fresh, error: freshe } = await (supabase as any).from('products').select(selectCols).eq('id', p.id).single();
+      if(freshe){
+        try{
+          const msg = (freshe as any)?.message || String(freshe);
+          if(msg && msg.toLowerCase().includes('code_prefix')){
+            // coluna realmente não existe no banco
+            setHasCodePrefix(false);
+            if(import.meta.env.DEV) console.warn('Coluna code_prefix ausente (fetch startEdit)', msg);
+          } else {
+            if(import.meta.env.DEV) console.warn('Erro ao buscar produto fresco', freshe);
+          }
+        }catch(_){ if(import.meta.env.DEV) console.warn('Erro desconhecido ao interpretar freshe', freshe); }
+      } else if(fresh){
+        const anyFresh = fresh as any;
+        const updated: ProductForm = { ...scrubbed };
+        if('description' in anyFresh) updated.description = anyFresh.description == null ? '' : String(anyFresh.description);
+        if('code_prefix' in anyFresh) updated.code_prefix = anyFresh.code_prefix == null ? undefined : String(anyFresh.code_prefix);
+        if('code' in anyFresh) updated.code = anyFresh.code == null ? '' : String(anyFresh.code);
+        setHasCodePrefix(true);
+        setEditing({ ...anyFresh } as Product);
+        setForm(updated);
+      }
+    }catch(err){ if(import.meta.env.DEV) console.warn('Falha ao buscar produto fresco', err); }
+  })();
     setOpen(true);
     // inicializar opcionais se existirem
     try {
@@ -682,7 +776,7 @@ export function ErpProducts(){
                   {productGroups.filter(pg=>pg.level===3 && pg.parent_id===selectedSectorId).map(ss=> <option key={ss.id} value={ss.id}>{ss.name}</option>)}
                 </select>
               </div>
-              <Input placeholder="Prefixo Código (opc)" value={(form as any).code_prefix||''} onChange={e=>setForm(f=>({...f, code_prefix:e.target.value||undefined}))} />
+              <Input placeholder="Código do fabricante (opc)" value={(form as any).code_prefix||''} onChange={e=>setForm(f=>({...f, code_prefix:e.target.value||undefined}))} />
             </div>
             <div className="flex items-center gap-3">
               <div className="flex flex-col gap-1">
@@ -717,6 +811,7 @@ export function ErpProducts(){
                   setForm(f=>({...f, sale_price: parsed }));
                 }}
                 inputMode="decimal"
+                readOnly disabled className="bg-gray-50/60"
               />
               <Input placeholder="Custo" value={formatBRL(form.cost_price)}
                 onChange={e=>{
@@ -725,6 +820,7 @@ export function ErpProducts(){
                   setForm(f=>({...f, cost_price: parsed }));
                 }}
                 inputMode="decimal"
+                readOnly disabled className="bg-gray-50/60"
               />
             </div>
             <Textarea placeholder="Descrição" value={form.description||''} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={3} />
@@ -753,6 +849,7 @@ export function ErpProducts(){
                   setForm(f=>({...f, cost_price: parsed }));
                 }}
                 inputMode="decimal"
+                readOnly disabled className="bg-gray-50/60"
               />
               <Input placeholder="Preço Venda *" value={formatBRL(form.sale_price)}
                 onChange={e=>{
@@ -761,10 +858,11 @@ export function ErpProducts(){
                   setForm(f=>({...f, sale_price: parsed }));
                 }}
                 inputMode="decimal"
+                readOnly disabled className="bg-gray-50/60"
               />
               <Input placeholder="Margem %" value={form.margin ?? ''}
                 onChange={e=>{
-                  const margin = Number(e.target.value.replace(/[^\d.]/g, ''));
+                  const margin = Number(e.target.value.replace(/[\^\d.]/g, ''));
                   if(!isNaN(margin)) {
                     setForm(f=>{
                       const cost = f.cost_price ?? 0;
@@ -775,8 +873,9 @@ export function ErpProducts(){
                   }
                 }}
                 inputMode="decimal"
+                readOnly disabled className="bg-gray-50/60"
               />
-              <Input placeholder="Prazo Pagamento" value={form.payment_terms||''} onChange={e=>setForm(f=>({...f,payment_terms:e.target.value}))} />
+              <Input placeholder="Prazo Pagamento" value={form.payment_terms||''} onChange={e=>setForm(f=>({...f,payment_terms:e.target.value}))} readOnly disabled className="bg-gray-50/60" />
             </div>
           </section>}
           {/* Fiscal */}
@@ -793,10 +892,32 @@ export function ErpProducts(){
             <div className="grid md:grid-cols-3 gap-2">
               <Input placeholder="PIS %" value={form.pis_rate??''} onChange={e=>setForm(f=>({...f,pis_rate:e.target.value? Number(e.target.value):undefined}))} />
               <Input placeholder="COFINS %" value={form.cofins_rate??''} onChange={e=>setForm(f=>({...f,cofins_rate:e.target.value? Number(e.target.value):undefined}))} />
-              <select className="h-9 border rounded px-2" value={form.default_supplier_id||''} onChange={e=>setForm(f=>({...f,default_supplier_id:e.target.value||undefined}))}>
-                <option value="">Fornecedor Padrão</option>
-                {suppliers.map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              <div />
+            </div>
+          </section>}
+
+          {/* Fornecedor (seção separada) */}
+          {extendedCols && <section className="space-y-2">
+            <h3 className="font-semibold text-sm">Fornecedor</h3>
+            <div className="grid md:grid-cols-3 gap-2 items-center">
+              <div className="flex items-center gap-2">
+                <select className="h-9 border rounded px-2" value={form.default_supplier_id||''} onChange={e=>setForm(f=>({...f,default_supplier_id:e.target.value||undefined}))}>
+                  <option value="">Selecione fornecedor</option>
+                  {suppliers.map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <Button size="sm" variant="outline" onClick={()=>setSupplierSearchOpen(true)}>Buscar fornecedor</Button>
+                {/* Badge com nome do fornecedor selecionado e botão limpar */}
+                {form.default_supplier_id && (()=>{
+                  const sel = suppliers.find(s=>s.id===form.default_supplier_id);
+                  return sel ? (
+                    <div className="ml-2 px-2 py-1 rounded bg-green-50 border border-green-200 text-sm flex items-center gap-2">
+                      <span>{sel.name}</span>
+                      <button className="text-red-500 font-bold leading-none" onClick={()=>setForm(f=>({...f, default_supplier_id: undefined}))} aria-label="Limpar fornecedor">×</button>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+              <div className="text-xs text-muted-foreground">Obrigatório — selecione o fornecedor padrão para este produto</div>
             </div>
           </section>}
         </div>
@@ -927,6 +1048,34 @@ export function ErpProducts(){
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {/* Modal de busca completa de fornecedores */}
+    <Dialog open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Buscar Fornecedor</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Input placeholder="Buscar por nome" value={supplierQuery} onChange={e=>setSupplierQuery(e.target.value)} />
+          <div className="max-h-60 overflow-auto">
+            {suppliers.filter(s => !supplierQuery || String(s.name||'').toLowerCase().includes(supplierQuery.toLowerCase())).map(s => (
+              <div key={s.id} className="flex items-center justify-between p-2 border-b">
+                <div className="text-sm">{s.name}</div>
+                <div>
+                  <Button size="sm" onClick={()=>{ setForm(f=>({...f, default_supplier_id: s.id })); setSupplierSearchOpen(false); }}>Selecionar</Button>
+                </div>
+              </div>
+            ))}
+            {suppliers.filter(s => !supplierQuery || String(s.name||'').toLowerCase().includes(supplierQuery.toLowerCase())).length === 0 && (
+              <div className="p-2 text-sm text-muted-foreground">Nenhum fornecedor encontrado.</div>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setSupplierSearchOpen(false)}>Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     <AlertDialog open={!!confirmDelete} onOpenChange={(o)=>!o && setConfirmDelete(null)}>
       <AlertDialogContent>
         <AlertDialogHeader>

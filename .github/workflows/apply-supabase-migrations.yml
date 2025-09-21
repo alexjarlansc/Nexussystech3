@@ -1,0 +1,34 @@
+name: Apply Supabase migrations
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  apply-migrations:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply SQL migrations
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "Supabase DATABASE URL not set. Please add SUPABASE_DATABASE_URL to repository secrets." >&2
+            exit 1
+          fi
+          set -euo pipefail
+          echo "Listing migrations..."
+          ls -1 supabase/migrations || (echo 'No migrations folder found' && exit 1)
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            echo "Applying $f"
+            psql "$DATABASE_URL" -f "$f"
+          done
