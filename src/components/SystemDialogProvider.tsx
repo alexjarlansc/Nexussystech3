@@ -9,10 +9,17 @@ type SysConfirmDetail = {
   forwardEvent?: string;
   forwardPayload?: unknown;
 };
+type SysMessageDetail = {
+  title?: string;
+  message: string;
+  durationMs?: number;
+};
 
 export default function SystemDialogProvider({ children }: { children: React.ReactNode }){
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<SysConfirmDetail | null>(null);
+  const [msgOpen, setMsgOpen] = useState(false);
+  const [msgPending, setMsgPending] = useState<SysMessageDetail | null>(null);
 
   useEffect(()=>{
     function handler(e: Event){
@@ -22,6 +29,17 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
       setOpen(true);
     }
     window.addEventListener('system:confirm', handler as EventListener);
+    function msgHandler(e: Event){
+      const ce = e as CustomEvent<SysMessageDetail>;
+      console.debug('[SystemDialogProvider] received system:message', ce.detail);
+      setMsgPending(ce.detail);
+      setMsgOpen(true);
+      // auto-close if duration provided
+      if(ce.detail?.durationMs && typeof ce.detail.durationMs === 'number'){
+        setTimeout(()=>{ setMsgOpen(false); setMsgPending(null); }, ce.detail.durationMs);
+      }
+    }
+    window.addEventListener('system:message', msgHandler as EventListener);
     return ()=> window.removeEventListener('system:confirm', handler as EventListener);
   },[]);
 
@@ -41,6 +59,16 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
     setPending(null);
   }
 
+  function closeMessage(){
+    console.debug('[SystemDialogProvider] closing message', msgPending);
+    if(msgPending && msgPending.message){
+      // fire ack event for message consumers if needed
+      try{ window.dispatchEvent(new CustomEvent('system:message:ack', { detail: { message: msgPending.message } })); }catch(e){/*noop*/}
+    }
+    setMsgOpen(false);
+    setMsgPending(null);
+  }
+
   return (
     <>
       {children}
@@ -56,6 +84,22 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
             <div className="flex gap-2 justify-end">
               <Button size="sm" variant="outline" onClick={()=>reply(false)}>Cancelar</Button>
               <Button autoFocus size="sm" variant="default" onClick={()=>reply(true)}>OK</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* simple informational message dialog */}
+      <Dialog open={msgOpen} onOpenChange={setMsgOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{msgPending?.title ?? 'Sistema'}</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <p>{msgPending?.message}</p>
+          </div>
+          <DialogFooter>
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="default" onClick={closeMessage}>OK</Button>
             </div>
           </DialogFooter>
         </DialogContent>
