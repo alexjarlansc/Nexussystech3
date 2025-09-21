@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 // Dialog is provided globally by SystemDialogProvider; don't import local Dialog here
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/sonner';
+import { useAuth } from '@/hooks/useAuth';
 import type { Product } from '@/types';
 
 type Row = Product & { stock?: number; reserved?: number; available?: number; };
@@ -12,6 +13,7 @@ type StockRow = { product_id: string; stock: number; reserved?: number; availabl
 type Inv = { product_id: string; type: 'ENTRADA'|'SAIDA'|'AJUSTE'|string; quantity: number|string };
 
 export default function ProductsReplenish(){
+  const auth = useAuth();
   const [showReport, setShowReport] = useState(false);
   const [rows,setRows] = useState<Row[]>([]);
   const [loading,setLoading] = useState(false);
@@ -203,14 +205,22 @@ export default function ProductsReplenish(){
                     if(d?.id !== reqId) return;
                     window.removeEventListener('system:confirm:reply', replyHandler as EventListener);
                     if(d.ok){
-                      try{ localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids)); }catch(_){/* noop */}
-                      // close the report overlay and clear selection so UI returns to Grades / Variações
-                      try{ setShowReport(false); }catch(_){/* noop */}
-                      try{ setSelectedIds(new Set()); }catch(_){/* noop */}
-                      // dispatch message after a short delay to ensure confirm dialog fully closed
-                      setTimeout(()=>{
-                        window.dispatchEvent(new CustomEvent('system:message', { detail: { title: 'Concluído', message: 'Solicitações de compras criadas com sucesso.', durationMs: 3000 } }));
-                      }, 200);
+                      // Only persist and show system message for users with permission (admin)
+                      if(auth?.profile?.role === 'admin'){
+                        try{ localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids)); }catch(_){/* noop */}
+                        // close the report overlay and clear selection so UI returns to Grades / Variações
+                        try{ setShowReport(false); }catch(_){/* noop */}
+                        try{ setSelectedIds(new Set()); }catch(_){/* noop */}
+                        // dispatch message after a short delay to ensure confirm dialog fully closed
+                        setTimeout(()=>{
+                          window.dispatchEvent(new CustomEvent('system:message', { detail: { title: 'Concluído', message: 'Solicitações de compras criadas com sucesso.', durationMs: 3000 } }));
+                        }, 200);
+                      } else {
+                        // For restricted users, do not persist or open requests; show a toast instead
+                        try{ setShowReport(false); }catch(_){/* noop */}
+                        try{ setSelectedIds(new Set()); }catch(_){/* noop */}
+                        toast.success('A solicitação foi registrada para revisão. Usuários com permissão podem acessar Solicitações de Compras.');
+                      }
                     }
                   }
                   window.addEventListener('system:confirm:reply', replyHandler as EventListener);
