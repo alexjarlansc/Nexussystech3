@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+// Dialog is provided globally by SystemDialogProvider; don't import local Dialog here
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/sonner';
 import type { Product } from '@/types';
@@ -17,8 +17,6 @@ export default function ProductsReplenish(){
   const [loading,setLoading] = useState(false);
   const [filter,setFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showConfirmOpenRequests, setShowConfirmOpenRequests] = useState(false);
-  const [pendingIds, setPendingIds] = useState<string[]|null>(null);
 
   function toggleSelect(id: string){
     setSelectedIds(s=>{ const n = new Set(Array.from(s)); if(n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -188,7 +186,7 @@ export default function ProductsReplenish(){
             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
               <Button size="sm" variant="outline" onClick={printReport}>Imprimir</Button>
               <Button size="sm" variant="outline" onClick={()=>exportXlsx(rows.map(r=>({produto:r.name, custo_medio:r.price, qtd_fixo:r.stock_max, estoque:r.available, falta:(r as unknown as { missing?: number }).missing})))}>Gerar Excel</Button>
-              <Button size="sm" variant="outline" onClick={async ()=>{
+              <Button size="sm" variant="outline" onClick={()=>{
                 try {
                   const ids = Array.from(selectedIds.values());
                   if(!ids.length){ toast.error('Nenhum produto selecionado para gerar grade'); return; }
@@ -203,10 +201,11 @@ export default function ProductsReplenish(){
                     window.addEventListener('system:confirm:reply', replyHandler as EventListener);
                   });
                   window.dispatchEvent(new CustomEvent('system:confirm', { detail: { id: reqId, title: 'Confirmação', message: confirmMsg } }));
-                  const ok = await promise;
-                  if(!ok) return;
-                  window.dispatchEvent(new CustomEvent('erp:open-purchase-requests', { detail: { ids } }));
-                  localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids));
+                  promise.then((ok) => {
+                    if(!ok) return;
+                    window.dispatchEvent(new CustomEvent('erp:open-purchase-requests', { detail: { ids } }));
+                    localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids));
+                  }).catch(()=>{/* noop */});
                 } catch(e){ toast.error('Erro ao tentar gerar grade'); }
               }}>Gerar Grade</Button>
               <Button size="sm" variant="outline" onClick={()=>setShowReport(false)}>Fechar</Button>
@@ -215,33 +214,7 @@ export default function ProductsReplenish(){
         </div>
       </div>
     )}
-    {/* In-app confirmation dialog to open purchase requests */}
-    <Dialog open={showConfirmOpenRequests} onOpenChange={(o)=>{ if(!o) { setShowConfirmOpenRequests(false); setPendingIds(null); } }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Confirmar ação</DialogTitle>
-        </DialogHeader>
-        <div className="py-2">
-          <p>Deseja abrir Solicitações de Compras com {pendingIds?.length ?? 0} produto(s) selecionado(s)?</p>
-        </div>
-        <DialogFooter>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={()=>{ setShowConfirmOpenRequests(false); setPendingIds(null); }}>Cancelar</Button>
-            <Button size="sm" variant="default" onClick={()=>{
-              try{
-                const ids = pendingIds ?? [];
-                if(!ids.length){ toast.error('Nenhum produto selecionado para gerar grade'); setShowConfirmOpenRequests(false); setPendingIds(null); return; }
-                window.dispatchEvent(new CustomEvent('erp:open-purchase-requests', { detail: { ids } }));
-                localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids));
-                setShowConfirmOpenRequests(false);
-                setPendingIds(null);
-                toast.success('Solicitações de Compras abertas');
-              }catch(e){ toast.error('Erro ao abrir Solicitações de Compras'); }
-            }}>Abrir Solicitações</Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    {/* system dialog is provided globally via SystemDialogProvider */}
   </>
   );
 }
