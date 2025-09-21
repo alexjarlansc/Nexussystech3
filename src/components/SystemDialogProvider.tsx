@@ -32,6 +32,20 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
     function msgHandler(e: Event){
       const ce = e as CustomEvent<SysMessageDetail>;
       console.debug('[SystemDialogProvider] received system:message', ce.detail);
+      // If a confirm dialog is currently open, defer showing the message until after it closes
+      if(open){
+        console.debug('[SystemDialogProvider] deferring system:message until confirm closed');
+        setMsgPending(ce.detail);
+        // show shortly after confirm is closed to avoid z-index/portal conflicts
+        setTimeout(()=>{
+          setMsgOpen(true);
+          // auto-close if duration provided
+          if(ce.detail?.durationMs && typeof ce.detail.durationMs === 'number'){
+            setTimeout(()=>{ setMsgOpen(false); setMsgPending(null); }, ce.detail.durationMs);
+          }
+        }, 180);
+        return;
+      }
       setMsgPending(ce.detail);
       setMsgOpen(true);
       // auto-close if duration provided
@@ -40,8 +54,11 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
       }
     }
     window.addEventListener('system:message', msgHandler as EventListener);
-    return ()=> window.removeEventListener('system:confirm', handler as EventListener);
-  },[]);
+    return ()=>{
+      window.removeEventListener('system:confirm', handler as EventListener);
+      window.removeEventListener('system:message', msgHandler as EventListener);
+    };
+  },[open]);
 
   function reply(result: boolean){
     console.debug('[SystemDialogProvider] reply', { id: pending?.id, ok: result });
