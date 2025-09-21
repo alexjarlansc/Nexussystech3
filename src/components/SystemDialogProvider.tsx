@@ -49,6 +49,20 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Fallback modal (plain HTML) in case Radix portal/dialog doesn't render */}
+      {open && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[99999] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/70" onClick={()=>reply(false)} />
+          <div className="bg-white rounded-lg p-6 z-[100000] max-w-lg w-[90%] shadow-lg">
+            <h3 className="text-lg font-semibold mb-2">{pending?.title ?? 'Confirmação'}</h3>
+            <p className="mb-4">{pending?.message}</p>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={()=>reply(false)}>Cancelar</Button>
+              <Button size="sm" variant="default" onClick={()=>reply(true)}>OK</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
