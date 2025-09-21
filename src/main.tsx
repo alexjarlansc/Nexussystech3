@@ -7,6 +7,7 @@ import { AuthProvider } from "@/hooks/AuthProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import RouteErrorBoundary from "@/components/RouteErrorBoundary";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import SystemDialogProvider from '@/components/SystemDialogProvider';
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -22,7 +23,8 @@ createRoot(document.getElementById("root")!).render(
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <AuthProvider>
-            <Routes>
+            <SystemDialogProvider>
+              <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/" element={
                 <ProtectedRoute>
@@ -54,6 +56,7 @@ createRoot(document.getElementById("root")!).render(
               } />
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </SystemDialogProvider>
             <Toaster />
           </AuthProvider>
         </BrowserRouter>

@@ -193,7 +193,18 @@ export default function ProductsReplenish(){
                   const ids = Array.from(selectedIds.values());
                   if(!ids.length){ toast.error('Nenhum produto selecionado para gerar grade'); return; }
                   const confirmMsg = `Deseja abrir Solicitações de Compras com ${ids.length} produto(s) selecionado(s)?`;
-                  if(!window.confirm(confirmMsg)) return;
+                  // ask system dialog and wait for reply
+                  const reqId = Math.random().toString(36).slice(2);
+                  const promise = new Promise<boolean>((resolve) => {
+                    function replyHandler(ev: Event){
+                      const d = (ev as CustomEvent)?.detail as { id?: string; ok?: boolean } | undefined;
+                      if(d?.id === reqId){ window.removeEventListener('system:confirm:reply', replyHandler as EventListener); resolve(Boolean(d.ok)); }
+                    }
+                    window.addEventListener('system:confirm:reply', replyHandler as EventListener);
+                  });
+                  window.dispatchEvent(new CustomEvent('system:confirm', { detail: { id: reqId, title: 'Confirmação', message: confirmMsg } }));
+                  const ok = await promise;
+                  if(!ok) return;
                   window.dispatchEvent(new CustomEvent('erp:open-purchase-requests', { detail: { ids } }));
                   localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids));
                 } catch(e){ toast.error('Erro ao tentar gerar grade'); }
