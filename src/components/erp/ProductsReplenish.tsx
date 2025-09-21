@@ -190,27 +190,24 @@ export default function ProductsReplenish(){
                 try {
                   const ids = Array.from(selectedIds.values());
                   if(!ids.length){ toast.error('Nenhum produto selecionado para gerar grade'); return; }
-                  const confirmMsg = `Deseja abrir Solicitações de Compras com ${ids.length} produto(s) selecionado(s)?`;
+                  const confirmMsg = `Deseja criar Solicitações de Compras com ${ids.length} produto(s) selecionado(s)?`;
                   // ask system dialog and wait for reply
                   const reqId = Math.random().toString(36).slice(2);
-                  // Dispatch system confirmation and handle action when forwarded by SystemDialogProvider
-                  console.debug('[ProductsReplenish] dispatching system:confirm (forward-only)', { reqId, msg: confirmMsg });
-                  // Ask the system dialog to forward a specific event when OK is pressed
-                  window.dispatchEvent(new CustomEvent('system:confirm', { detail: { id: reqId, title: 'Confirma 7    ', message: confirmMsg, forwardEvent: 'erp:open-purchase-requests', forwardPayload: { ids } } }));
-                  // also persist draft locally so Purchases editor can read it if opened
-                  localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids));
-                  // Show system message 'Conclu do' after confirmation via an ack listener
-                  function msgAck(ev: Event){
+                  console.debug('[ProductsReplenish] dispatching system:confirm (no forward)', { reqId, msg: confirmMsg });
+                  // ask the global system dialog (do NOT request forwarding/navigation)
+                  window.dispatchEvent(new CustomEvent('system:confirm', { detail: { id: reqId, title: 'Confirmação', message: confirmMsg } }));
+
+                  // Wait for reply; if OK, persist draft locally and show 'Concluído' message. Do NOT change screen.
+                  function replyHandler(ev: Event){
                     const d = (ev as CustomEvent)?.detail as { id?: string; ok?: boolean } | undefined;
-                    // the SystemDialogProvider forwards event then also dispatches 'system:confirm:reply'
-                    if(d?.id === reqId && d.ok){
-                      window.removeEventListener('system:confirm:reply', msgAck as EventListener);
-                      window.dispatchEvent(new CustomEvent('system:message', { detail: { title: 'Conclu\u00eddo', message: 'Solicita\u00e7\u00f5es de compras criadas com sucesso.', durationMs: 3000 } }));
-                    } else if(d?.id === reqId){
-                      window.removeEventListener('system:confirm:reply', msgAck as EventListener);
+                    if(d?.id !== reqId) return;
+                    window.removeEventListener('system:confirm:reply', replyHandler as EventListener);
+                    if(d.ok){
+                      try{ localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids)); }catch(_){/* noop */}
+                      window.dispatchEvent(new CustomEvent('system:message', { detail: { title: 'Concluído', message: 'Solicitações de compras criadas com sucesso.', durationMs: 3000 } }));
                     }
                   }
-                  window.addEventListener('system:confirm:reply', msgAck as EventListener);
+                  window.addEventListener('system:confirm:reply', replyHandler as EventListener);
                 } catch(e){ toast.error('Erro ao tentar gerar grade'); }
               }}>Gerar Grade</Button>
               <Button size="sm" variant="outline" onClick={()=>setShowReport(false)}>Fechar</Button>
