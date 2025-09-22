@@ -22,6 +22,7 @@ import { StockLoader } from '@/components/erp/StockLoader';
 import ProductLabels from '@/components/erp/ProductLabels';
 import ErpInventory from '@/components/erp/ErpInventory';
 import ErpKardex from '@/components/erp/ErpKardex';
+import AccessControl from '@/components/erp/AccessControl';
 import FinancePayables from '@/components/erp/FinancePayables';
 import FinanceReceivables from '@/components/erp/FinanceReceivables';
 import FinanceDashboard from '@/components/erp/FinanceDashboard';
@@ -78,6 +79,15 @@ type SectionKey =
 
 export default function Erp() {
   const auth = useAuth();
+  const hasPerm = (perm: string) => {
+    try {
+      if (!auth?.profile) return false;
+      if (auth.profile.role === 'admin') return true;
+      // permissions stored as jsonb array in profiles.permissions
+      const perms = (auth.profile as any)?.permissions as string[] | undefined;
+      return Array.isArray(perms) && perms.includes(perm);
+    } catch (e) { return false; }
+  };
   const [section, setSection] = useState<SectionKey>('dashboard');
   const [quotesCount, setQuotesCount] = useState<number>(0);
   const [purchaseRequestsCount, setPurchaseRequestsCount] = useState<number>(0);
@@ -200,14 +210,14 @@ export default function Erp() {
               <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transportadoras" active={section==='carriers'} onClick={()=>setSection('carriers')} />
             </div>
             <GroupTitle icon={<Package className="h-3.5 w-3.5" />} label="Produtos" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<Package className='h-4 w-4' />} label="Gerenciar Produtos" active={section==='products_manage'} onClick={()=>setSection('products_manage')} />
-              <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Valores de Vendas" active={section==='products_pricing'} onClick={()=>setSection('products_pricing')} />
-              <ErpNavItem icon={<FolderTree className='h-4 w-4' />} label="Grupos de Produtos" active={section==='product_groups'} onClick={()=>setSection('product_groups')} />
-              <ErpNavItem icon={<Ruler className='h-4 w-4' />} label="Unidades" active={section==='product_units'} onClick={()=>setSection('product_units')} />
-              <ErpNavItem icon={<Layers className='h-4 w-4' />} label="Grades / Variações" active={section==='product_variations'} onClick={()=>setSection('product_variations')} />
-              <ErpNavItem icon={<Tags className='h-4 w-4' />} label="Etiquetas / Códigos" active={section==='product_labels'} onClick={()=>setSection('product_labels')} />
-            </div>
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                {hasPerm('products.manage') && <ErpNavItem icon={<Package className='h-4 w-4' />} label="Gerenciar Produtos" active={section==='products_manage'} onClick={()=>setSection('products_manage')} />}
+                {hasPerm('products.pricing') && <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Valores de Vendas" active={section==='products_pricing'} onClick={()=>setSection('products_pricing')} />}
+                {hasPerm('products.groups') && <ErpNavItem icon={<FolderTree className='h-4 w-4' />} label="Grupos de Produtos" active={section==='product_groups'} onClick={()=>setSection('product_groups')} />}
+                {hasPerm('products.units') && <ErpNavItem icon={<Ruler className='h-4 w-4' />} label="Unidades" active={section==='product_units'} onClick={()=>setSection('product_units')} />}
+                {hasPerm('products.variations') && <ErpNavItem icon={<Layers className='h-4 w-4' />} label="Grades / Variações" active={section==='product_variations'} onClick={()=>setSection('product_variations')} />}
+                {hasPerm('products.labels') && <ErpNavItem icon={<Tags className='h-4 w-4' />} label="Etiquetas / Códigos" active={section==='product_labels'} onClick={()=>setSection('product_labels')} />}
+              </div>
             <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
               <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Kardex do Produto" active={section==='stock'} onClick={()=>setSection('stock')} />
@@ -334,7 +344,7 @@ export default function Erp() {
                 <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Configurações</h2><p className="text-sm text-muted-foreground">Área de configurações do ERP (placeholder).</p></Card>
               )}
               {section === 'access_control' && auth?.profile?.role === 'admin' && (
-                <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Controle de Acesso</h2><p className="text-sm text-muted-foreground">Gerencie papéis, permissões e grupos de acesso (placeholder).</p></Card>
+                <AccessControl />
               )}
               {section === 'purchases_requests' && <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Solicitações de Compras</h2><p className="text-sm text-muted-foreground">Lista de solicitações pendentes. Implementar CRUD quando especificado.</p></Card>}
               {section === 'purchases_requests' && <PurchasesRequestsEditor initialIds={purchasesRequestsDraft || []} clearDraft={()=>setPurchasesRequestsDraft(null)} />}
