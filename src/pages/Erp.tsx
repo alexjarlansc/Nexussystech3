@@ -86,6 +86,7 @@ export default function Erp() {
   const [showInventoryHistory, setShowInventoryHistory] = useState<boolean>(false);
   const [inventoryHistory, setInventoryHistory] = useState<any[] | null>(null);
   const [selectedInventory, setSelectedInventory] = useState<any | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Carrega contagem inicial e assina mudanças de orçamentos
   useEffect(() => {
@@ -112,9 +113,9 @@ export default function Erp() {
   // Event listener para abrir seção de solicitações com itens selecionados
   useEffect(()=>{
     function handler(e: Event){
-      try{
-        // @ts-expect-error accessing custom event detail
-        const ids = (e as CustomEvent)?.detail?.ids as string[] | undefined;
+    try{
+      // accessing custom event detail (CustomEvent)
+      const ids = (e as CustomEvent)?.detail?.ids as string[] | undefined;
         const valid = Array.isArray(ids) ? ids : null;
         if(valid){ setPurchasesRequestsDraft(valid); setSection('purchases_requests'); localStorage.removeItem('erp:purchase_requests_initial'); }
       }catch(err){ console.warn('erp:open-purchase-requests handler error', err); }
@@ -170,10 +171,26 @@ export default function Erp() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
       <NexusProtectedHeader />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex items-center justify-between px-4 md:hidden bg-transparent">
+        <button className="p-2 rounded-md" onClick={()=>setSidebarOpen(true)} aria-label="Abrir menu">
+          <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+      </div>
+      <style>{`@media (max-width: 767px){
+        .erp-sidebar .ml-2{ margin-left: 0 !important; }
+        .erp-sidebar .pl-1{ padding-left: 0 !important; }
+        .erp-sidebar .border-l{ border-left: 0 !important; }
+      }`}</style>
+  <div className="flex flex-1 overflow-x-auto md:overflow-hidden relative">
+    {/* mobile sidebar state */}
+    {/* we'll use a simple state hook below */}
+        
         {/* Sidebar */}
-        <aside className="w-64 border-r bg-white/90 backdrop-blur-sm dark:bg-slate-800/80 flex flex-col">
+  <aside className={`erp-sidebar w-56 md:flex-shrink-0 border-r bg-white/90 backdrop-blur-sm dark:bg-slate-800/80 flex flex-col transition-transform duration-200 ${sidebarOpen ? 'fixed left-0 top-0 h-full z-40 translate-x-0' : ' -translate-x-full md:translate-x-0 md:relative md:translate-x-0'}`}>
           <div className="px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Módulo ERP</div>
+          <div className="md:hidden px-2">
+            <button className="p-2 rounded hover:bg-muted/20" onClick={()=>setSidebarOpen(false)}>Fechar</button>
+          </div>
           <nav className="flex-1 px-2 space-y-1 text-sm">
             <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Visão Geral" active={section==='dashboard'} onClick={()=>setSection('dashboard')} />
             <GroupTitle icon={<FolderTree className="h-3.5 w-3.5" />} label="Cadastro" />
@@ -253,11 +270,12 @@ export default function Erp() {
             MVP inicial do módulo ERP • Expandir funções posteriormente
           </div>
         </aside>
+          {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-30 md:hidden" onClick={()=>setSidebarOpen(false)} />}
 
         {/* Main content */}
         <main className="flex-1 overflow-auto">
           <ScrollArea id="erp-main-scroll" className="h-full">
-            <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+            <div className="p-3 md:p-4 space-y-4 w-full">
               {section === 'dashboard' && <FinanceDashboard />}
               {section === 'clients' && <ErpClients />}
               {section === 'suppliers' && <ErpSuppliers />}
@@ -1158,25 +1176,26 @@ function ProductsPricingPlaceholder(){
 }
 
 function PurchasesRequestsEditor({ initialIds, clearDraft }: { initialIds: string[]; clearDraft: ()=>void }){
-  const [rows, setRows] = useState<{ product_id?: string; product_name?: string; qty:number; notes?:string }[]>([]);
+  const [rows, setRows] = useState<{ product_id?: string; product_name?: string; product_code?:string; qty:number; notes?:string }[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(()=>{
     async function load(){
       if(!initialIds || initialIds.length===0) return;
       try{
-        const { data } = await (supabase as any).from('products').select('id,name,code').in('id', initialIds).limit(500);
-        const map = new Map((data||[]).map((p:any)=>[p.id,{ name: p.name, code: p.code }]));
-        const initial = initialIds.map(id=>({ product_id: id, product_name: map.get(id)?.name||id, product_code: map.get(id)?.code||id, qty: 1 } as any));
-        setRows(initial as any);
-      }catch(e){ console.warn('load product names failed', e); setRows(initialIds.map(id=>({ product_id:id, product_name:id, qty:1 }))); }
+          const { data } = await (supabase as any).from('products').select('id,name,code').in('id', initialIds).limit(500);
+    const dataArr = (data || []) as any[];
+    const map = new Map(dataArr.map((p:any)=>[((p as any).id), { name: (p as any).name, code: (p as any).code }]));
+          const initial = initialIds.map(id=>({ product_id: id, product_name: map.get(id)?.name||id, product_code: map.get(id)?.code||id, qty: 1 } as any));
+          setRows(initial as any);
+  }catch(e){ console.warn('load product names failed', e); setRows(initialIds.map(id=>({ product_id:id, product_name:id, product_code: id, qty:1 }))); }
     }
     load();
   },[initialIds]);
 
   function addRow(){ setRows(r=>[...r,{ qty:1 } as any]); }
   function removeRow(i:number){ setRows(r=>r.filter((_,idx)=>idx!==i)); }
-  function updateRow(i:number, patch: Partial<{ product_id:string; product_name:string; qty:number; notes?:string }>){
+  function updateRow(i:number, patch: Partial<{ product_id:string; product_name:string; product_code?:string; qty:number; notes?:string }>){
     setRows(r=>{ const n = r.map(x=>({...x})); n[i] = { ...n[i], ...patch }; return n; });
   }
 
@@ -1226,10 +1245,10 @@ function PurchasesRequestsEditor({ initialIds, clearDraft }: { initialIds: strin
       <div className="space-y-2">
         {rows.map((r,idx)=> (
           <div key={idx} className="flex gap-2 items-center">
-            <input placeholder="Código do produto" value={r.product_code||r.product_id||''} onChange={e=>updateRow(idx,{ product_id: e.target.value, product_code: e.target.value })} className="border rounded px-2 py-1 text-sm w-24 sm:w-36 md:w-48" />
+            <input placeholder="Código do produto" value={r.product_code||r.product_id||''} onChange={e=>updateRow(idx, { product_id: e.target.value, product_code: e.target.value } as any)} className="border rounded px-2 py-1 text-sm w-24 sm:w-36 md:w-48" />
             <div className="text-sm truncate" style={{minWidth:200}}>{r.product_name}</div>
             <input type="number" aria-label={`Quantidade ${idx+1}`} className="border rounded px-2 py-1 text-sm w-20" value={String(r.qty)} readOnly tabIndex={-1} />
-            <input placeholder="Notas" value={r.notes||''} onChange={e=>updateRow(idx,{ notes: e.target.value })} className="border rounded px-2 py-1 text-sm flex-1" />
+            <input placeholder="Notas" value={r.notes||''} onChange={e=>updateRow(idx, { notes: e.target.value } as any)} className="border rounded px-2 py-1 text-sm flex-1" />
             <Button size="sm" variant="outline" onClick={()=>removeRow(idx)}>Remover</Button>
           </div>
         ))}
@@ -1414,7 +1433,7 @@ function BudgetsPlaceholder(){
             paymentEntries = parsed.items.map((it:any, idx:number)=>{
               const label = it.kind === 'entrada' ? 'Entrada' : it.kind === 'saldo' ? 'Saldo' : `Parcela ${idx+1}`;
               const amount = it.valueType === 'percent' ? (Number(q.total||0) * (it.value/100)) : Number(it.value);
-              const valTxt = it.valueType === 'percent' ? `${it.value}%` : currencyBRL(Number(it.value));
+              const valTxt = it.valueType === 'percent' ? `${it.value}%` : currency(Number(it.value));
               const detail = `${valTxt} em ${it.dueDays} dia(s)`;
               return { label, detail, amount };
             });
