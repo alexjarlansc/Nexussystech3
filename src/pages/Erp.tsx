@@ -21,6 +21,7 @@ import ErpStockReturns from '@/components/erp/ErpStockReturns';
 import { StockLoader } from '@/components/erp/StockLoader';
 import ProductLabels from '@/components/erp/ProductLabels';
 import ErpInventory from '@/components/erp/ErpInventory';
+import ErpKardex from '@/components/erp/ErpKardex';
 import FinancePayables from '@/components/erp/FinancePayables';
 import FinanceReceivables from '@/components/erp/FinanceReceivables';
 import FinanceDashboard from '@/components/erp/FinanceDashboard';
@@ -192,7 +193,7 @@ export default function Erp() {
             </div>
             <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" />
             <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Estoque" active={section==='stock'} onClick={()=>setSection('stock')} />
+              <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Kardex do Produto" active={section==='stock'} onClick={()=>setSection('stock')} />
               <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Inventário" active={section==='inventory'} onClick={()=>setSection('inventory')} />
               <ErpNavItem icon={<Wrench className='h-4 w-4' />} label="Serviços" active={section==='services'} onClick={()=>setSection('services')} />
             </div>
@@ -267,7 +268,7 @@ export default function Erp() {
               {section === 'product_units' && <ProductUnitsPlaceholder />}
               {section === 'product_variations' && <ProductsReplenish />}
               {section === 'product_labels' && <ProductLabels />}
-              {section === 'stock' && <StockPlaceholder />}
+              {section === 'stock' && <ErpKardex />}
               {section === 'inventory' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -1052,10 +1053,10 @@ function ProductsPricingPlaceholder(){
         <Input value={rawCost} onChange={e=>{
           const only = e.target.value.replace(/[^0-9.,]/g,'');
           setRawCost(only);
-          const normalized = only.replace(',','.');
+          const normalized = only.replace(/\./g, '').replace(',','.');
           const num = Number(normalized);
           if(!isNaN(num)) setCost(num); else if(only==='') setCost(undefined);
-        }} onBlur={()=>{ if(rawCost){ const n = Number(rawCost.replace(',','.')); if(!isNaN(n)) setRawCost(n.toFixed(2)); } }} placeholder="0,00" inputMode="decimal" className="h-8" />
+        }} onBlur={()=>{ if(rawCost){ const n = Number(rawCost.replace(/\./g,'').replace(',','.')); if(!isNaN(n)) setRawCost(n.toFixed(2)); } }} placeholder="0,00" inputMode="decimal" className="h-8" />
       </div>
       {calcMode==='forward' && <div>
         <label className="block text-[10px] font-medium uppercase mb-1">Margem %</label>
@@ -1064,10 +1065,10 @@ function ProductsPricingPlaceholder(){
           onChange={e=>{
             const only = e.target.value.replace(/[^0-9,.-]/g,'');
             setRawMargin(only);
-            const norm = only.replace(',','.');
+            const norm = only.replace(/\./g,'').replace(',','.');
             const num = Number(norm); if(!isNaN(num)) setMargin(num); else if(!only) setMargin(undefined);
           }}
-          onBlur={()=>{ if(rawMargin){ const n=Number(rawMargin.replace(',','.')); if(!isNaN(n)) setRawMargin(n.toFixed(2).replace('.',',')); } }}
+          onBlur={()=>{ if(rawMargin){ const n=Number(rawMargin.replace(/\./g,'').replace(',','.')); if(!isNaN(n)) setRawMargin(n.toFixed(2).replace('.',',')); } }}
           placeholder="%"
           inputMode="decimal"
           className="h-8"
@@ -1089,11 +1090,11 @@ function ProductsPricingPlaceholder(){
           onChange={e=>{
             const only=e.target.value.replace(/[^0-9,.-]/g,'');
             setRawIcms(only);
-            const n=Number(only.replace(',','.'));
+            const n=Number(only.replace(/\./g,'').replace(',','.'));
             if(!isNaN(n)) setIcms(n); else if(!only) setIcms(undefined);
           }}
           onBlur={()=>{
-            if(rawIcms){ const n=Number(rawIcms.replace(',','.')); if(!isNaN(n)) setRawIcms(n.toFixed(2).replace('.',',')); }
+            if(rawIcms){ const n=Number(rawIcms.replace(/\./g,'').replace(',','.')); if(!isNaN(n)) setRawIcms(n.toFixed(2).replace('.',',')); }
           }}
           placeholder="%"
           inputMode="decimal"
@@ -1107,11 +1108,11 @@ function ProductsPricingPlaceholder(){
           onChange={e=>{
             const only=e.target.value.replace(/[^0-9,.-]/g,'');
             setRawPis(only);
-            const n=Number(only.replace(',','.'));
+            const n=Number(only.replace(/\./g,'').replace(',','.'));
             if(!isNaN(n)) setPis(n); else if(!only) setPis(undefined);
           }}
           onBlur={()=>{
-            if(rawPis){ const n=Number(rawPis.replace(',','.')); if(!isNaN(n)) setRawPis(n.toFixed(2).replace('.',',')); }
+            if(rawPis){ const n=Number(rawPis.replace(/\./g,'').replace(',','.')); if(!isNaN(n)) setRawPis(n.toFixed(2).replace('.',',')); }
           }}
           placeholder="%"
           inputMode="decimal"
@@ -1125,11 +1126,11 @@ function ProductsPricingPlaceholder(){
           onChange={e=>{
             const only=e.target.value.replace(/[^0-9,.-]/g,'');
             setRawCofins(only);
-            const n=Number(only.replace(',','.'));
+            const n=Number(only.replace(/\./g,'').replace(',','.'));
             if(!isNaN(n)) setCofins(n); else if(!only) setCofins(undefined);
           }}
           onBlur={()=>{
-            if(rawCofins){ const n=Number(rawCofins.replace(',','.')); if(!isNaN(n)) setRawCofins(n.toFixed(2).replace('.',',')); }
+            if(rawCofins){ const n=Number(rawCofins.replace(/\./g,'').replace(',','.')); if(!isNaN(n)) setRawCofins(n.toFixed(2).replace('.',',')); }
           }}
           placeholder="%"
           inputMode="decimal"

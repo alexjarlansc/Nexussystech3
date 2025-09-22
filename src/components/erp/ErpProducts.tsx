@@ -899,10 +899,10 @@ export function ErpProducts(){
           {/* Fornecedor (seção separada) */}
           {extendedCols && <section className="space-y-2">
             <h3 className="font-semibold text-sm">Fornecedor</h3>
-            <div className="grid md:grid-cols-3 gap-2 items-center">
-              <div className="flex items-center gap-2">
-                <select className="h-9 border rounded px-2" value={form.default_supplier_id||''} onChange={e=>setForm(f=>({...f,default_supplier_id:e.target.value||undefined}))}>
-                  <option value="">Selecione fornecedor</option>
+            <div className="grid md:grid-cols-2 gap-2 items-start">
+              <div className="flex items-center gap-2 flex-wrap">
+                <select className="h-9 border rounded px-2 min-w-[220px]" value={form.default_supplier_id||''} onChange={e=>setForm(f=>({...f,default_supplier_id:e.target.value||undefined}))}>
+                  <option value="" disabled hidden>Selecione fornecedor</option>
                   {suppliers.map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <Button size="sm" variant="outline" onClick={()=>setSupplierSearchOpen(true)}>Buscar fornecedor</Button>
@@ -910,14 +910,14 @@ export function ErpProducts(){
                 {form.default_supplier_id && (()=>{
                   const sel = suppliers.find(s=>s.id===form.default_supplier_id);
                   return sel ? (
-                    <div className="ml-2 px-2 py-1 rounded bg-green-50 border border-green-200 text-sm flex items-center gap-2">
-                      <span>{sel.name}</span>
+                    <div className="ml-2 mt-1 md:mt-0 px-2 py-1 rounded bg-green-50 border border-green-200 text-sm flex items-center gap-2">
+                      <span className="max-w-[220px] truncate">{sel.name}</span>
                       <button className="text-red-500 font-bold leading-none" onClick={()=>setForm(f=>({...f, default_supplier_id: undefined}))} aria-label="Limpar fornecedor">×</button>
                     </div>
                   ) : null;
                 })()}
               </div>
-              <div className="text-xs text-muted-foreground">Obrigatório — selecione o fornecedor padrão para este produto</div>
+              <div className="text-xs text-muted-foreground mt-1 md:mt-0">Obrigatório — selecione o fornecedor padrão para este produto</div>
             </div>
           </section>}
         </div>
