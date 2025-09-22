@@ -1,0 +1,3 @@
+Force run migrations - commit stamp
+This file exists to trigger CI workflow that applies SQL migrations in supabase/migrations.
+Remove it after successful run if you want.
