@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, RefreshCw, Pencil, X, ChevronRight, ChevronDown } from 'lucide-react';
+import { Plus, RefreshCw, Pencil, X, ChevronRight, ChevronDown, ChevronLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
@@ -179,30 +179,64 @@ export function ErpProductGroups(){
                 {sectorList.map(s=> {
                   const sectorOpen = expandedSectors.has(s.id);
                   const sessionList = children(s.id);
-                  return <li key={s.id} className="border rounded p-2 bg-white/70 dark:bg-slate-900/30">
-                    <div className="grid grid-cols-[auto,1fr,auto,auto,auto] items-center gap-1">
-                      <button aria-label={sectorOpen? 'Recolher Setor':'Expandir Setor'} onClick={()=>toggleSector(s.id)} className="h-6 w-6 flex items-center justify-center rounded-sm hover:bg-slate-200/60 dark:hover:bg-slate-700/60">
-                        {sectorOpen? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                      </button>
-                      <span onClick={()=>toggleSector(s.id)} className="font-medium truncate pr-1 cursor-pointer select-none" title={s.name}>{s.name}</span>
-                      <IconAction onClick={()=>openNew(3,s.id)} title="Nova Sessão"><Plus className="h-3.5 w-3.5" /></IconAction>
-                      <IconAction onClick={()=>openEdit(s)} title="Editar Setor"><Pencil className="h-3.5 w-3.5" /></IconAction>
-                      <IconAction onClick={()=>setToDelete(s)} title="Excluir Setor" variant="danger"><X className="h-4 w-4" /></IconAction>
-                    </div>
-                    {sectorOpen && <ul className="mt-2 space-y-1">
-                      {sessionList.map(ss=> {
-                        return <li key={ss.id} className="border rounded p-2 bg-muted/20">
-                          <div className="grid grid-cols-[auto,1fr,auto,auto] items-center gap-1">
-                            <span className="h-6 w-6" />
-                            <span className="truncate pr-1" title={ss.name}>{ss.name}</span>
-                            <IconAction onClick={()=>openEdit(ss)} title="Editar Sessão"><Pencil className="h-3.5 w-3.5" /></IconAction>
-                            <IconAction onClick={()=>setToDelete(ss)} title="Excluir Sessão" variant="danger"><X className="h-4 w-4" /></IconAction>
-                          </div>
-                        </li>;
-                      })}
-                      {sessionList.length===0 && <li className="text-muted-foreground text-[10px] pl-6">Sem sessões</li>}
-                    </ul>}
-                  </li>;
+                  return (
+                    <li key={s.id} className="border rounded p-2 bg-white/70 dark:bg-slate-900/30">
+                      <div className="grid grid-cols-[auto,1fr,auto,auto,auto] items-center gap-1">
+                        <button aria-label={sectorOpen? 'Recolher Setor':'Expandir Setor'} onClick={()=>toggleSector(s.id)} className="h-6 w-6 flex items-center justify-center rounded-sm hover:bg-slate-200/60 dark:hover:bg-slate-700/60">
+                          {sectorOpen? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </button>
+                        <span onClick={()=>toggleSector(s.id)} className="font-medium truncate pr-1 cursor-pointer select-none" title={s.name}>{s.name}</span>
+                        <IconAction onClick={()=>openNew(3,s.id)} title="Nova Sessão"><Plus className="h-3.5 w-3.5" /></IconAction>
+                        <IconAction onClick={()=>openEdit(s)} title="Editar Setor"><Pencil className="h-3.5 w-3.5" /></IconAction>
+                        <IconAction onClick={()=>setToDelete(s)} title="Excluir Setor" variant="danger"><X className="h-4 w-4" /></IconAction>
+                      </div>
+                      {sectorOpen && (
+                                          <div className="mt-2">
+                          {sessionList.length === 0 ? (
+                            <div className="text-muted-foreground text-[10px] pl-6">Sem sessões</div>
+                          ) : (
+                                              <div className="relative">
+                                                <div className="absolute left-2 top-1/2 -translate-y-1/2 z-10 md:hidden">
+                                                  <button aria-label="Anterior" type="button" onClick={()=>{
+                                                    const el = (document.getElementById(`sessions-${s.id}`) as HTMLElement | null);
+                                                    if(el) el.scrollBy({ left: -220, behavior: 'smooth' });
+                                                  }} className="h-8 w-8 rounded-full bg-white/90 shadow flex items-center justify-center">
+                                                    <ChevronLeft className="h-4 w-4" />
+                                                  </button>
+                                                </div>
+                                                <div className="absolute right-2 top-1/2 -translate-y-1/2 z-10 md:hidden">
+                                                  <button aria-label="Próximo" type="button" onClick={()=>{
+                                                    const el = (document.getElementById(`sessions-${s.id}`) as HTMLElement | null);
+                                                    if(el) el.scrollBy({ left: 220, behavior: 'smooth' });
+                                                  }} className="h-8 w-8 rounded-full bg-white/90 shadow flex items-center justify-center">
+                                                    <ChevronRight className="h-4 w-4" />
+                                                  </button>
+                                                </div>
+                                                {/* Horizontal scroll area - mobile friendly */}
+                                                <ul
+                                                  id={`sessions-${s.id}`}
+                                                  tabIndex={0}
+                                                  role="list"
+                                                  className="flex md:block gap-2 overflow-x-auto md:overflow-visible whitespace-nowrap md:whitespace-normal -mx-2 md:mx-0 px-2 md:px-0 py-1 scroll-snap-type-x-mandatory touch-pan-x"
+                                                  style={{ WebkitOverflowScrolling: 'touch' }}
+                                                >
+                                                  {sessionList.map(ss=> (
+                                                    <li key={ss.id} className="inline-block md:block border rounded p-2 bg-muted/20 min-w-[140px] scroll-snap-align-start">
+                                                      <div className="grid grid-cols-[auto,1fr,auto,auto] items-center gap-1">
+                                                        <span className="h-6 w-6" />
+                                                        <span className="truncate pr-1" title={ss.name}>{ss.name}</span>
+                                                        <IconAction onClick={()=>openEdit(ss)} title="Editar Sessão"><Pencil className="h-3.5 w-3.5" /></IconAction>
+                                                        <IconAction onClick={()=>setToDelete(ss)} title="Excluir Sessão" variant="danger"><X className="h-4 w-4" /></IconAction>
+                                                      </div>
+                                                    </li>
+                                                  ))}
+                                                </ul>
+                                              </div>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
                 })}
                 {sectorList.length===0 && <li className="text-muted-foreground text-[10px] pl-6">Sem setores</li>}
               </ul>}
