@@ -19,6 +19,15 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 
+// Ajuste global de escala da UI via variável de ambiente VITE_UI_SCALE (porcentagem).
+// Exemplos: VITE_UI_SCALE=80 aplica 80% (reduz para 80% do tamanho base). Padrão: 80.
+try{
+  const envScale = Number(import.meta.env.VITE_UI_SCALE ?? 80);
+  const scale = Number.isFinite(envScale) && envScale > 0 ? envScale : 80;
+  // Usamos font-size no root para escalar componentes baseados em rem (Tailwind usa rem)
+  document.documentElement.style.fontSize = `${scale}%`;
+}catch(e){ /* noop */ }
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
