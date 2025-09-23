@@ -79,6 +79,16 @@ type SectionKey =
 
 export default function Erp() {
   const auth = useAuth();
+  // Determine if the current user may access the ERP module.
+  const profilePerms = (auth?.profile as any)?.permissions as string[] | undefined;
+  const canAccessErp = (() => {
+    try {
+      if (!auth?.profile) return false;
+      if (auth.profile.role === 'admin') return true;
+      if (Array.isArray(profilePerms) && profilePerms.includes('erp.access')) return true;
+      return false;
+    } catch (_) { return false; }
+  })();
   const hasPerm = (perm: string) => {
     try {
       if (!auth?.profile) return false;
@@ -177,6 +187,20 @@ export default function Erp() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (_) { /* noop */ }
   }, [section]);
+
+  if (!canAccessErp) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <NexusProtectedHeader />
+        <main className="flex-1 flex items-center justify-center p-6">
+          <Card className="p-6 max-w-xl text-center">
+            <h2 className="text-lg font-semibold">Acesso ao ERP pendente</h2>
+            <p className="text-sm text-muted-foreground mt-2">Seu usuário não possui permissão para acessar o módulo ERP. Solicite ao administrador que conceda acesso via Controle de Acesso.</p>
+          </Card>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
