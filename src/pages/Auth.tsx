@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 
 export default function Auth() {
@@ -22,6 +24,9 @@ export default function Auth() {
   const [signUpPassword, setSignUpPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [companyCode, setCompanyCode] = useState('');
+  const [companies, setCompanies] = useState<Array<{id:string;name:string}>>([]);
+  const [companyModalOpen, setCompanyModalOpen] = useState(false);
   const [cnpjCpf, setCnpjCpf] = useState('');
   const [phone, setPhone] = useState('');
   const [companyEmail, setCompanyEmail] = useState('');
@@ -176,13 +181,26 @@ export default function Auth() {
 
               <div>
                 <Label htmlFor="company-name">Nome da Empresa *</Label>
-                <Input
-                  id="company-name"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Sua empresa"
-                  required
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="company-name"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="Sua empresa"
+                    required
+                  />
+                  <Button type="button" variant="outline" onClick={async ()=>{
+                    setCompanyModalOpen(true);
+                    try {
+                      const { data, error } = await supabase.from('companies').select('id,name').order('name');
+                      if (error) throw error;
+                      setCompanies(((data as unknown) as Array<{id:string;name:string}>) || []);
+                    } catch (err) {
+                      console.error('Erro ao carregar empresas', err);
+                      toast.error('Não foi possível carregar empresas');
+                    }
+                  }}>Selecionar</Button>
+                </div>
               </div>
 
               <div>
@@ -250,6 +268,35 @@ export default function Auth() {
                   required={role === 'admin'}
                 />
               </div>
+
+              <Dialog open={companyModalOpen} onOpenChange={(o)=>setCompanyModalOpen(o)}>
+                <DialogContent className='sm:max-w-lg max-h-[70vh] overflow-y-auto'>
+                  <DialogHeader>
+                    <DialogTitle>Selecionar Empresa</DialogTitle>
+                  </DialogHeader>
+                  <div className='space-y-3 max-h-80 overflow-auto'>
+                    {companies.length === 0 ? (
+                      <div className='text-sm text-muted-foreground p-4'>Nenhuma empresa disponível</div>
+                    ) : (
+                      companies.map(c => (
+                        <div key={c.id} className='flex items-center justify-between p-2 border rounded'>
+                          <div>
+                            <div className='font-medium'>{c.name}</div>
+                            <div className='text-xs text-muted-foreground'>Código: {c.id}</div>
+                          </div>
+                          <div className='flex gap-2'>
+                            <Button size='sm' variant='ghost' onClick={async ()=>{ try{ await navigator.clipboard.writeText(c.id); toast.success('Código copiado para a área de transferência'); }catch(e){ console.error(e); toast.error('Falha ao copiar'); } }}>Copiar código</Button>
+                            <Button size='sm' onClick={()=>{ setCompanyName(c.name); setCompanyCode(c.id); setCompanyModalOpen(false); toast.success('Empresa selecionada'); }}>Selecionar</Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <DialogFooter>
+                    <Button variant='outline' onClick={()=>setCompanyModalOpen(false)}>Fechar</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
 
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? 'Criando conta...' : 'Criar Conta'}

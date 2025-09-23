@@ -257,7 +257,7 @@ export function ErpProductGroups(){
     </div>
 
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing? 'Editar':'Novo'} {editing? levelLabel(editing.level): parent? levelLabel((groups.find(g=>g.id===parent)?.level||0)+1 as 1|2|3) : 'Categoria'}</DialogTitle>
         </DialogHeader>
@@ -272,7 +272,7 @@ export function ErpProductGroups(){
       </DialogContent>
     </Dialog>
     <Dialog open={!!toDelete} onOpenChange={(v)=>{ if(!v) setToDelete(null); }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm max-h-[60vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Confirmar Exclusão</DialogTitle>
         </DialogHeader>

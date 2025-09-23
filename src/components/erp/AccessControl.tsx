@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/sonner';
@@ -15,13 +16,111 @@ type ProfileRow = {
   permissions?: string[] | null;
 };
 
-const PRODUCT_PERMISSIONS = [
-  'products.manage',
-  'products.pricing',
-  'products.groups',
-  'products.units',
-  'products.variations',
-  'products.labels',
+// Hierarchical permissions tree used to render UI (label + permission key)
+type PermNode = { id: string; label: string; perm?: string; children?: PermNode[] };
+
+const PERMISSIONS_TREE: PermNode[] = [
+  { id: 'visao', label: 'Visão Geral', children: [ { id: 'visao.dashboard', label: 'Painel (KPIs)', perm: 'dashboard.view' } ] },
+  {
+    id: 'cadastro',
+    label: 'CADASTRO',
+    children: [
+      { id: 'cadastro.clientes', label: 'Clientes', perm: 'clients.manage' },
+      { id: 'cadastro.fornecedores', label: 'Fornecedores', perm: 'suppliers.manage' },
+      { id: 'cadastro.transportadoras', label: 'Transportadoras', perm: 'carriers.manage' },
+    ],
+  },
+  {
+    id: 'produtos',
+    label: 'PRODUTOS',
+    children: [
+      { id: 'produtos.manage', label: 'Gerenciar Produtos', perm: 'products.manage' },
+      { id: 'produtos.pricing', label: 'Valores de Vendas', perm: 'products.pricing' },
+      { id: 'produtos.groups', label: 'Grupos de Produtos', perm: 'products.groups' },
+      { id: 'produtos.units', label: 'Unidades', perm: 'products.units' },
+      { id: 'produtos.variations', label: 'Grades / Variações', perm: 'products.variations' },
+      { id: 'produtos.labels', label: 'Etiquetas / Códigos', perm: 'products.labels' },
+    ],
+  },
+  {
+    id: 'operacao',
+    label: 'OPERAÇÃO',
+    children: [
+      { id: 'operacao.kardex', label: 'Kardex do Produto', perm: 'kardex.view' },
+      { id: 'operacao.inventario', label: 'Inventário', perm: 'operation.inventory' },
+      { id: 'operacao.servicos', label: 'Serviços', perm: 'operation.services' },
+    ],
+  },
+  {
+    id: 'estoque',
+    label: 'ESTOQUE',
+    children: [
+      { id: 'estoque.movimentacoes', label: 'Movimentações', perm: 'inventory.movements.view' },
+      { id: 'estoque.ajustes', label: 'Ajustes', perm: 'inventory.adjustments' },
+      { id: 'estoque.trocas', label: 'Trocas / Devoluções', perm: 'inventory.returns' },
+      { id: 'estoque.transferencias', label: 'Transferências', perm: 'inventory.transfers' },
+    ],
+  },
+  {
+    id: 'orcamentos',
+    label: 'ORÇAMENTOS',
+    children: [
+      { id: 'orcamentos.listar', label: 'Listar Orçamentos', perm: 'quotes.view' },
+  { id: 'orcamentos.os', label: 'Listar Ordens de Serviço', perm: 'service_orders.view' },
+    ],
+  },
+  {
+    id: 'vendas',
+    label: 'VENDAS',
+    children: [
+      { id: 'vendas.pedidos', label: 'Pedidos de Vendas', perm: 'sales.orders' },
+      { id: 'vendas.listar', label: 'Listar Ordens de Serviço', perm: 'sales.list' },
+    ],
+  },
+  {
+    id: 'compras',
+    label: 'COMPRAS',
+    children: [
+      { id: 'compras.lancamentos', label: 'Lançamento de Compras', perm: 'purchases.manage' },
+      { id: 'compras.historico', label: 'Histórico de Compras', perm: 'purchases.history' },
+      { id: 'compras.solicitacoes', label: 'Solicitações de Compras', perm: 'purchases.requests' },
+      { id: 'compras.xml', label: 'Gerar via XML', perm: 'purchases.xml' },
+      { id: 'compras.troca', label: 'Troca / Devolução', perm: 'purchases.returns' },
+    ],
+  },
+  {
+    id: 'financeiro',
+    label: 'FINANCEIRO',
+    children: [
+      { id: 'financeiro.pagar', label: 'Contas a Pagar', perm: 'finance.payables' },
+      { id: 'financeiro.receber', label: 'Contas a Receber', perm: 'finance.receivables' },
+      { id: 'financeiro.folha', label: 'Folha de Pagamento', perm: 'finance.payroll' },
+    ],
+  },
+  {
+    id: 'notas',
+    label: 'NOTAS FISCAIS',
+    children: [
+      { id: 'notas.emitir', label: 'Emitir / Gerenciar', perm: 'invoices.manage' },
+    ],
+  },
+  {
+    id: 'relatorios',
+    label: 'RELATÓRIOS',
+    children: [
+      { id: 'relatorios.panel', label: 'Painel (KPIs)', perm: 'reports.panel' },
+      { id: 'relatorios.estoque', label: 'Estoque completo', perm: 'reports.stock' },
+      { id: 'relatorios.vendas', label: 'Vendas completo', perm: 'reports.sales' },
+      { id: 'relatorios.financeiro', label: 'Financeiro completo', perm: 'reports.finance' },
+    ],
+  },
+  {
+    id: 'configuracoes',
+    label: 'CONFIGURAÇÕES',
+    children: [
+      { id: 'config.acesso', label: 'Controle de Acesso', perm: 'access.manage' },
+    ],
+  },
 ];
 
 export default function AccessControl() {
@@ -29,6 +128,8 @@ export default function AccessControl() {
   const [users, setUsers] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<ProfileRow | undefined>(undefined);
 
   useEffect(() => {
     if (!profile || profile.role !== 'admin') return;
@@ -39,18 +140,41 @@ export default function AccessControl() {
     setLoading(true);
     try {
       // Busca perfis
-      const { data, error } = await supabase
+      const res = await supabase
         .from('profiles')
         .select('id,user_id,first_name,email,role,permissions')
         .order('first_name', { ascending: true })
         .limit(500);
 
-      if (error) throw error;
-  setUsers(((data as unknown as ProfileRow[]) || []));
+      if (res.error) throw res.error;
+      const data = (res.data as unknown as ProfileRow[]) || [];
+      // Normalize permissions to array when present
+      setUsers(data.map(d => ({ ...d, permissions: Array.isArray(d.permissions) ? d.permissions : [] })));
     } catch (err) {
       const e = err as Error | { message?: string } | null;
       console.error('Erro ao carregar usuários:', e);
-      toast.error('Falha ao carregar usuários. Verifique a conexão com o banco.');
+      const msg = String((e as { message?: string } | null)?.message || '');
+      // If the permissions column is missing, re-run without it and show users without permissions
+      if (msg.includes('permissions') || msg.includes('column "permissions"')) {
+        try {
+          const fallback = await supabase
+            .from('profiles')
+            .select('id,user_id,first_name,email,role')
+            .order('first_name', { ascending: true })
+            .limit(500);
+          if (fallback.error) throw fallback.error;
+          const data = (fallback.data as unknown as ProfileRow[]) || [];
+          setUsers(data.map(d => ({ ...d, permissions: [] })));
+          toast.error('Coluna `permissions` não encontrada. Exibindo usuários sem permissões. Rode a migração SQL sugerida.');
+        } catch (ferr) {
+          console.error('Erro fallback ao carregar usuarios:', ferr);
+          toast.error('Falha ao carregar usuários. Verifique a conexão com o banco.');
+        }
+      } else if (msg.toLowerCase().includes('permission denied') || msg.toLowerCase().includes('rls')) {
+        toast.error('Falha ao carregar usuários. Política RLS pode estar bloqueando o acesso.');
+      } else {
+        toast.error('Falha ao carregar usuários. Verifique a conexão com o banco.');
+      }
     } finally {
       setLoading(false);
     }
@@ -58,9 +182,14 @@ export default function AccessControl() {
 
   const savePermissions = async (row: ProfileRow) => {
     try {
+      if (row.role === 'admin') {
+        toast.info('Usuário é administrador — permissões globais não serão alteradas via este painel.');
+        return;
+      }
+      const payload = { permissions: Array.isArray(row.permissions) ? row.permissions : [] };
       const { error } = await supabase
         .from('profiles')
-        .update(({ permissions: row.permissions || [] } as unknown) as Record<string, unknown>)
+        .update(payload as unknown as Record<string, unknown>)
         .eq('id', row.id);
       if (error) throw error;
       toast.success('Permissões atualizadas');
@@ -70,8 +199,10 @@ export default function AccessControl() {
       console.error('Erro ao salvar permissões:', e);
       // Se coluna permissions não existir, instruir
       const msg = String((e as { message?: string } | null)?.message || '');
-      if (msg.includes('permissions')) {
+      if (msg.includes('permissions') || msg.includes('column "permissions"')) {
         toast.error('Coluna `permissions` não encontrada. Rode a migração SQL sugerida.');
+      } else if (msg.toLowerCase().includes('permission denied') || msg.toLowerCase().includes('rls')) {
+        toast.error('Falha ao salvar permissões. Política RLS pode estar bloqueando a operação.');
       } else {
         toast.error('Falha ao salvar permissões');
       }
@@ -85,6 +216,39 @@ export default function AccessControl() {
     else current.splice(idx, 1);
     setUsers(prev => prev.map(p => p.id === u.id ? { ...p, permissions: current } : p));
   };
+
+  // expanded nodes for tree UI, scoped per user id
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, Record<string, boolean>>>({});
+  const toggleNode = (userId: string, nodeId: string) => setExpandedNodes(prev => ({ ...prev, [userId]: { ...(prev[userId] || {}), [nodeId]: !((prev[userId] || {})[nodeId]) } }));
+
+  function renderPermNode(node: PermNode, u: ProfileRow) {
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    const isExpanded = !!(expandedNodes[u.id] && expandedNodes[u.id][node.id]);
+    return (
+      <div key={node.id} className="ml-0">
+        <div className="flex items-center gap-2">
+          {hasChildren && (
+            <button className="text-xs text-slate-500" onClick={() => toggleNode(u.id, node.id)} aria-label="toggle">
+              {isExpanded ? '▾' : '▸'}
+            </button>
+          )}
+          {node.perm ? (
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={Array.isArray(u.permissions) ? u.permissions.includes(node.perm!) : false} onChange={() => togglePermission(u, node.perm!)} />
+              <span className="text-xs">{node.label}</span>
+            </label>
+          ) : (
+            <span className="text-xs font-semibold">{node.label}</span>
+          )}
+        </div>
+        {hasChildren && isExpanded && (
+          <div className="ml-4 mt-1">
+            {node.children!.map(child => renderPermNode(child, u))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (!profile || profile.role !== 'admin') {
     return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Acesso negado</h2><p className="text-sm text-muted-foreground">Apenas administradores podem acessar o Controle de Acesso.</p></Card>;
@@ -123,18 +287,13 @@ export default function AccessControl() {
                   <td className="p-2 align-top">{u.email || '-'}</td>
                   <td className="p-2 align-top">{u.role || '-'}</td>
                   <td className="p-2 align-top">
-                    <div className="flex flex-wrap gap-2">
-                      {PRODUCT_PERMISSIONS.map(p => (
-                        <label key={p} className="inline-flex items-center gap-2">
-                          <input type="checkbox" checked={Array.isArray(u.permissions) ? u.permissions.includes(p) : false} onChange={()=>togglePermission(u,p)} />
-                          <span className="text-xs">{p}</span>
-                        </label>
-                      ))}
+                    <div className="text-sm">
+                      {Array.isArray(u.permissions) && u.permissions.length > 0 ? (`${u.permissions.length} permissões`) : '—'}
                     </div>
                   </td>
                   <td className="p-2 align-top">
                     <div className="flex gap-2">
-                      <Button size="sm" onClick={()=>savePermissions(u)}>Salvar</Button>
+                      <Button size="sm" onClick={()=>{ setSelectedUser(u); setModalOpen(true); }}>Editar</Button>
                     </div>
                   </td>
                 </tr>
@@ -143,6 +302,26 @@ export default function AccessControl() {
           </table>
         </div>
       </Card>
+
+      <Dialog open={modalOpen} onOpenChange={(o)=>{ if(!o) setSelectedUser(undefined); setModalOpen(o); }}>
+    <DialogContent className='sm:max-w-2xl max-h-[80vh] overflow-y-auto'>
+          <DialogHeader>
+            <DialogTitle>Permissões do usuário</DialogTitle>
+          </DialogHeader>
+          {selectedUser ? (
+            <div className='space-y-4'>
+              <div className='text-sm'><strong>{selectedUser.first_name || selectedUser.user_id}</strong> — {selectedUser.email || ''}</div>
+              <div className='max-h-96 overflow-auto'>
+                {PERMISSIONS_TREE.map(node => renderPermNode(node, selectedUser))}
+              </div>
+              <DialogFooter className='flex justify-end gap-2'>
+                <Button variant='outline' onClick={()=>{ setModalOpen(false); setSelectedUser(undefined); }}>Cancelar</Button>
+                <Button onClick={async ()=>{ await savePermissions(selectedUser); setModalOpen(false); setSelectedUser(undefined); }}>Salvar</Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Card className="p-4">
         <h3 className="text-sm font-medium mb-2">SQL caso não exista a coluna</h3>

@@ -3,7 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2, ChevronRight, ChevronDown } from 'lucide-react';
+import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2, ChevronRight, ChevronDown, Building2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 // Ícone simples para trocas/devoluções (setas circulares)
 const RotateIcon = () => <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 6.76 5.36L1 10" /><path d="M3.51 15A9 9 0 0 0 17.24 18.64L23 14" /></svg>;
@@ -341,7 +341,60 @@ export default function Erp() {
               {section === 'service_sales_orders' && <ServiceSalesOrdersList />}
               {section === 'purchases_list' && <ErpPurchasesList />}
               {section === 'configurations' && auth?.profile?.role === 'admin' && (
-                <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Configurações</h2><p className="text-sm text-muted-foreground">Área de configurações do ERP (placeholder).</p></Card>
+                <div className="space-y-4">
+                  <h2 className="text-xl font-semibold">Configurações</h2>
+                  <p className="text-sm text-muted-foreground">Área de configurações do ERP.</p>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-4">
+                    <button type="button" onClick={()=>{ window.dispatchEvent(new CustomEvent('erp:open-company-modal', { detail: { mode: 'create' } })); }} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                      <div className="h-10 w-10 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+                        <Building2 className="h-5 w-5" />
+                      </div>
+                      <div className="text-sm font-medium">Cadastro de Empresa</div>
+                      <div className="text-xs text-muted-foreground">Gerencie dados da empresa, endereço, contatos e logo.</div>
+                    </button>
+
+                    <button type="button" onClick={()=>{ window.dispatchEvent(new CustomEvent('erp:open-invite-modal')); }} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                      <div className="h-10 w-10 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11a4 4 0 0 1 8 0v1h-1v3h3v4h4v-6h3a2 2 0 0 0 2-2v-1a4 4 0 0 0-4-4h-8"/></svg>
+                      </div>
+                      <div className="text-sm font-medium">Códigos de Convite</div>
+                      <div className="text-xs text-muted-foreground">Gerencie códigos de convite para novas contas (admin).</div>
+                    </button>
+
+                    <button type="button" onClick={()=>setSection('product_labels')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                      <div className="h-10 w-10 rounded-md bg-sky-100 text-sky-700 flex items-center justify-center">
+                        <Tags className="h-5 w-5" />
+                      </div>
+                      <div className="text-sm font-medium">Etiquetas / Códigos</div>
+                      <div className="text-xs text-muted-foreground">Configurações de etiquetas e códigos de barras.</div>
+                    </button>
+
+                    <button type="button" onClick={()=>setSection('carriers')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                      <div className="h-10 w-10 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center">
+                        <Truck className="h-5 w-5" />
+                      </div>
+                      <div className="text-sm font-medium">Transportadoras</div>
+                      <div className="text-xs text-muted-foreground">Gerencie transportadoras e prazos.</div>
+                    </button>
+
+                    <button type="button" onClick={()=>setSection('products_pricing')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                      <div className="h-10 w-10 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center">
+                        <Percent className="h-5 w-5" />
+                      </div>
+                      <div className="text-sm font-medium">Valores de Vendas</div>
+                      <div className="text-xs text-muted-foreground">Configurações de preços e tabelas.</div>
+                    </button>
+
+                    <button type="button" onClick={()=>setSection('purchases_xml')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                      <div className="h-10 w-10 rounded-md bg-rose-100 text-rose-700 flex items-center justify-center">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <div className="text-sm font-medium">Importação XML</div>
+                      <div className="text-xs text-muted-foreground">Configurações de importação de notas fiscais.</div>
+                    </button>
+                  </div>
+                </div>
               )}
               {section === 'access_control' && auth?.profile?.role === 'admin' && (
                 <AccessControl />
@@ -370,7 +423,7 @@ export default function Erp() {
           setInventoryHistory(data || []);
         }catch(e){ setInventoryHistory([]); }
       })(); } }}>
-        <DialogContent className="max-w-4xl">
+    <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Histórico de Inventários</DialogTitle>
           </DialogHeader>
@@ -415,7 +468,7 @@ export default function Erp() {
 
       {/* Selected inventory details modal */}
       <Dialog open={!!selectedInventory} onOpenChange={(open)=>{ if(!open) setSelectedInventory(null); }}>
-        <DialogContent className="max-w-4xl">
+    <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detalhes do Inventário</DialogTitle>
           </DialogHeader>

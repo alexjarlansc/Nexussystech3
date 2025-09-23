@@ -18,13 +18,18 @@ type Movement = {
 };
 
 export default function ErpKardex(){
+  // helper para chamadas supabase com tipagem genérica segura
+  const sbFrom = async (table: string, selectClause = '*') : Promise<{ data?: unknown; error?: unknown }> => {
+    const client = supabase as unknown as { from: (t:string)=> { select: (s:string)=> Promise<{ data?: unknown; error?: unknown }> } };
+    return client.from(table).select(selectClause);
+  };
   // estilos locais para reduzir poluição visual (aplicados apenas dentro do componente)
   const localStyle = `
     .kardex-scope select:focus, .kardex-scope input:focus { outline: none !important; box-shadow: none !important; }
     .kardex-scope input[type=date]::-webkit-calendar-picker-indicator { opacity: 0; pointer-events: none; }
     .kardex-scope input[type=date] { padding-right: .5rem; }
   `;
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<{ id: string; name?: string; code?: string; unit?: string; stock_min?: number; stock_max?: number }[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [productFilter, setProductFilter] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
@@ -33,28 +38,32 @@ export default function ErpKardex(){
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'consulta'|'relatorios'>('consulta');
 
-  useEffect(()=>{ loadProducts(); loadMovements(); }, []);
+  useEffect(()=>{
+    (async ()=>{ await loadProducts(); await loadMovements(); })();
+  }, []);
 
-  async function loadProducts(){
+  const loadProducts = async () => {
     try{
-      const { data, error } = await (supabase as any).from('products').select('id,code,name,unit,stock_min,stock_max');
+  const { data, error } = await sbFrom('products', 'id,code,name,unit,stock_min,stock_max');
       if(error) throw error;
-      setProducts(data || []);
-    }catch(e){ if(import.meta.env.DEV) console.warn('ErpKardex loadProducts', e); }
+      setProducts((data as { id: string; name?: string }[]) || []);
+    }catch(err: unknown){ if(import.meta.env.DEV) console.warn('ErpKardex loadProducts', err); }
   }
 
-  async function loadMovements(){
+  const loadMovements = async () => {
     setLoading(true);
     try{
-      let q = (supabase as any).from('inventory_movements').select('*').order('created_at', { ascending: true });
-      if(productFilter) q = q.eq('product_id', productFilter);
-      if(typeFilter) q = q.eq('type', typeFilter);
-      if(fromDate) q = q.gte('created_at', fromDate);
-      if(toDate) q = q.lte('created_at', toDate);
-      const { data, error } = await q;
+  // consultas mais complexas usam client supabase diretamente
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q = (supabase as unknown as any).from('inventory_movements').select('*').order('created_at', { ascending: true });
+  if(productFilter) q = q.eq('product_id', productFilter);
+  if(typeFilter) q = q.eq('type', typeFilter);
+  if(fromDate) q = q.gte('created_at', fromDate);
+  if(toDate) q = q.lte('created_at', toDate);
+  const { data, error } = await q;
       if(error) throw error;
       setMovements(data || []);
-    }catch(e){ if(import.meta.env.DEV) console.error('ErpKardex loadMovements', e); toast.error('Falha ao carregar movimentos'); }
+  }catch(err: unknown){ if(import.meta.env.DEV) console.error('ErpKardex loadMovements', err); toast.error('Falha ao carregar movimentos'); }
     finally{ setLoading(false); }
   }
 
@@ -71,7 +80,7 @@ export default function ErpKardex(){
       map[m.product_id].rows.push({ ...m });
     }
     // flatten for display (simple approach: group by product)
-    const out: Array<{ product:any; balance:number; rows:Movement[] }> = [];
+  const out: Array<{ product:{ id: string; name?: string }; balance:number; rows:Movement[] }> = [];
     for(const pid of Object.keys(map)){
       const product = products.find(p=>p.id===pid) || { id: pid, name: pid };
       out.push({ product, balance: map[pid].balance, rows: map[pid].rows });

@@ -53,18 +53,20 @@ async function main(){
         try {
           const { data: signed } = await supabase.storage.from('product-images').createSignedUrl(path, 60*60*24*30);
           finalUrl = signed?.signedUrl;
-        } catch{}
+  } catch(e: unknown) { if(process.env.NODE_ENV === 'development') console.warn('createSignedUrl failed', e); }
         if(!finalUrl){
-          const { data: pub } = supabase.storage.from('product-images').getPublicUrl(path) as any;
-          finalUrl = pub?.publicUrl;
+          const pubRes = (supabase.storage.from('product-images').getPublicUrl(path) as unknown) as { data?: { publicUrl?: string } };
+          finalUrl = pubRes?.data?.publicUrl;
         }
         const { error: updErr } = await supabase.from('products').update({ image_url: finalUrl }).eq('id', prodId);
         if(updErr) throw updErr;
         console.log(' -> nova URL atribuída');
-      } catch(err){
+      } catch(err: unknown){
         console.warn('Falha ao recriar imagem para', prodId, err);
-        const { error: updErr } = await supabase.from('products').update({ image_url: null }).eq('id', prodId);
-        if(updErr) console.error('Falha ao limpar image_url', updErr);
+        try{
+          const { error: updErr } = await supabase.from('products').update({ image_url: null }).eq('id', prodId);
+          if(updErr) console.error('Falha ao limpar image_url', updErr);
+        } catch(updateErr){ console.error('Erro ao tentar limpar image_url (catch interno)', updateErr); }
       }
     }
   }

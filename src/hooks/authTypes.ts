@@ -7,6 +7,7 @@ export interface Profile {
   first_name?: string;
   phone?: string;
   email?: string;
+  permissions?: string[] | null;
 }
 
 export interface Company {
@@ -26,6 +27,7 @@ export interface InviteCode {
   created_at?: string;
   expires_at?: string;
   used_by?: string | null;
+  company_id?: string | null;
 }
 
 export type BasicResult = { error: { message: string } | null };

@@ -42,7 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
     }
     // Patch Node.prototype.removeChild once (dev only) to log detailed diagnostics
     try {
-      const w = window as any;
+      const w = window as unknown as { __removeChildPatched?: boolean } & Window;
       if (!w.__removeChildPatched) {
         const orig = Node.prototype.removeChild;
         Node.prototype.removeChild = function(child: Node) {
@@ -58,7 +58,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 outerHTMLSnippet: ((child as HTMLElement).outerHTML || '').slice(0, 300)
               } : child;
               const parentChildren = parent && parent.children ? Array.from(parent.children).map(c => ({ nodeName: c.nodeName, id: (c as HTMLElement).id || undefined, className: (c as HTMLElement).className || undefined })) : [];
-              console.error('removeChild PATCH ERROR: parent:', parent, 'child:', childInfo, 'parentChildren:', parentChildren, 'originalError:', err, '\nstack:', new Error().stack);
+               console.error('removeChild PATCH ERROR: parent:', parent, 'child:', childInfo, 'parentChildren:', parentChildren, 'originalError:', err, '\nstack:', new Error().stack);
             } catch (inner) {
               console.error('removeChild PATCH failed to introspect nodes', inner);
             }
@@ -71,6 +71,10 @@ export class ErrorBoundary extends Component<Props, State> {
     } catch (e) {
       console.debug('ErrorBoundary: failed to patch removeChild', e);
     }
+  }
+  public componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
+    console.error('ErrorBoundary caught', error);
+    this.setState({ hasError: true });
   }
 
   private handleReload = () => {

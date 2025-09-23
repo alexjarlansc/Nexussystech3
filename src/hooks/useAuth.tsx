@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/sonner';
 import { useNavigate } from 'react-router-dom';
 import { Profile, Company, BasicResult, InviteCode, InviteCodeResult, CodesResult, AuthSignUpData } from './authTypes';
+import type { AppDatabase } from '@/integrations/supabase/types';
 
 interface AuthContextType {
   user: User | null;
@@ -17,7 +18,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   updateProfile: (data: Partial<Profile>) => Promise<BasicResult>;
   updateCompany: (data: Partial<Company>) => Promise<BasicResult>;
-  generateInviteCode: (role: 'user' | 'admin' | 'pdv') => Promise<InviteCodeResult>;
+  generateInviteCode: (role: 'user' | 'admin' | 'pdv', companyId?: string) => Promise<InviteCodeResult>;
   getInviteCodes: () => Promise<CodesResult>;
 }
 
@@ -43,7 +44,8 @@ export function useAuthInternal() {
         .maybeSingle();
       if (profileError) {
         console.error('❌ Erro ao carregar perfil:', profileError);
-        if (retryCount < 2 && profileError.code !== 'PGRST116') {
+  const profErrCode = (profileError && typeof profileError === 'object' && 'code' in profileError) ? (profileError as unknown as { code?: string }).code : undefined;
+        if (retryCount < 2 && profErrCode !== 'PGRST116') {
           console.log(`🔄 Tentativa ${retryCount + 1} de carregar perfil...`);
           setTimeout(() => loadUserData(userId, retryCount + 1), 1000);
           return;
@@ -55,7 +57,9 @@ export function useAuthInternal() {
       if (!profileData) {
         console.warn('⚠️ Perfil não encontrado – tentando criar via ensure_profile()');
         try {
-          const { data: ensured, error: ensureErr } = await (supabase as any).rpc('ensure_profile');
+          const rpcRes = await (supabase as unknown as { rpc: (name: string) => Promise<unknown> }).rpc('ensure_profile');
+          const rpcObj = rpcRes as { data?: unknown; error?: unknown } | undefined;
+          const { data: ensured, error: ensureErr } = rpcObj || {};
           if (ensureErr) {
             console.error('❌ Falha ensure_profile:', ensureErr);
             setError('Perfil inexistente e não foi possível criar automaticamente. Contate suporte.');
@@ -68,14 +72,18 @@ export function useAuthInternal() {
             setTimeout(() => loadUserData(userId, retryCount + 1), 200);
             return;
           }
-        } catch (e) {
-          console.error('❌ Exceção ensure_profile', e);
+        } catch (err: unknown) {
+          console.error('❌ Exceção ensure_profile', err);
           setError('Falha ao criar perfil automaticamente');
           setLoading(false);
           return;
         }
       }
-      setProfile(profileData);
+  // Normalize permissions to an array if missing
+  const maybePerms = (profileData as unknown as { permissions?: unknown }).permissions;
+  const permsArray = Array.isArray(maybePerms) ? (maybePerms as string[]) : [];
+  const normalized: Profile = { ...(profileData as Profile), permissions: permsArray } as Profile;
+  setProfile(normalized);
       console.log('✅ Perfil carregado:', profileData.role);
       if (profileData?.company_id) {
         const { data: companyData, error: companyError } = await supabase
@@ -273,15 +281,16 @@ export function useAuthInternal() {
 
         // Create profile
     const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            user_id: data.user.id,
-            company_id: companyData.id,
-            first_name: userData.firstName,
-            phone: userData.phone,
-            email: data.user.email,
-      role: userData.role || 'user',
-          });
+      .from('profiles')
+      .insert({
+    user_id: data.user.id,
+    company_id: companyData.id,
+    first_name: userData.firstName,
+    phone: userData.phone,
+    email: data.user.email,
+  role: userData.role || 'user',
+  permissions: [],
+      });
 
         if (profileError) {
           console.error('Error creating profile:', profileError);
@@ -383,7 +392,7 @@ export function useAuthInternal() {
     }
   };
 
-  const generateInviteCode = async (role: 'user' | 'admin' | 'pdv') => {
+  const generateInviteCode = async (role: 'user' | 'admin' | 'pdv', companyId?: string) => {
     try {
       if (profile?.role !== 'admin') {
         return { error: { message: 'Apenas administradores podem gerar códigos de convite' } };
@@ -391,19 +400,68 @@ export function useAuthInternal() {
 
       const code = await supabase.rpc('generate_invite_code');
       
-  const { data, error } = await supabase
+      // Build payload conditionally to avoid inserting `company_id` when the
+      // column doesn't exist in the target database (prevent Postgres errors)
+      type InviteInsert = AppDatabase['public']['Tables']['invite_codes']['Insert'];
+      const payload: Partial<InviteInsert> = {
+        code: (code as unknown as { data?: string })?.data || '',
+        created_by: user?.id || '',
+        role,
+      } as Partial<InviteInsert>;
+  if (companyId) (payload as Partial<InviteInsert & { company_id?: string }>).company_id = companyId;
+
+      // Debug log to help diagnose server-side errors
+      console.debug('[Auth] Inserting invite code payload:', payload);
+
+      const { data, error } = await supabase
         .from('invite_codes')
-        .insert({
-          code: code.data,
-          created_by: user?.id,
-          role,
-        })
+        .insert(payload as AppDatabase['public']['Tables']['invite_codes']['Insert'])
         .select()
         .single();
 
-      if (error) return { error };
+      if (error) {
+        console.warn('[Auth] invite_codes insert errored:', error);
+        // If the DB/schema complains about company_id missing, retry without it
+  const errUnknown = error as unknown;
+  const errMsg = (errUnknown && typeof errUnknown === 'object' && 'message' in (errUnknown as Record<string, unknown>)) ? (errUnknown as Record<string, unknown>).message as string : String(error);
+        if (errMsg && errMsg.toLowerCase().includes('company_id')) {
+          try {
+            console.info('[Auth] Retrying invite_codes insert without company_id (fallback)');
+            const payloadNoCompany = { ...payload } as Record<string, unknown>;
+            delete payloadNoCompany.company_id;
+            const { data: data2, error: error2 } = await supabase
+              .from('invite_codes')
+              .insert(payloadNoCompany as AppDatabase['public']['Tables']['invite_codes']['Insert'])
+              .select()
+              .single();
+            if (error2) {
+              const e2u = error2 as unknown;
+              const msg2 = (e2u && typeof e2u === 'object' && 'message' in (e2u as Record<string, unknown>)) ? (e2u as Record<string, unknown>).message as string : String(error2);
+              return { error: { message: msg2 } };
+            }
+            const maybe2 = data2 as unknown;
+            if (maybe2 && typeof maybe2 === 'object' && 'code' in (maybe2 as Record<string, unknown>)) {
+              const obj2 = maybe2 as Record<string, unknown>;
+              const codeVal2 = typeof obj2.code === 'string' ? obj2.code : undefined;
+              return { code: codeVal2, error: null };
+            }
+            return { code: undefined, error: null };
+          } catch (e2) {
+            console.error('[Auth] fallback insert failed:', e2);
+            return { code: undefined, error: { message: String(e2) } };
+          }
+        }
+        return { error };
+      }
 
-      return { code: data.code, error: null };
+      // safety: data might be nullish in some failure modes
+      const maybe = data as unknown;
+      if (maybe && typeof maybe === 'object' && 'code' in (maybe as Record<string, unknown>)) {
+        const obj = maybe as Record<string, unknown>;
+        const codeVal = typeof obj.code === 'string' ? obj.code : undefined;
+        return { code: codeVal, error: null };
+      }
+      return { code: undefined, error: null };
     } catch (error) {
       return { code: undefined, error };
     }

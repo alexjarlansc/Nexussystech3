@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/sonner";
-import { LogOut, Settings, User, Building2, Key, Copy } from "lucide-react";
+import { LogOut, Settings, User, Building2, Copy } from "lucide-react";
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from "@/hooks/useAuth";
 import type { InviteCode } from '@/hooks/authTypes';
@@ -19,9 +19,32 @@ export function NexusProtectedHeader() {
   const { user, profile, company, signOut, updateProfile, updateCompany, generateInviteCode, getInviteCodes } = useAuth();
   const [openProfile, setOpenProfile] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
+  const [isCreatingCompany, setIsCreatingCompany] = useState(false);
   const [openInvites, setOpenInvites] = useState(false);
   // Códigos de convite (tipo centralizado em authTypes com campos opcionais)
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
+  const [availableCompanies, setAvailableCompanies] = useState<Array<{id:string;name:string}>>([]);
+  const [companiesPage, setCompaniesPage] = useState(0);
+  const [companiesPageSize] = useState(50);
+  const [companiesHasMore, setCompaniesHasMore] = useState(true);
+  const [companiesLoading, setCompaniesLoading] = useState(false);
+  const [companiesError, setCompaniesError] = useState<string | null>(null);
+  const [selectedCompanyForInvite, setSelectedCompanyForInvite] = useState<string | undefined>(undefined);
+  const [showCompanyList, setShowCompanyList] = useState(false);
+  const [companySearch, setCompanySearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(()=>{
+    const t = setTimeout(()=>setDebouncedSearch(companySearch), 300);
+    return ()=>clearTimeout(t);
+  },[companySearch]);
+
+  // when search changes, reset pagination
+  useEffect(()=>{
+    setAvailableCompanies([]);
+    setCompaniesPage(0);
+    setCompaniesHasMore(true);
+  },[debouncedSearch]);
 
   // Profile form
   const [firstName, setFirstName] = useState(profile?.first_name || '');
@@ -49,6 +72,42 @@ export function NexusProtectedHeader() {
     } catch {/* ignore */}
   }, []);
 
+  // Listen to global event to open company modal from other pages (ERP)
+  useEffect(() => {
+    const handler = (ev?: Event) => {
+      try {
+        const detail = ev && (ev as CustomEvent)?.detail as Record<string, unknown> | undefined;
+        const mode = detail?.mode as string | undefined;
+        if (mode === 'create') {
+          // Prepare modal for creating a new company
+          setCompanyName('');
+          setCnpjCpf('');
+          setCompanyPhone('');
+          setCompanyEmail('');
+          setAddress('');
+          setLogoDataUrl(undefined);
+          setIsCreatingCompany(true);
+        } else {
+          // Open for editing current company
+          setCompanyName(company?.name || '');
+          setCnpjCpf(company?.cnpj_cpf || '');
+          setCompanyPhone(company?.phone || '');
+          setCompanyEmail(company?.email || '');
+          setAddress(company?.address || '');
+          setIsCreatingCompany(false);
+        }
+        setOpenCompany(true);
+      } catch (e) {
+        console.error('Failed to open company modal via event', e);
+      }
+    };
+    window.addEventListener('erp:open-company-modal', handler as EventListener);
+    return () => window.removeEventListener('erp:open-company-modal', handler as EventListener);
+  }, [company]);
+
+  // Listen to event to open invite codes modal from ERP
+  // NOTE: moved lower in the file so it can reference memoized helpers (see below)
+
   const handleUpdateProfile = async () => {
     const { error } = await updateProfile({
       first_name: firstName,
@@ -65,67 +124,176 @@ export function NexusProtectedHeader() {
   };
 
   const handleUpdateCompany = async () => {
-    const { error } = await updateCompany({
-      name: companyName,
-      cnpj_cpf: cnpjCpf,
-      phone: companyPhone,
-      email: companyEmail,
-      address,
-    });
-
-    if (error) {
-      toast.error('Erro ao atualizar empresa');
-    } else {
-      // Persistir também localmente inclusive logo para PDF / pré-visualização
+    if (isCreatingCompany) {
       try {
-        const raw = localStorage.getItem(StorageKeys.company);
-        const existing = raw ? JSON.parse(raw) as Record<string, unknown> : {};
-        const prevLogo = typeof existing === 'object' && existing && 'logoDataUrl' in (existing as Record<string, unknown>)
-          ? (existing as Record<string, unknown>).logoDataUrl as string | undefined
-          : undefined;
-        setJSON(StorageKeys.company, {
-          ...existing,
-          name: companyName,
-          address,
-          taxid: cnpjCpf,
-          phone: companyPhone,
-          email: companyEmail,
-          cnpj_cpf: cnpjCpf, // compatibilidade
-          logoDataUrl: logoDataUrl || prevLogo
-        });
-      } catch {/* ignore */}
-      toast.success('Empresa atualizada com sucesso');
-      setOpenCompany(false);
+        const { data: newCompany, error } = await supabase
+          .from('companies')
+          .insert({
+            name: companyName,
+            cnpj_cpf: cnpjCpf,
+            phone: companyPhone,
+            email: companyEmail,
+            address,
+            logo_url: logoDataUrl || null,
+          })
+          .select()
+          .single();
+        if (error) {
+          console.error('Erro ao criar empresa:', error);
+          toast.error('Erro ao criar empresa: ' + (error.message || 'erro desconhecido'));
+          return;
+        }
+        toast.success('Empresa criada com sucesso');
+        // Optionally persist locally
+        try { setJSON(StorageKeys.company, { id: newCompany.id, name: newCompany.name, address: newCompany.address, cnpj_cpf: newCompany.cnpj_cpf, phone: newCompany.phone, email: newCompany.email, logoDataUrl: logoDataUrl }); } catch (e) { /* ignore */ }
+        setOpenCompany(false);
+        setIsCreatingCompany(false);
+      } catch (err) {
+        console.error('Erro inesperado ao criar empresa', err);
+        toast.error('Erro inesperado ao criar empresa');
+      }
+    } else {
+      const { error } = await updateCompany({
+        name: companyName,
+        cnpj_cpf: cnpjCpf,
+        phone: companyPhone,
+        email: companyEmail,
+        address,
+      });
+
+      if (error) {
+        toast.error('Erro ao atualizar empresa');
+      } else {
+        // Persistir também localmente inclusive logo para PDF / pré-visualização
+        try {
+          const raw = localStorage.getItem(StorageKeys.company);
+          const existing = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+          const prevLogo = typeof existing === 'object' && existing && 'logoDataUrl' in (existing as Record<string, unknown>)
+            ? (existing as Record<string, unknown>).logoDataUrl as string | undefined
+            : undefined;
+          setJSON(StorageKeys.company, {
+            ...existing,
+            name: companyName,
+            address,
+            taxid: cnpjCpf,
+            phone: companyPhone,
+            email: companyEmail,
+            cnpj_cpf: cnpjCpf, // compatibilidade
+            logoDataUrl: logoDataUrl || prevLogo
+          });
+        } catch {/* ignore */}
+        toast.success('Empresa atualizada com sucesso');
+        setOpenCompany(false);
+      }
     }
   };
 
   const handleGenerateInvite = async (role: 'user' | 'admin' | 'pdv') => {
-    const { code, error } = await generateInviteCode(role);
+    // typed wrapper to allow optional company id without touching global type inference
+    const gen = (generateInviteCode as unknown) as (r: 'user'|'admin'|'pdv', companyId?: string) => Promise<{ code?: string; error?: unknown }>;
+    const { code, error } = await gen(role, selectedCompanyForInvite);
 
     if (error) {
-      toast.error('Erro ao gerar código de convite');
+      // Try to extract a useful message
+      console.error('Erro ao gerar código de convite:', error);
+      const maybeErr = error as unknown;
+      let msg = '';
+      if (maybeErr && typeof maybeErr === 'object' && 'message' in (maybeErr as Record<string, unknown>)) {
+        const m = (maybeErr as Record<string, unknown>).message;
+        if (typeof m === 'string') msg = m;
+      }
+      toast.error('Erro ao gerar código: ' + (msg || String(error) || 'erro desconhecido'));
     } else if (code) {
       toast.success(`Código gerado: ${code}`);
       loadInviteCodes();
     }
   };
 
-  const loadInviteCodes = async () => {
+  const loadInviteCodes = useCallback(async () => {
     const { data, error } = await getInviteCodes();
     if (!error) {
       setInviteCodes(data);
     }
-  };
+  }, [getInviteCodes]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success('Código copiado!');
   };
 
-  const openInviteModal = () => {
+  // loadCompaniesForInvite is used by the invite modal and by the global event handler
+  const loadCompaniesForInvite = useCallback(async (page = 0) => {
+    if (!companiesHasMore && page !== 0) return;
+    setCompaniesError(null);
+    try {
+      setCompaniesLoading(true);
+      // Use range to paginate
+      const from = page * companiesPageSize;
+      const to = from + companiesPageSize - 1;
+      // supabase client query builder has complex types; allow a local any here
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      let query: any = supabase.from('companies').select('id,name').order('name');
+      if (debouncedSearch.trim() !== '') {
+        const s = debouncedSearch.trim();
+        query = supabase.from('companies').select('id,name').ilike('name', `%${s}%`).order('name');
+      }
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      const { data, error } = await query.range(from, to);
+      if (error) throw error;
+      const list = ((data as unknown) as Array<{id:string;name:string}>) || [];
+      if (page === 0) setAvailableCompanies(list);
+      else setAvailableCompanies(prev => [...prev, ...list]);
+      setCompaniesHasMore(list.length === companiesPageSize);
+      // Default to current company if present and none selected yet
+      if (company?.id && !selectedCompanyForInvite) setSelectedCompanyForInvite(company.id);
+    } catch (err) {
+      console.error('Erro ao carregar empresas para invite', err);
+      const maybe = err as unknown;
+      let msg = 'Erro ao carregar empresas';
+      if (maybe && typeof maybe === 'object' && 'message' in (maybe as Record<string, unknown>)) {
+        const m = (maybe as Record<string, unknown>).message;
+        if (typeof m === 'string' && m.trim()) msg = m;
+      }
+      setCompaniesError(msg);
+      try { toast.error('Falha ao carregar empresas: ' + msg); } catch (_) { /* ignore */ }
+    } finally {
+      setCompaniesLoading(false);
+    }
+  }, [companiesHasMore, companiesPageSize, debouncedSearch, company?.id, selectedCompanyForInvite]);
+
+  const openInviteModal = useCallback(() => {
     setOpenInvites(true);
     loadInviteCodes();
-  };
+    loadCompaniesForInvite();
+  }, [loadInviteCodes, loadCompaniesForInvite]);
+
+  // Listen to event to open invite codes modal from ERP (placed after helpers)
+  useEffect(() => {
+    const handler = () => {
+      try {
+        openInviteModal();
+      } catch (e) {
+        console.error('Failed to open invite modal via event', e);
+      }
+    };
+    window.addEventListener('erp:open-invite-modal', handler as EventListener);
+    return () => window.removeEventListener('erp:open-invite-modal', handler as EventListener);
+  }, [openInviteModal]);
+
+  // Ensure companies are loaded when the invite modal opens or when the search changes
+  useEffect(() => {
+    if (!openInvites) return;
+    // load first page when modal opens or when debouncedSearch changes
+    (async () => {
+      try {
+        await loadCompaniesForInvite(0);
+      } catch (e) {
+        console.error('Erro ao carregar empresas ao abrir modal de convites', e);
+      }
+    })();
+  }, [openInvites, debouncedSearch, loadCompaniesForInvite]);
+
+  
 
   // Type guard para extrair mensagem de erro sem usar `any`
   function isErrorWithMessage(v: unknown): v is { message: string } {
@@ -243,17 +411,7 @@ export function NexusProtectedHeader() {
               >
                 <User className="h-4 w-4" />
               </Button>
-              {profile?.role === 'admin' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0"
-                  aria-label="Gerar convites"
-                  onClick={openInviteModal}
-                >
-                  <Key className="h-4 w-4" />
-                </Button>
-              )}
+              {/* Botão de acesso rápido a convites removido — já disponível em Configurações */}
               <Button
                 variant="ghost"
                 size="sm"
@@ -270,7 +428,7 @@ export function NexusProtectedHeader() {
 
       {/* Profile Modal */}
       <Dialog open={openProfile} onOpenChange={setOpenProfile}>
-        <DialogContent>
+    <DialogContent className="sm:max-w-lg max-h-[70vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Perfil</DialogTitle>
           </DialogHeader>
@@ -317,7 +475,7 @@ export function NexusProtectedHeader() {
 
       {/* Company Modal */}
       <Dialog open={openCompany} onOpenChange={setOpenCompany}>
-        <DialogContent className="sm:max-w-lg">
+    <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Configurações da Empresa</DialogTitle>
           </DialogHeader>
@@ -468,19 +626,81 @@ export function NexusProtectedHeader() {
       {/* Invite Codes Modal (Admin Only) */}
       {profile?.role === 'admin' && (
         <Dialog open={openInvites} onOpenChange={setOpenInvites}>
-          <DialogContent className="sm:max-w-lg">
+  <DialogContent className="max-w-5xl w-[min(1100px,96vw)] max-h-[92vh] overflow-y-auto overflow-x-hidden">
             <DialogHeader>
               <DialogTitle>Códigos de Convite</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
+              <div className="space-y-4">
               {/* Tabs estilizadas para geração rápida */}
-              <div className="flex w-full rounded-lg overflow-hidden border bg-muted/40">
+              <div className="flex w-full rounded-lg overflow-hidden border bg-muted/40 flex-nowrap items-stretch box-border max-w-full">
+                <div className='p-2 pl-3 pr-3 border-r flex flex-col gap-2 min-w-[280px] bg-transparent relative flex-shrink-0'>
+                  <div className='flex items-center justify-between'>
+                    <Label className='text-xs'>Empresa</Label>
+                    <button type='button' className='text-xs text-muted-foreground' onClick={()=>{ setShowCompanyList(s=>!s); }}>{showCompanyList ? 'Ocultar empresas' : 'Mostrar empresas'}</button>
+                  </div>
+                  <div>
+                    <div className='text-sm font-medium'>{availableCompanies.find(c=>c.id===selectedCompanyForInvite)?.name || company?.name || 'Minha empresa'}</div>
+                    <div className='text-xs text-muted-foreground'>{selectedCompanyForInvite || company?.id || ''}</div>
+                  </div>
+          {showCompanyList && (
+            <div className='mt-2 relative'>
+            <Input placeholder='Buscar empresa...' value={companySearch} onChange={(e)=>setCompanySearch(e.target.value)} className='mb-2 w-full' />
+            <div
+              className='absolute left-0 top-full mt-1 w-[min(980px,95vw)] max-h-[72vh] overflow-auto space-y-1 border rounded p-2 bg-white z-50 shadow'
+              onScroll={(e) => {
+                const el = e.target as HTMLElement;
+                if (!el) return;
+                const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80;
+                if (nearBottom && !companiesLoading && companiesHasMore) {
+                  const next = companiesPage + 1;
+                  setCompaniesPage(next);
+                  loadCompaniesForInvite(next);
+                }
+              }}
+            >
+              {companiesLoading && companiesPage === 0 && (
+                <div className='text-sm text-muted-foreground'>Carregando...</div>
+              )}
+              {companiesError && !companiesLoading && (
+                <div className='text-sm text-red-600 space-y-2'>
+                  <div>Erro: {companiesError}</div>
+                  <div className='flex gap-2'>
+                    <Button size='sm' variant='outline' onClick={()=>{ setCompaniesPage(0); loadCompaniesForInvite(0); }}>Tentar novamente</Button>
+                    <Button size='sm' onClick={()=>setShowCompanyList(false)}>Fechar</Button>
+                  </div>
+                </div>
+              )}
+              {availableCompanies.length === 0 && !companiesLoading && !companiesError && (
+                <div className='text-sm text-muted-foreground'>Nenhuma empresa encontrada</div>
+              )}
+              {availableCompanies.length > 0 && (
+                <>
+                  {availableCompanies.map(c => (
+                    <div key={c.id} className='flex items-center justify-between gap-2 p-1 rounded hover:bg-muted w-full'>
+                      <div className='min-w-0'>
+                        <div className='text-sm truncate'>{c.name}</div>
+                        <div className='text-xs text-muted-foreground truncate'>{c.id}</div>
+                      </div>
+                      <div className='flex gap-1'>
+                        <Button size='sm' variant='ghost' onClick={async ()=>{ try{ await navigator.clipboard.writeText(c.id); toast.success('Código copiado'); }catch(e){ toast.error('Falha ao copiar'); } }}>Copiar</Button>
+                        <Button size='sm' onClick={()=>{ setSelectedCompanyForInvite(c.id); setShowCompanyList(false); }}>{'Selecionar'}</Button>
+                      </div>
+                    </div>
+                  ))}
+                  {companiesLoading && companiesPage > 0 && (<div className='text-sm text-muted-foreground text-center py-2'>Carregando mais...</div>)}
+                  {!companiesHasMore && (<div className='text-xs text-muted-foreground text-center py-2'>Fim da lista</div>)}
+                </>
+              )}
+            </div>
+                    </div>
+                  )}
+                </div>
                 {(['user','admin','pdv'] as const).map(role => (
                   <button
                     key={role}
                     type="button"
                     onClick={() => handleGenerateInvite(role)}
-                    className={"flex-1 px-3 py-2 text-sm font-medium focus:outline-none transition-colors " +
+                    className={"flex-1 px-3 py-2 text-sm font-medium focus:outline-none transition-colors rounded-none " +
                       (role==='user' ? 'data-[role=user]' : role==='admin' ? 'data-[role=admin]' : 'data-[role=pdv]') + ' '}
                     data-active={false}
                     data-role={role}
@@ -491,6 +711,7 @@ export function NexusProtectedHeader() {
                   </button>
                 ))}
               </div>
+              
               <style>{`
                 [data-role] { background:transparent; }
                 [data-role]:hover { background:rgba(0,0,0,0.04); }
@@ -511,6 +732,7 @@ export function NexusProtectedHeader() {
                   const isExpired = expiresDate ? expiresDate < new Date() : false;
                   const statusColor = invite.used_by ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : isExpired ? 'bg-red-100 text-red-700 border-red-300' : 'bg-blue-100 text-blue-700 border-blue-300';
                   const statusLabel = invite.used_by ? 'Usado' : isExpired ? 'Expirado' : 'Disponível';
+                  const compName = invite.company_id ? (availableCompanies.find(c=>c.id===invite.company_id)?.name || invite.company_id) : undefined;
                   return (
                     <div key={invite.id} className="rounded-lg border p-2.5 bg-white shadow-sm flex items-center gap-3">
                       <div className="flex flex-col gap-1 min-w-0 flex-1">
@@ -522,6 +744,7 @@ export function NexusProtectedHeader() {
                         <div className="text-[10px] text-muted-foreground flex gap-2 flex-wrap">
                           <span>Expira: {expiresDate ? expiresDate.toLocaleDateString('pt-BR') : '—'}</span>
                           {invite.used_by && <span>Usuário: {invite.used_by.slice(0,8)}…</span>}
+                          {compName && <span>Empresa: {compName}</span>}
                         </div>
                       </div>
                       <div className="flex flex-col gap-1 items-end">

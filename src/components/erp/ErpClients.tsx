@@ -47,10 +47,10 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
         query = supabase.from('clients').select('*', { count: 'exact' }).or(orExpr).order('name').range(from, to);
       }
       // executa a query; se falhar por coluna inexistente (ex: phone_mobile), tenta novamente sem essa coluna
-      let exec = await query;
+      const exec = await query;
       let data = exec.data as any[] | null;
       let count = exec.count as number | null;
-      let error = exec.error as any;
+      const error = exec.error as any;
       if (error && /phone_mobile/i.test(String(error.message || ''))) {
         // retry sem phone_mobile
         try {

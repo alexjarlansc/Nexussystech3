@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -7,6 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
 import type { Tables } from '@/integrations/supabase/types';
+
+// Minimal supabase client shape used here to avoid repetitive `as any` casts
+// NOTE: keeping direct supabase calls (with occasional casts) because the
+// project's Supabase types are extensive; prefer local runtime narrowing instead
 
 interface ProductOption { id: string; name: string; code?: string }
 
@@ -21,7 +26,7 @@ const movementTypes = [
 
 export const ErpStockMovements = () => {
   const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [page,setPage]=useState(1); const pageSize=50; const [total,setTotal]=useState(0);
   const [search, setSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
@@ -37,14 +42,14 @@ export const ErpStockMovements = () => {
   // Carregar companyId do profile do usuário autenticado
   useEffect(()=>{(async()=>{
     try {
-  const { data: userRes } = await supabase.auth.getUser();
+      const { data: userRes } = await supabase.auth.getUser();
       const user = userRes?.user;
       if(!user){ console.warn('Sem usuário autenticado para obter company_id'); return; }
-  const { data, error } = await supabase.from('profiles').select('company_id').eq('user_id', user.id).single();
+      const { data, error } = await (supabase as any).from('profiles').select('company_id').eq('user_id', user.id).single();
       if(error){ console.warn('Erro ao buscar profile para company_id', error); return; }
-      if(data?.company_id){ setCompanyId(data.company_id); }
+      if(data && (data as Record<string, unknown>)['company_id']){ setCompanyId(String((data as Record<string, unknown>)['company_id'])); }
       else console.warn('Profile sem company_id');
-    } catch (err) { console.warn('Falha ao carregar company_id', err); }
+    } catch (err: unknown) { console.warn('Falha ao carregar company_id', err); }
   })();},[]);
 
   // Se for admin, carregar lista de empresas disponíveis para seleção
@@ -52,9 +57,9 @@ export const ErpStockMovements = () => {
     (async () => {
       try {
         if (auth.profile?.role === 'admin') {
-          const { data, error } = await supabase.from('companies').select('id,name').order('name');
+          const { data, error } = await (supabase as any).from('companies').select('id,name').order('name');
           if (!error && Array.isArray(data)) {
-            setAvailableCompanies((data as any[]).map(d => ({ id: String(d.id), name: String(d.name) })));
+            setAvailableCompanies((data as unknown as Array<Record<string, unknown>>).map(d => ({ id: String(d['id']), name: String(d['name']) })));
           }
         } else if (auth.profile?.company_id) {
           setAvailableCompanies([{ id: auth.profile.company_id, name: auth.company?.name || 'Minha empresa' }]);
@@ -66,10 +71,9 @@ export const ErpStockMovements = () => {
   const [products, setProducts] = useState<ProductOption[]>([]);
 
   async function loadProducts() {
-  const { data, error } = await supabase.from('products').select('id,name,code').limit(500);
+  const { data, error } = await (supabase as any).from('products').select('id,name,code').limit(500);
   if (!error && Array.isArray(data)) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const safe = (data as any[]).map(d => ({ id: String(d.id), name: String(d.name || ''), code: d.code ? String(d.code) : undefined }));
+  const safe = (data as unknown as Array<Record<string, unknown>>).map(d => ({ id: String(d['id']), name: String(d['name'] || ''), code: d['code'] ? String(d['code']) : undefined }));
     setProducts(safe);
   }
   }
@@ -78,21 +82,23 @@ export const ErpStockMovements = () => {
     setLoading(true);
     try {
       const from = (page-1)*pageSize; const to = from + pageSize - 1;
+  // build query using client postgrest interface
+  // Use a runtime-any for the chained Postgrest query - keep coercions local
   let query = (supabase as any).from('inventory_movements').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(from,to);
   if (companyId) {
     query = query.eq('company_id', companyId);
   }
   // Removido filtro de companyId pois inventory_movements não possui esse campo
   // Filtros desativados para garantir exibição de todos os registros
-      const { data, error, count } = await query;
+  const { data, error, count } = await query as unknown as { data?: unknown; error?: unknown; count?: number };
       if (error) throw error;
-      setRows(data || []);
+  setRows((data as unknown as Record<string, unknown>[]) || []);
       setTotal(count||0);
     } catch (e) {
       const msg = (e instanceof Error) ? e.message : 'Falha ao carregar movimentos';
       toast.error(msg);
     } finally { setLoading(false); }
-  }, [page]);
+  }, [page, companyId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadProducts(); }, []);
@@ -100,11 +106,11 @@ export const ErpStockMovements = () => {
   useEffect(() => {
     function handler(e: Event) {
       try {
-        const ev = e as CustomEvent;
-        const product = ev.detail?.product;
-        if(product && product.id) {
-          setForm(f=>({ ...f, product_id: product.id }));
-          setProductInput(product.code ? `${product.code} - ${product.name}` : product.name);
+        const ev = e as CustomEvent<Record<string, unknown> | undefined>;
+        const product = ev?.detail && (ev.detail as Record<string, unknown>)['product'] ? (ev.detail as Record<string, unknown>)['product'] as Record<string, unknown> : undefined;
+        if(product && product['id']) {
+          setForm(f=>({ ...f, product_id: String(product['id']) }));
+          setProductInput(product['code'] ? `${String(product['code'])} - ${String(product['name'])}` : String(product['name']));
           setCreateOpen(true);
         }
       } catch (err) { if(import.meta.env.DEV) console.warn('open-stock-movement handler err', err); }
@@ -116,14 +122,13 @@ export const ErpStockMovements = () => {
   useEffect(() => {
     if (!productInput) { setProductSuggestions([]); return; }
     (async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('products')
         .select('id,name,code')
         .or(`name.ilike.%${productInput}%,code.ilike.%${productInput}%`)
         .limit(10);
       if (!error && Array.isArray(data)) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const safe = (data as any[]).map(d => ({ id: String(d.id), name: String(d.name || ''), code: d.code ? String(d.code) : undefined }));
+  const safe = (data as unknown as Array<Record<string, unknown>>).map(d => ({ id: String(d['id']), name: String(d['name'] || ''), code: d['code'] ? String(d['code']) : undefined }));
         setProductSuggestions(safe);
       } else setProductSuggestions([]);
     })();
@@ -132,14 +137,13 @@ export const ErpStockMovements = () => {
   useEffect(() => {
     if (!productSearch) { setProductSuggestions([]); return; }
     (async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('products')
         .select('id,name,code')
         .or(`name.ilike.%${productSearch}%,code.ilike.%${productSearch}%`)
         .limit(10);
       if (!error && Array.isArray(data)) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const safe = (data as any[]).map(d => ({ id: String(d.id), name: String(d.name || ''), code: d.code ? String(d.code) : undefined }));
+  const safe = (data as unknown as Array<Record<string, unknown>>).map(d => ({ id: String(d['id']), name: String(d['name'] || ''), code: d['code'] ? String(d['code']) : undefined }));
         setProductSuggestions(safe);
       } else setProductSuggestions([]);
     })();
@@ -154,7 +158,7 @@ export const ErpStockMovements = () => {
     // Obter usuário autenticado (usar user.id que é UUID para coluna created_by)
     let created_by: string | undefined = undefined;
     try {
-      const { data: userRes } = await supabase.auth.getUser();
+  const { data: userRes } = await supabase.auth.getUser();
       created_by = userRes?.user?.id || undefined;
     } catch (_) { /* ignore */ }
 
@@ -164,16 +168,16 @@ export const ErpStockMovements = () => {
       if (form.type === 'IN') type = 'ENTRADA';
       else if (form.type === 'OUT') type = 'SAIDA';
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         product_id: form.product_id,
         quantity: Math.abs(qtyNum),
         type,
         created_at: new Date().toISOString(),
-  ...(created_by ? { created_by } : {}),
+        ...(created_by ? { created_by } : {}),
         ...(companyId ? { company_id: companyId } : {}),
-      } as any;
+      };
 
-      const { error } = await (supabase as any).from('inventory_movements').insert([payload]);
+  const { error } = await (supabase as any).from('inventory_movements').insert([payload]);
       if (error) {
         toast.error('Erro ao registrar: ' + (error.message || JSON.stringify(error)));
         if (import.meta.env.DEV) console.error('Erro detalhado:', error);
@@ -194,20 +198,35 @@ export const ErpStockMovements = () => {
   }
 
   function productName(id:string){
-    const p = products.find(p=>p.id===id); return p? p.name : id.slice(0,8);
+    const p = products.find(p=>p.id===id); return p? p.name : (id ? id.slice(0,8) : '-');
   }
 
   function exportCsv(){
     const header = ['data','produto','tipo','qtd','local','motivo','grupo'];
-    const lines = rows.map(r=>[
-      new Date(r.created_at).toISOString(),
-      productName(r.product_id),
-      r.type,
-      r.signed_qty,
-      r.location||'',
-      (r.reason||'').replace(/\n/g,' '),
-      r.movement_group||''
-    ].join(';'));
+    const safe = (obj: Record<string, unknown>, key: string) => {
+      const v = obj[key];
+      if (v === null || v === undefined) return '';
+      return String(v);
+    };
+    const lines = rows.map(r => {
+      const createdRaw = safe(r, 'created_at');
+      const created = createdRaw ? new Date(createdRaw) : null;
+      const productId = safe(r, 'product_id');
+      const type = safe(r, 'type');
+      const qty = safe(r, 'signed_qty') || safe(r, 'quantity');
+      const location = safe(r, 'location');
+      const reason = safe(r, 'reason').replace(/\n/g, ' ');
+      const group = safe(r, 'movement_group');
+      return [
+        created ? created.toISOString() : '',
+        productName(productId),
+        type,
+        qty,
+        location || '',
+        reason,
+        group || ''
+      ].join(';');
+    });
     const csv = [header.join(';'), ...lines].join('\n');
     const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -283,19 +302,28 @@ export const ErpStockMovements = () => {
           <tbody>
             {loading && <tr><td colSpan={7} className='p-4 text-center text-slate-400'>Carregando...</td></tr>}
             {!loading && rows.length===0 && <tr><td colSpan={7} className='p-4 text-center text-slate-400'>Nenhum movimento</td></tr>}
-            {!loading && rows.map(r => (
-              <tr key={r.id} className='border-t hover:bg-muted/30'>
+            {!loading && rows.map((rRaw) => {
+              const r = rRaw as Record<string, unknown>;
+              const id = String(r['id'] ?? Math.random());
+              const createdAt = r['created_at'] ? String(r['created_at']) : '';
+              const productId = r['product_id'] ? String(r['product_id']) : '';
+              const type = r['type'] ? String(r['type']) : '';
+              const quantity = r['quantity'] ? String(r['quantity']) : (r['signed_qty'] ? String(r['signed_qty']) : '');
+              const createdBy = r['created_by'] ? String(r['created_by']) : '-';
+              return (
+              <tr key={id} className='border-t hover:bg-muted/30'>
                 <td className='p-2'>
-                  {r.created_at ? new Date(r.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+                  {createdAt ? new Date(createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
                 </td>
-                <td className='p-2' title={r.product_id}>{productName(r.product_id)}</td>
-                <td className='p-2'>{r.type}</td>
-                <td className={'p-2 font-mono ' + (r.type === 'SAIDA' ? 'text-red-600' : 'text-green-600')}>{r.quantity}</td>
+                <td className='p-2' title={productId}>{productName(productId)}</td>
+                <td className='p-2'>{type}</td>
+                <td className={'p-2 font-mono ' + (type === 'SAIDA' ? 'text-red-600' : 'text-green-600')}>{quantity}</td>
                 <td className='p-2 text-xs text-muted-foreground'>
-                  {r.created_by ? r.created_by : '-'}
+                  {createdBy}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -307,7 +335,7 @@ export const ErpStockMovements = () => {
         </div>
       </div>
       <Dialog open={createOpen} onOpenChange={o=>!creating && setCreateOpen(o)}>
-        <DialogContent className='sm:max-w-md'>
+    <DialogContent className='sm:max-w-md max-h-[80vh] overflow-y-auto'>
           <DialogHeader><DialogTitle>Novo Movimento</DialogTitle></DialogHeader>
           <div className='space-y-3 text-sm'>
             <div>

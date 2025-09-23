@@ -1047,7 +1047,7 @@ export default function PDV() {
 
       {/* Boletos Dialog */}
       <Dialog open={openBoletoDialog} onOpenChange={setOpenBoletoDialog}>
-        <DialogContent className="sm:max-w-2xl">
+    <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Boletos do Pedido</DialogTitle></DialogHeader>
           {boletos.length===0 && (
             <div className="space-y-4">
@@ -1136,7 +1136,7 @@ export default function PDV() {
 
       {/* Abrir Caixa */}
       <Dialog open={openCashDialog} onOpenChange={setOpenCashDialog}>
-        <DialogContent>
+  <DialogContent className="max-h-[60vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Abrir Caixa</DialogTitle></DialogHeader>
           <div className="space-y-3 text-sm">
             <div>
@@ -1150,7 +1150,7 @@ export default function PDV() {
 
       {/* Fechar Caixa */}
       <Dialog open={openCloseDialog} onOpenChange={setOpenCloseDialog}>
-        <DialogContent>
+  <DialogContent className="max-h-[60vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Fechar Caixa</DialogTitle></DialogHeader>
           <div className="space-y-3 text-sm">
             <div>
@@ -1182,7 +1182,7 @@ export default function PDV() {
 
       {/* Selecionar Vendedor */}
       <Dialog open={showVendorDialog} onOpenChange={setShowVendorDialog}>
-        <DialogContent className="max-w-sm">
+  <DialogContent className="max-w-sm max-h-[70vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Selecionar Vendedor</DialogTitle></DialogHeader>
           <div className="space-y-3 text-sm">
             <Input placeholder="Pesquisar..." value={vendorSearch} onChange={e=> setVendorSearch(e.target.value)} />

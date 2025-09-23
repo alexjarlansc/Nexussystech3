@@ -59,7 +59,7 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({ clients, value, onSe
     }
     if(out.length===0 && qNorm.length>0){
       // DEBUG: log primeiros 5 nomes normalizados para investigação em dev tools
-      // eslint-disable-next-line no-console
+       
       console.debug('[ClientPicker][debug] query sem match', { qNorm, tokens, sample: clients.slice(0,5).map(c=> normalizeSearch(c.name||'')) });
     }
     out.sort((a,b)=> (a.name||'').localeCompare(b.name||''));

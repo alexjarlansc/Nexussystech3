@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Button } from '../ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -12,6 +12,9 @@ export function StockLoader() {
     import.meta.env.VITE_SUPABASE_URL || '',
     import.meta.env.VITE_SUPABASE_ANON_KEY || ''
   );
+  // Minimal client wrapper to avoid using `any` everywhere
+  type MinimalSupabaseFull = { rpc: (fn: string, params?: unknown) => Promise<{ data?: unknown; error?: unknown }>; from: (table: string) => { insert: (values: unknown) => Promise<{ data?: unknown; error?: unknown }>; } };
+  const client = supabase as unknown as MinimalSupabaseFull;
   const [loading, setLoading] = useState(false);
   const [migrated, setMigrated] = useState(false);
   const [stats, setStats] = useState<{
@@ -20,27 +23,27 @@ export function StockLoader() {
     products_inv: number;
     products_legacy: number;
     product_stock_columns: string[];
-    sample: any[];
+    sample: Record<string, unknown>[];
   } | null>(null);
   const [progress, setProgress] = useState(0);
-  const [debugResult, setDebugResult] = useState<any>(null);
+  const [debugResult, setDebugResult] = useState<unknown>(null);
   const [debugLoading, setDebugLoading] = useState(false);
 
-  async function loadStats() {
+  const loadStats = useCallback(async () => {
     try {
-      const { data, error } = await (supabase as any).rpc('debug_stock_overview');
-      if (error) throw error;
-      setStats(data);
+  const { data, error } = await client.rpc('debug_stock_overview');
+  if (error) throw error;
+  setStats(data as unknown as { inv_movements: number; legacy_movements: number; products_inv: number; products_legacy: number; product_stock_columns: string[]; sample: Record<string, unknown>[] });
     } catch (err) {
       console.error('Erro ao carregar estatísticas:', err);
-      toast.error("Erro ao carregar estatísticas de estoque");
+      toast.error("Erro ao carregar estatísticas de estoque: " + (err instanceof Error ? err.message : String(err)));
     }
-  }
+  }, [client]);
   
   async function runDebugStockOverview() {
     setDebugLoading(true);
     try {
-      const { data, error } = await (supabase as any).rpc('debug_stock_overview');
+      const { data, error } = await client.rpc('debug_stock_overview');
       if (error) throw error;
       setDebugResult(data);
       toast.success("Análise de estoque concluída com sucesso");
@@ -88,9 +91,7 @@ export function StockLoader() {
     toast("Resultado de diagnóstico limpo");
   }
 
-  useEffect(() => {
-    loadStats();
-  }, []);
+  useEffect(() => { loadStats(); }, [loadStats]);
 
   async function fixView() {
     setLoading(true);
@@ -160,7 +161,7 @@ export function StockLoader() {
       NOTIFY pgrst, 'reload schema';
       `;
 
-      const { error: sqlError } = await (supabase as any).rpc('execute_sql', { sql });
+  const { error: sqlError } = await client.rpc('execute_sql', { sql });
       if (sqlError) throw sqlError;
 
       setProgress(40);
@@ -169,7 +170,7 @@ export function StockLoader() {
       setProgress(60);
 
       // 2. Carga inicial para produtos sem movimentos
-      const { data: result, error: migrateError } = await (supabase as any).rpc('migrate_legacy_stock_to_inventory', { 
+      const { data: result, error: migrateError } = await client.rpc('migrate_legacy_stock_to_inventory', { 
         ref_text: 'Migração automática' 
       });
       
@@ -177,7 +178,7 @@ export function StockLoader() {
       setProgress(80);
 
       // 3. Carga artificial para produtos sem nenhum movimento (estoque 10)
-      const { error: insertError } = await (supabase as any).from('inventory_movements')
+      const { error: insertError } = await client.from('inventory_movements')
         .insert([{
           product_id: '586717', // SENSOR RODA (exemplo)
           type: 'ENTRADA',
@@ -188,7 +189,7 @@ export function StockLoader() {
       if (insertError) console.warn('Erro ao inserir movimento exemplo:', insertError);
 
       // 4. Notificar para reload e atualizar estatísticas
-      const { error: notifyError } = await (supabase as any).rpc('execute_sql', { 
+      const { error: notifyError } = await client.rpc('execute_sql', { 
         sql: "NOTIFY pgrst, 'reload schema';" 
       });
       if (notifyError) console.warn('Erro ao notificar:', notifyError);
@@ -356,16 +357,19 @@ export function StockLoader() {
         <div className="mt-3">
           <div className="text-sm font-medium mb-1">Amostra de saldos:</div>
           <div className="text-xs max-h-24 overflow-y-auto">
-            {stats.sample.map((item, i) => (
+            {stats.sample.map((item, i) => {
+              const rec = item as Record<string, unknown>;
+              return (
               <div key={i} className="flex justify-between border-b py-1">
-                <div className="truncate max-w-[200px]">{item.product_id}</div>
+                <div className="truncate max-w-[200px]">{String(rec['product_id'] ?? '')}</div>
                 <div className="flex gap-2">
-                  <span>Estq: {item.stock}</span>
-                  <span>Res: {item.reserved}</span>
-                  <span>Disp: {item.available}</span>
+                  <span>Estq: {String(rec['stock'] ?? '')}</span>
+                  <span>Res: {String(rec['reserved'] ?? '')}</span>
+                  <span>Disp: {String(rec['available'] ?? '')}</span>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -424,19 +428,19 @@ export function StockLoader() {
               <div className="grid grid-cols-2 gap-2 mb-3 mt-2 text-xs">
                 <div>
                   <div className="font-medium">Movimentos atuais:</div>
-                  <div>{debugResult.inv_movements || 0}</div>
+                  <div>{(debugResult && typeof debugResult === 'object') ? String((debugResult as Record<string, unknown>)['inv_movements'] ?? 0) : 0}</div>
                 </div>
                 <div>
                   <div className="font-medium">Movimentos legado:</div>
-                  <div>{debugResult.legacy_movements || 0}</div>
+                  <div>{(debugResult && typeof debugResult === 'object') ? String((debugResult as Record<string, unknown>)['legacy_movements'] ?? 0) : 0}</div>
                 </div>
                 <div>
                   <div className="font-medium">Produtos com mov. atuais:</div>
-                  <div>{debugResult.products_inv || 0}</div>
+                  <div>{(debugResult && typeof debugResult === 'object') ? String((debugResult as Record<string, unknown>)['products_inv'] ?? 0) : 0}</div>
                 </div>
                 <div>
                   <div className="font-medium">Produtos com mov. legado:</div>
-                  <div>{debugResult.products_legacy || 0}</div>
+                  <div>{(debugResult && typeof debugResult === 'object') ? String((debugResult as Record<string, unknown>)['products_legacy'] ?? 0) : 0}</div>
                 </div>
               </div>
 

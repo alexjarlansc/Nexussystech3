@@ -94,25 +94,46 @@ export default function ErpInventory({ initialRows }: { initialRows?: Row[] }){
   useEffect(()=>{
     async function handler(e: Event){
       try{
-        const ce = e as any;
-        const payload = ce.detail;
+        const ce = e as CustomEvent<unknown>;
+        const payload = ce.detail as { rows?: Row[]; description?: string; user_id?: string | null; user_name?: string | null } | undefined;
         if(!payload) return;
         const record = {
           items: JSON.stringify(payload.rows || []),
           description: payload.description || null,
           created_at: new Date().toISOString(),
-          user_id: payload.user_id || null,
-          user_name: payload.user_name || null,
+          user_id: payload.user_id ?? null,
+          user_name: payload.user_name ?? null,
         };
-        const { data, error } = await (supabase as any).from('inventories').insert(record).select().maybeSingle();
-        if(error){
-          console.error('Error saving inventory', error);
-          toast.error('Erro ao salvar inventário: ' + (error.message || ''));
-        } else {
-          toast.success('Inventário salvo com sucesso');
-          try{ window.dispatchEvent(new CustomEvent('inventory:finalized', { detail: data })); }catch(_){/*noop*/}
+        // supabase client typing can be complex; cast to any for this unknown table name
+  // cast supabase to a minimal interface so we can call .from with arbitrary table name
+  type MinimalSupabase = { from: (table: string) => { insert: (values: unknown) => { select: () => { maybeSingle: () => Promise<unknown> } } } };
+  const client = supabase as unknown as MinimalSupabase;
+  const res: unknown = await client.from('inventories').insert(record).select().maybeSingle();
+        // normalize response safely using unknown and runtime checks
+        let data: unknown = undefined;
+        if(res && typeof res === 'object'){
+          const r = res as Record<string, unknown>;
+          if('data' in r) data = r.data;
+          else data = res;
         }
-      }catch(err){ console.error('inventory finalize handler failed', err); toast.error('Erro interno ao finalizar'); }
+        // detect an error field if present
+        if(res && typeof res === 'object'){
+          const r = res as Record<string, unknown>;
+          const err = r['error'];
+          if(err){
+            console.error('Error saving inventory', err);
+            // err may be an object with message
+            const message = typeof err === 'object' && err !== null && 'message' in (err as Record<string, unknown>) ? String((err as Record<string, unknown>)['message']) : String(err);
+            toast.error('Erro ao salvar inventário: ' + (message || ''));
+            return;
+          }
+        }
+        toast.success('Inventário salvo com sucesso');
+        try{ window.dispatchEvent(new CustomEvent('inventory:finalized', { detail: data })); }catch(_){/*noop*/}
+      }catch(err: unknown){
+        console.error('inventory finalize handler failed', err);
+        toast.error('Erro interno ao finalizar');
+      }
     }
     window.addEventListener('inventory:finalize', handler as EventListener);
     return ()=> window.removeEventListener('inventory:finalize', handler as EventListener);

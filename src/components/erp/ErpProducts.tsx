@@ -700,7 +700,7 @@ export function ErpProducts(){
     </div>
 
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
+    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing? 'Editar Produto':'Novo Produto'}</DialogTitle>
         </DialogHeader>
