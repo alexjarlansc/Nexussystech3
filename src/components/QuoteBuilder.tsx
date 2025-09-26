@@ -1173,11 +1173,12 @@ export default function QuoteBuilder() {
               </div>
               <div className="grid grid-cols-1 gap-2 md:gap-3">
                 {/* Cabeçalho somente desktop */}
-                <div className="hidden md:grid grid-cols-12 gap-1 md:gap-2 text-[11px] md:text-xs text-muted-foreground font-medium">
+                <div className="hidden md:grid grid-cols-12 gap-1 md:gap-2 text-[11px] md:text-xs text-muted-foreground font-medium items-center">
                   <div className="col-span-5">Produto</div>
-                  <div className="col-span-2 text-right">Qtd</div>
+                  <div className="col-span-1 text-right">Qtd</div>
                   <div className="col-span-2 text-right">Preço</div>
                   <div className="col-span-1 text-right">Custo</div>
+                  <div className="col-span-1 text-right">Margem</div>
                   <div className="col-span-2 text-right">Subtotal</div>
                 </div>
                 {items.map((it, idx) => (
@@ -1204,7 +1205,7 @@ export default function QuoteBuilder() {
                               min={1}
                               value={it.quantity}
                               onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
-                              className="h-8 text-center text-[13px]"
+                              className="h-8 text-center text-[13px] w-20"
                             />
                           </div>
                           <div className="text-right">
@@ -1222,7 +1223,7 @@ export default function QuoteBuilder() {
                         <div className="mt-2">
                           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Margem</div>
                           <Select value={it.margin?.id ?? ( 'none' )} onValueChange={(v)=> updateItemMargin(idx, v === 'none' ? null : v)}>
-                            <SelectTrigger className="w-44 h-8 text-sm"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
+                            <SelectTrigger className="w-36 h-8 text-sm"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="none">Nenhuma</SelectItem>
                               {margins.map(m => (
@@ -1262,13 +1263,10 @@ export default function QuoteBuilder() {
                         />
                       </div>
                       <div className="col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
-                      <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] pr-1">
-                        {it.costPrice != null ? currencyBRL(it.costPrice) : '—'}
-                      </div>
+                      <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] pr-1">{it.costPrice != null ? currencyBRL(it.costPrice) : '—'}</div>
                       <div className="col-span-1 text-right pr-1">
-                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Margem</div>
                         <Select value={it.margin?.id ?? 'none'} onValueChange={(v)=> updateItemMargin(idx, v === 'none' ? null : v)}>
-                          <SelectTrigger className="w-40 h-8 text-sm"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
+                          <SelectTrigger className="w-32 h-8 text-sm"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">Nenhuma</SelectItem>
                             {margins.map(m => (
