@@ -130,6 +130,8 @@ export default function AccessControl() {
   const [query, setQuery] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<ProfileRow | undefined>(undefined);
+  const [debugModalOpen, setDebugModalOpen] = useState(false);
+  const [debugResult, setDebugResult] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     if (!profile || profile.role !== 'admin') return;
@@ -206,7 +208,7 @@ export default function AccessControl() {
       // Try RPC first (safer under RLS). If not present or fails, fallback to direct UPDATE.
   let data: unknown = null;
   let error: unknown = null;
-      try {
+  try {
         // Note: the RPC expects parameter name `target_id` (not target_user_id) and a jsonb value for perms.
         console.log('Calling admin_update_permissions RPC for', row.user_id, 'rpc args:', { target_id: row.user_id, perms: permissionsPayload });
         const rpcRes = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: row.user_id, perms: permissionsPayload });
@@ -258,10 +260,13 @@ export default function AccessControl() {
         }
       }
 
-      if (error) {
-        console.error('Erro ao salvar permissões (supabase):', error);
-        throw error;
-      }
+        if (error) {
+          console.error('Erro ao salvar permissões (supabase):', error);
+          // store debug info and rethrow
+          setDebugResult({ phase: 'rpc_or_update', error: String(error), rpcErr, updErr: (error as unknown) });
+          setDebugModalOpen(true);
+          throw error;
+        }
 
       // If supabase returned the updated row, sync local state instead of forcing a reload
       if (data) {
@@ -322,7 +327,7 @@ export default function AccessControl() {
         console.warn('Probe select exception', probeEx);
         toast.error('Permissões atualizadas (probe falhou). Verifique console para diagnóstico.');
       }
-    } catch (err) {
+  } catch (err) {
       const e = err as Error | { message?: string } | null;
       console.error('Erro ao salvar permissões:', e);
       // Se coluna permissions não existir, instruir
@@ -333,6 +338,9 @@ export default function AccessControl() {
         toast.error('Falha ao salvar permissões. Política RLS pode estar bloqueando a operação.');
       } else {
         toast.error('Falha ao salvar permissões');
+        // Show debug modal with the last known debugResult if available
+        if (!debugResult) setDebugResult({ phase: 'exception', error: String((err as any)?.message || err) });
+        setDebugModalOpen(true);
       }
     }
   };
@@ -458,6 +466,20 @@ export default function AccessControl() {
         <pre className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded">ALTER TABLE profiles ADD COLUMN permissions jsonb DEFAULT '[]'::jsonb;</pre>
         <p className="text-sm text-muted-foreground mt-2">Execute essa instrução no banco (via Supabase SQL ou migration) para habilitar armazenamento de permissões por usuário.</p>
       </Card>
+      {/* Debug modal: exibe resultado da RPC/UPDATE/probe para diagnóstico */}
+      <Dialog open={debugModalOpen} onOpenChange={setDebugModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Debug: resultado do salvamento de permissões</DialogTitle>
+          </DialogHeader>
+          <div className="text-sm">
+            <pre className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded max-h-[60vh] overflow-auto">{JSON.stringify(debugResult || {}, null, 2)}</pre>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={()=>{ setDebugModalOpen(false); setDebugResult(null); }}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
