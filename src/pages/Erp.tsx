@@ -347,6 +347,18 @@ export default function Erp() {
             )}
             {auth?.profile?.role === 'admin' && (
               <>
+                <GroupTitle icon={<Users className="h-3.5 w-3.5" />} label="Marketing" onToggle={()=>toggleGroup('marketing')} isExpanded={!!expandedGroups['marketing']} />
+                {!!expandedGroups['marketing'] && (
+                  <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                    <ErpNavItem icon={<Users className='h-4 w-4' />} label="Campanhas" active={section==='marketing'} onClick={()=>setSection('marketing')} />
+                  </div>
+                )}
+                <GroupTitle icon={<Users className="h-3.5 w-3.5" />} label="RH" onToggle={()=>toggleGroup('rh')} isExpanded={!!expandedGroups['rh']} />
+                {!!expandedGroups['rh'] && (
+                  <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                    <ErpNavItem icon={<Users className='h-4 w-4' />} label="Colaboradores" active={section==='hr'} onClick={()=>setSection('hr')} />
+                  </div>
+                )}
                 <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Configurações" onToggle={()=>toggleGroup('config')} isExpanded={!!expandedGroups['config']} />
                 {!!expandedGroups['config'] && (
                   <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
@@ -378,6 +390,8 @@ export default function Erp() {
               {section === 'product_variations' && <ProductsReplenish />}
               {section === 'product_labels' && <ProductLabels />}
               {section === 'stock' && <ErpKardex />}
+              {section === 'marketing' && <MarketingPlaceholder />}
+              {section === 'hr' && <HRPlaceholder />}
               {section === 'inventory' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -1518,6 +1532,8 @@ function MassRecalcTool(){
 }
 function ProductGroupsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Grupos de Produtos</h2><p className="text-sm text-muted-foreground mb-4">Organize hierarquias.</p><Button size="sm" onClick={()=>toast.message('Novo Grupo')}>Novo Grupo</Button><div className="mt-4 text-xs text-muted-foreground">Lista/árvore de grupos...</div></Card>;}
 function ProductUnitsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Unidades</h2><p className="text-sm text-muted-foreground mb-4">Cadastro de unidades comerciais.</p><Button size="sm" onClick={()=>toast.message('Nova Unidade')}>Nova Unidade</Button><div className="mt-4 text-xs text-muted-foreground">Tabela de unidades...</div></Card>;}
+function MarketingPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Marketing</h2><p className="text-sm text-muted-foreground mb-4">Área de marketing — campanhas e promoções.</p><Button size="sm" onClick={()=>toast.message('Nova Campanha')}>Nova Campanha</Button><div className="mt-4 text-xs text-muted-foreground">Lista de campanhas...</div></Card>;} 
+function HRPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">RH</h2><p className="text-sm text-muted-foreground mb-4">Gestão de colaboradores.</p><Button size="sm" onClick={()=>toast.message('Novo Colaborador')}>Novo Colaborador</Button><div className="mt-4 text-xs text-muted-foreground">Lista de colaboradores...</div></Card>;} 
 function ProductVariationsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Grades / Variações</h2><p className="text-sm text-muted-foreground mb-4">Gerencie SKUs por atributos.</p><Button size="sm" onClick={()=>toast.message('Nova Grade')}>Nova Grade</Button><div className="mt-4 text-xs text-muted-foreground">Configuração de atributos e geração de variações...</div></Card>;}
 function ProductLabelsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Etiquetas / Códigos</h2><p className="text-sm text-muted-foreground mb-4">Geração de códigos de barras e QR.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Gerar Etiqueta')}>Gerar</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Gerar em Lote')}>Lote</Button></div><div className="text-xs text-muted-foreground">Lista de etiquetas geradas...</div></Card>;}
 function ServicesPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Serviços</h2><p className="text-sm text-muted-foreground mb-4">Cadastro e gestão de serviços para ordens, contratos e faturamento.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Serviço')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Importar Serviços')}>Importar</Button></div><div className="text-xs text-muted-foreground">Tabela (código | descrição | unidade | custo | preço | tributos).</div></Card>;}
