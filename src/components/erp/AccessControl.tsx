@@ -279,14 +279,34 @@ export default function AccessControl() {
 
       // Extra diagnostic: fetch the single profile row and log it so admin can inspect exactly what was saved
       try {
-        const { data: probeData, error: probeErr } = await supabase.from('profiles').select('id,user_id,permissions').eq('user_id', row.user_id).maybeSingle();
+        // Try probe by user_id first, then by profile id as fallback
+  let probeData: unknown = null;
+  let probeErr: unknown = null;
+        try {
+          const p1 = await supabase.from('profiles').select('id,user_id,permissions').eq('user_id', row.user_id).maybeSingle();
+          probeData = p1.data;
+          probeErr = p1.error;
+          console.log('Profiles probe (by user_id) after save:', p1);
+        } catch (inner1) {
+          console.warn('Probe by user_id failed', inner1);
+        }
+        if (!probeData && row.id) {
+          try {
+            const p2 = await supabase.from('profiles').select('id,user_id,permissions').eq('id', row.id).maybeSingle();
+            probeData = p2.data;
+            probeErr = p2.error;
+            console.log('Profiles probe (by id) after save:', p2);
+          } catch (inner2) {
+            console.warn('Probe by id failed', inner2);
+          }
+        }
+
         if (probeErr) console.warn('probe select after save returned error', probeErr);
-        console.log('Profiles probe after save:', probeData);
         if (probeData) {
           const perms = (probeData as unknown as { permissions?: unknown }).permissions;
           if (Array.isArray(perms)) {
             if (perms.length === 0) {
-              toast.error('Aviso: após salvar, a coluna `permissions` está vazia. Verifique políticas RLS, triggers ou formato do payload.');
+              toast.error('Aviso: após salvar, a coluna `permissions` está vazia. Verifique políticas RLS, triggers ou formato do payload. Veja console para detalhes.');
               console.warn('Saved permissions are empty for user', row.user_id, probeData);
             } else {
               toast.success(`Permissões salvas: ${perms.length} itens`);
@@ -295,11 +315,12 @@ export default function AccessControl() {
             toast.success('Permissões atualizadas (verifique console para detalhes)');
           }
         } else {
-          toast.success('Permissões atualizadas (verifique console para detalhes)');
+          toast.error('Após salvar, não foi possível localizar o registro de perfil para este usuário. Verifique se a coluna `permissions` existe e políticas RLS. Veja console para detalhes.');
+          console.warn('Profiles probe returned no rows for user_id or id after save. user_id:', row.user_id, 'id:', row.id);
         }
       } catch (probeEx) {
         console.warn('Probe select exception', probeEx);
-        toast.success('Permissões atualizadas (probe falhou, verifique console)');
+        toast.error('Permissões atualizadas (probe falhou). Verifique console para diagnóstico.');
       }
     } catch (err) {
       const e = err as Error | { message?: string } | null;
