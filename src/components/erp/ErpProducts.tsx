@@ -73,6 +73,8 @@ export function ErpProducts(){
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
   const [supplierQuery, setSupplierQuery] = useState('');
   const [optionGroups, setOptionGroups] = useState<{ id?: string; name: string; items: { id?: string; name: string; value?: string; showInPdf?: boolean }[] }[]>([]);
+  const [margins, setMargins] = useState<{ id: string; name: string; percent: number }[]>([]);
+  const [marginsLoading, setMarginsLoading] = useState(false);
   const [extendedCols,setExtendedCols]=useState(true); // se false não enviar campos novos
   const [hasCodePrefix, setHasCodePrefix] = useState<boolean|null>(null);
   const [companyId,setCompanyId]=useState<string|undefined>(undefined);
@@ -337,6 +339,20 @@ export function ErpProducts(){
     finally{ setLoadingGroups(false); }
   }
   useEffect(()=>{ loadProductGroups(); },[]);
+  // carregar margens cadastradas (para seletor rápido no formulário de produto)
+  useEffect(()=>{
+    let mounted = true;
+    (async ()=>{
+      setMarginsLoading(true);
+      try{
+        const { data, error } = await (supabase as any).from('margins').select('id,name,percent').order('name');
+        if(error) throw error;
+        if(mounted) setMargins((data||[]) as any[]);
+      }catch(e){ if(import.meta.env.DEV) console.warn('Falha ao carregar margens', e); }
+      finally{ if(mounted) setMarginsLoading(false); }
+    })();
+    return ()=>{ mounted = false; };
+  },[]);
   // sincronizar selects quando productGroups ou form.product_group_id mudam (ex: abrir edição)
   useEffect(()=>{
     if(!productGroups.length) return;
@@ -934,21 +950,42 @@ export function ErpProducts(){
                 inputMode="decimal"
                 readOnly disabled className="bg-gray-50/60"
               />
-              <Input placeholder="Margem %" value={form.margin ?? ''}
-                onChange={e=>{
-                  const margin = Number(e.target.value.replace(/[\^\d.]/g, ''));
-                  if(!isNaN(margin)) {
-                    setForm(f=>{
-                      const cost = f.cost_price ?? 0;
-                      return { ...f, margin, sale_price: calcSalePrice(cost, margin) };
-                    });
-                  } else {
-                    setForm(f=>({...f, margin: undefined }));
-                  }
-                }}
-                inputMode="decimal"
-                readOnly disabled className="bg-gray-50/60"
-              />
+              <div className="flex items-center gap-2">
+                <Input placeholder="Margem %" value={form.margin ?? ''}
+                  onChange={e=>{
+                    const margin = Number(e.target.value.replace(/[^\d.,-]/g, '').replace(',', '.'));
+                    if(!isNaN(margin)) {
+                      setForm(f=>{
+                        const cost = f.cost_price ?? 0;
+                        return { ...f, margin, sale_price: calcSalePrice(cost, margin) };
+                      });
+                    } else {
+                      setForm(f=>({...f, margin: undefined }));
+                    }
+                  }}
+                  inputMode="decimal"
+                  readOnly disabled className="bg-gray-50/60"
+                />
+                {/* seletor rápido de margens */}
+                <div className="relative">
+                  <button type="button" className="h-9 px-2 border rounded bg-white text-sm" title="Selecionar margem">
+                    Margens
+                  </button>
+                  <div className="absolute right-0 mt-1 w-56 bg-white border rounded shadow max-h-48 overflow-auto z-50">
+                    {marginsLoading && <div className="p-2 text-sm text-muted-foreground">Carregando...</div>}
+                    {!marginsLoading && margins.length===0 && <div className="p-2 text-sm text-muted-foreground">Nenhuma margem cadastrada</div>}
+                    {!marginsLoading && margins.map(m=> (
+                      <div key={m.id} className="p-2 hover:bg-muted/30 cursor-pointer text-sm" onClick={()=>{
+                        setForm(f=>{
+                          const cost = f.cost_price ?? 0;
+                          const newMargin = Number(m.percent);
+                          return { ...f, margin: newMargin, sale_price: calcSalePrice(cost, newMargin) };
+                        });
+                      }}>{m.name} — {String(m.percent)}%</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <Input placeholder="Prazo Pagamento" value={form.payment_terms||''} onChange={e=>setForm(f=>({...f,payment_terms:e.target.value}))} readOnly disabled className="bg-gray-50/60" />
             </div>
           </section>}

@@ -445,12 +445,17 @@ export default function QuoteBuilder() {
     } catch(e){ console.debug('[QuoteBuilder] products log failed', e); }
   }, [products]);
 
-  function addItemFromProduct(prod: Product, quantity = 1) {
+  function addItemFromProduct(prod: Product, quantity = 1, margin?: { id: string; name: string; percent: number }) {
       const salePrice = (prod as unknown as { sale_price?: number }).sale_price;
       const costPriceRaw = (prod as unknown as { cost_price?: number }).cost_price;
-      const unit = salePrice != null ? salePrice : prod.price;
+      // If a margin is selected and product has cost, compute unit price from cost + margin
+      let unit = salePrice != null ? salePrice : prod.price;
+      if (margin && costPriceRaw != null) {
+        const costNum = Number(costPriceRaw) || 0;
+        unit = +(costNum * (1 + (margin.percent / 100)));
+      }
       const prodWithImage = prod as Product & { imageDataUrl?: string };
-      const snapshot: QuoteItemSnapshot = {
+      const snapshot = {
         productId: prod.id,
         name: prod.name,
         description: prod.description,
@@ -460,7 +465,9 @@ export default function QuoteBuilder() {
         costPrice: costPriceRaw != null ? costPriceRaw : undefined,
         quantity,
         subtotal: unit * quantity,
-      };
+        // attach margin snapshot if provided
+        margin: margin ? { id: margin.id, name: margin.name, percent: margin.percent } : undefined,
+      } as unknown as QuoteItemSnapshot;
     setItems((it) => [...it, snapshot]);
   }
 
@@ -1621,7 +1628,7 @@ export default function QuoteBuilder() {
 
       {/* Product Modal */}
       <Dialog open={openProduct} onOpenChange={setOpenProduct}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-w-3xl sm:max-w-2xl">
           <DialogHeader><DialogTitle>Cadastrar Produto Completo</DialogTitle></DialogHeader>
           <div className="grid gap-3">
             <div>
@@ -1705,7 +1712,7 @@ export default function QuoteBuilder() {
 
       {/* Manage Products Modal */}
       <Dialog open={openManageProducts} onOpenChange={setOpenManageProducts}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-w-3xl sm:max-w-2xl">
           <DialogHeader><DialogTitle>Gerenciar Produtos Cadastrados</DialogTitle></DialogHeader>
           <div className="max-h-[50vh] overflow-auto space-y-2">
             {profile?.role === 'admin' && (
@@ -1771,12 +1778,12 @@ export default function QuoteBuilder() {
         setOpenSearchProduct(open);
         if (open) await loadProducts(); // Sempre recarrega produtos ao abrir
       }}>
-        <DialogContent className="sm:max-w-lg">
+  <DialogContent className="max-w-6xl sm:max-w-4xl">
           <DialogHeader><DialogTitle>Buscar Produto</DialogTitle></DialogHeader>
           <SearchProductModal 
             products={products} 
-            onSelectProduct={(product, qty) => {
-              addItemFromProduct(product, qty);
+            onSelectProduct={(product, qty, margin) => {
+              addItemFromProduct(product, qty, margin);
               setOpenSearchProduct(false);
             }}
             onRegisterMovement={(product) => {
@@ -1791,7 +1798,7 @@ export default function QuoteBuilder() {
       {/* Edit Product Modal */}
       {openEditProduct && (
         <Dialog open={!!openEditProduct} onOpenChange={() => setOpenEditProduct(null)}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="max-w-3xl sm:max-w-2xl">
             <DialogHeader><DialogTitle>Editar Produto</DialogTitle></DialogHeader>
             <EditProductModal 
               product={openEditProduct} 
@@ -1852,11 +1859,44 @@ function SearchProductModal({
   onRegisterMovement
 }: { 
   products: ProductWithStock[]; 
-  onSelectProduct: (product: ProductWithStock, quantity: number) => void; 
+  // now accept optional margin object
+  onSelectProduct: (product: ProductWithStock, quantity: number, margin?: { id: string; name: string; percent: number }) => void; 
   onRegisterMovement?: (product: ProductWithStock) => void;
 }) {
   const [search, setSearch] = useState('');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [margins, setMargins] = useState<{ id: string; name: string; percent: number }[]>([]);
+  const [selectedMarginId, setSelectedMarginId] = useState<string | null>(null);
+
+  function calcSalePrice(cost: number | undefined | null, margin: number | undefined | null): number | undefined {
+    if (cost === undefined || cost === null) return undefined;
+    if (margin === undefined || margin === null) return undefined;
+    if (cost === 0) return 0;
+    return +(cost * (1 + margin / 100)).toFixed(2);
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+  // fetch margins visible to this user/company
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const q = (supabase as any).from('margins').select('*').order('created_at', { ascending: false });
+        // try to restrict by company if available via profiles in RPC is heavy; fetch all and filter client-side
+        const { data, error } = await q;
+        if (!mounted) return;
+        if (error) return; // silently ignore
+        const arr = (data || []).map((m: unknown) => {
+          const mm = m as { id: string; name: string; percent: number };
+          return { id: mm.id, name: mm.name, percent: Number(mm.percent) };
+        });
+        setMargins(arr);
+      } catch (e) {
+        // ignore fetch errors here
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const filteredProducts = products.filter(p => {
     const s = search.toLowerCase();
@@ -1876,15 +1916,40 @@ function SearchProductModal({
         onChange={(e) => setSearch(e.target.value)}
         className="w-full"
       />
-      <div className="max-h-[60vh] overflow-auto flex flex-col gap-2 pb-1">
+      {/* margin selector (optional) */}
+      {margins.length > 0 && (
+        <div className="mb-2">
+          <Label>Margem</Label>
+          <Select onValueChange={(v)=> setSelectedMarginId(v === 'none' ? null : v)} value={selectedMarginId ?? undefined}>
+            <SelectTrigger className="w-full h-8 text-sm">
+              <SelectValue placeholder="Nenhuma" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Nenhuma</SelectItem>
+              {margins.map(m => (
+                <SelectItem key={m.id} value={m.id}>{m.name} — {m.percent}%</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!selectedMarginId && (
+            <div className="text-xs text-amber-600 mt-1">Selecione uma margem para habilitar a adição de produtos (os preços serão calculados a partir do custo médio).</div>
+          )}
+        </div>
+      )}
+
+  <div className="max-h-[70vh] overflow-auto flex flex-col gap-2 pb-1">
         {filteredProducts.length === 0 && (
           <div className="text-sm text-muted-foreground">Nenhum produto encontrado.</div>
         )}
         {filteredProducts.map((p: ProductWithStock) => {
-          const unitPrice = (p.sale_price ?? p.price) || 0;
+          const selectedMargin = margins.find(m => m.id === selectedMarginId) || undefined;
+          // Priorizar cálculo a partir do custo médio quando existir margem selecionada
+          const computedFromCost = selectedMargin ? calcSalePrice(p.cost_price, selectedMargin.percent) : undefined;
+          // quando não houver margem selecionada, não mostrar preço (campo limpo)
+          const unitPrice = computedFromCost ?? undefined;
           const qty = getQty(p.id);
-          const total = unitPrice * qty;
-          const priceDisp = currencyBRL(unitPrice).replace(/^R\$\s?/, '');
+          const total = unitPrice !== undefined ? unitPrice * qty : undefined;
+          const priceDisp = unitPrice !== undefined ? currencyBRL(unitPrice).replace(/^R\$\s?/, '') : '';
           const costDisp = p.cost_price != null ? currencyBRL(p.cost_price).replace(/^R\$\s?/, '') : '—';
           const avail = p.available ?? (p.stock ?? 0) - (p.reserved ?? 0);
           const lowStock = avail <= 0;
@@ -1900,18 +1965,18 @@ function SearchProductModal({
                   <img
                     src={p.imageDataUrl}
                     alt={p.name}
-                    className="h-14 w-14 rounded object-cover border bg-white flex-shrink-0"
+                    className="h-20 w-20 rounded object-cover border bg-white flex-shrink-0"
                     loading="lazy"
                   />
                 ) : (
-                  <div className="h-14 w-14 rounded border bg-accent/40 grid place-items-center text-[10px] text-muted-foreground flex-shrink-0">IMG</div>
+                  <div className="h-20 w-20 rounded border bg-accent/40 grid place-items-center text-[10px] text-muted-foreground flex-shrink-0">IMG</div>
                 )}
                 {/* Info principal */}
                 <div className="flex-1 min-w-0 flex flex-col gap-1">
                   <div className="font-medium text-[13px] leading-snug line-clamp-2 break-words pr-1" title={p.name}>{p.name}</div>
                   <div className="flex flex-wrap gap-1 text-[10px] sm:text-[11px] text-muted-foreground items-center">
                     <span className="px-1 py-0.5 rounded bg-muted/60">Cod {p.code || p.id.slice(-6)}</span>
-                    <span className="px-1 py-0.5 rounded bg-muted/40">R$ {priceDisp}</span>
+                    {unitPrice !== undefined && <span className="px-1 py-0.5 rounded bg-muted/40">R$ {priceDisp}</span>}
                     <span className="px-1 py-0.5 rounded bg-muted/30 hidden md:inline">Cst {costDisp}</span>
                     <span className="px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">Stk {p.stock ?? '-'}</span>
                     <span className="px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">Res {p.reserved ?? '-'}</span>
@@ -1921,26 +1986,31 @@ function SearchProductModal({
                   </div>
                 </div>
                 {/* Ações */}
-                <div className="flex flex-col items-end gap-1 w-32 sm:w-36">
+                <div className="flex flex-col items-end gap-1 w-44 sm:w-48">
                   <Input
                     type="number"
                     min={1}
                     value={qty}
                     onChange={(e)=> setQty(p.id, parseInt(e.target.value || '1',10))}
-                    onKeyDown={(e)=> { if(e.key==='Enter') { onSelectProduct(p, qty); } }}
+                    onKeyDown={(e)=> { if(e.key==='Enter') { if(selectedMarginId) { onSelectProduct(p, qty, margins.find(m => m.id === selectedMarginId) || undefined); } else { e.preventDefault(); } } }}
                     className={"h-8 text-center text-sm " + (insufficient ? 'border-orange-500 focus-visible:ring-orange-500' : lowStock ? 'border-red-500 focus-visible:ring-red-500' : '')}
                     aria-label={`Quantidade para ${p.name}`}
                   />
                   <div className="text-[10px] text-muted-foreground leading-tight w-full text-right">
-                    <span>Total </span>
-                    <span className="font-medium text-primary">{currencyBRL(total).replace(/^R\$\s?/, 'R$ ')}</span>
+                    {total !== undefined ? (
+                      <><span>Total </span><span className="font-medium text-primary">{currencyBRL(total).replace(/^R\$\s?/, 'R$ ')}</span></>
+                    ) : null}
                   </div>
                   <Button
                     size="sm"
                     className="h-8 w-full"
-                    disabled={lowStock}
-                    title={lowStock ? 'Sem disponibilidade' : 'Adicionar produto'}
-                    onClick={() => onSelectProduct(p, qty)}
+                    disabled={!selectedMarginId || lowStock}
+                    title={!selectedMarginId ? 'Selecione uma margem antes de adicionar' : (lowStock ? 'Sem disponibilidade' : 'Adicionar produto')}
+                    onClick={() => {
+                      if(!selectedMarginId) return; // safety
+                      const margin = margins.find(m => m.id === selectedMarginId) || undefined;
+                      onSelectProduct(p, qty, margin);
+                    }}
                   >Adicionar</Button>
                   {onRegisterMovement && (
                     <button

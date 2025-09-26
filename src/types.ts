@@ -157,6 +157,8 @@ export interface QuoteItemSnapshot {
   costPrice?: number;
   quantity: number;
   subtotal: number;
+  // margem aplicada (opcional) — armazena referência à margem usada ao adicionar o item
+  margin?: { id: string; name: string; percent: number };
 }
 
 export interface Quote {
