@@ -1919,10 +1919,10 @@ function SearchProductModal({
       {/* margin selector (optional) */}
       {margins.length > 0 && (
         <div className="mb-2">
-          <Label>Frete %</Label>
+          <Label>Margens</Label>
           <Select onValueChange={(v)=> setSelectedMarginId(v === 'none' ? null : v)} value={selectedMarginId ?? undefined}>
             <SelectTrigger className="w-full h-8 text-sm">
-              <SelectValue placeholder="Nenhuma" />
+              <SelectValue placeholder="Margens" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">Nenhuma</SelectItem>
@@ -1931,9 +1931,6 @@ function SearchProductModal({
               ))}
             </SelectContent>
           </Select>
-          {!selectedMarginId && (
-            <div className="text-xs text-amber-600 mt-1">Selecione um frete para habilitar a adição de produtos (os preços serão calculados a partir do custo médio).</div>
-          )}
         </div>
       )}
 

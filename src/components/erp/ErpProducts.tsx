@@ -883,90 +883,7 @@ export function ErpProducts(){
               )}
             </div>
             <Textarea placeholder="Descrição / Observações" value={form.description||''} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={3} />
-            <div className="flex gap-2 items-center">
-              <Button size="sm" variant="outline" onClick={()=>setOptionalsOpen(true)}>Opcionais do Produto</Button>
-              <div className="text-xs text-muted-foreground">Gerenciar grupos e itens opcionais (nome, valor e visibilidade no PDF)</div>
-            </div>
-          </section>}
-          {!extendedCols && <section className="space-y-2">
-            <h3 className="font-semibold text-sm">Básico</h3>
-            <div className="grid md:grid-cols-4 gap-2">
-              <Input placeholder="Nome *" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} />
-              <select className="h-9 border rounded px-2" value={form.status||'ATIVO'} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>
-                {STATUS.map(s=> <option key={s} value={s}>{s}</option>)}
-              </select>
-              <Input placeholder="Preço Venda *" value={formatBRL(form.sale_price)}
-                onChange={e=>{
-                  const raw = e.target.value;
-                  const parsed = parseBRL(raw);
-                  setForm(f=>({...f, sale_price: parsed }));
-                }}
-                inputMode="decimal"
-                readOnly disabled className="bg-gray-50/60"
-              />
-              <Input placeholder="Custo" value={formatBRL(form.cost_price)}
-                onChange={e=>{
-                  const raw = e.target.value;
-                  const parsed = parseBRL(raw);
-                  setForm(f=>({...f, cost_price: parsed }));
-                }}
-                inputMode="decimal"
-                readOnly disabled className="bg-gray-50/60"
-              />
-            </div>
-            <Textarea placeholder="Descrição" value={form.description||''} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={3} />
-            <div className="text-xs text-amber-600">Colunas avançadas ausentes. Aplique migration 20250831150000_extend_products_fields.sql para liberar campos completos.</div>
-          </section>}
-          {/* Estoque */}
-            {extendedCols && <section className="space-y-2">
-              <h3 className="font-semibold text-sm">Estoque</h3>
-              <div className="grid md:grid-cols-4 gap-2">
-                <Input placeholder="Quantidade em Estoque" value={form.stock_qty ?? ''} readOnly disabled className="bg-gray-50/60" />
-                <div className="text-[11px] text-muted-foreground">Controlado por Movimentações de Estoque — para alterar, registre um movimento.</div>
-                <Input placeholder="Estoque Mínimo" value={form.stock_min||''} onChange={e=>setForm(f=>({...f,stock_min:e.target.value? Number(e.target.value):undefined}))} />
-                <Input placeholder="Estoque Máximo" value={form.stock_max||''} onChange={e=>setForm(f=>({...f,stock_max:e.target.value? Number(e.target.value):undefined}))} />
-                <Input placeholder="Lote" value={form.lot_number||''} onChange={e=>setForm(f=>({...f,lot_number:e.target.value}))} />
-                <Input type="date" placeholder="Validade" value={form.validity_date||''} onChange={e=>setForm(f=>({...f,validity_date:e.target.value}))} />
-              </div>
-            </section>}
-          {/* Preços */}
-          {extendedCols && <section className="space-y-2">
-            <h3 className="font-semibold text-sm">Preços</h3>
-            <div className="grid md:grid-cols-4 gap-2">
-              <Input placeholder="Custo" value={formatBRL(form.cost_price)}
-                onChange={e=>{
-                  const raw = e.target.value;
-                  const parsed = parseBRL(raw);
-                  setForm(f=>({...f, cost_price: parsed }));
-                }}
-                inputMode="decimal"
-                readOnly disabled className="bg-gray-50/60"
-              />
-              <Input placeholder="Preço Venda *" value={formatBRL(form.sale_price)}
-                onChange={e=>{
-                  const raw = e.target.value;
-                  const parsed = parseBRL(raw);
-                  setForm(f=>({...f, sale_price: parsed }));
-                }}
-                inputMode="decimal"
-                readOnly disabled className="bg-gray-50/60"
-              />
               <div className="flex items-center gap-2">
-                <Input placeholder="Frete %" value={form.margin ?? ''}
-                  onChange={e=>{
-                    const margin = Number(e.target.value.replace(/[^\d.,-]/g, '').replace(',', '.'));
-                    if(!isNaN(margin)) {
-                      setForm(f=>{
-                        const cost = f.cost_price ?? 0;
-                        return { ...f, margin, sale_price: calcSalePrice(cost, margin) };
-                      });
-                    } else {
-                      setForm(f=>({...f, margin: undefined }));
-                    }
-                  }}
-                  inputMode="decimal"
-                  readOnly disabled className="bg-gray-50/60"
-                />
                 <div className="w-56">
                   <Select onValueChange={(val) => {
                     if(val === 'none') { setForm(f=>({...f, margin: undefined })); return; }
@@ -987,7 +904,84 @@ export function ErpProducts(){
                   </Select>
                 </div>
               </div>
-              <Input placeholder="Prazo Pagamento" value={form.payment_terms||''} onChange={e=>setForm(f=>({...f,payment_terms:e.target.value}))} readOnly disabled className="bg-gray-50/60" />
+              <div className="grid md:grid-cols-4 gap-2">
+                <Input placeholder="Quantidade em Estoque" value={form.stock_qty ?? ''} readOnly disabled className="bg-gray-50/60" />
+                <div className="text-[11px] text-muted-foreground">Controlado por Movimentações de Estoque — para alterar, registre um movimento.</div>
+                <Input placeholder="Estoque Mínimo" value={form.stock_min||''} onChange={e=>setForm(f=>({...f,stock_min:e.target.value? Number(e.target.value):undefined}))} />
+                <Input placeholder="Estoque Máximo" value={form.stock_max||''} onChange={e=>setForm(f=>({...f,stock_max:e.target.value? Number(e.target.value):undefined}))} />
+                <Input placeholder="Lote" value={form.lot_number||''} onChange={e=>setForm(f=>({...f,lot_number:e.target.value}))} />
+                <Input type="date" placeholder="Validade" value={form.validity_date||''} onChange={e=>setForm(f=>({...f,validity_date:e.target.value}))} />
+              </div>
+            </section>}
+          {/* Preços */}
+          {extendedCols && <section className="space-y-2">
+            <h3 className="font-semibold text-sm">Preços</h3>
+            <div className="grid md:grid-cols-4 gap-2">
+              <div>
+                <label className="block text-[10px] font-medium uppercase mb-1">Custo Médio</label>
+                <Input placeholder="Custo" value={formatBRL(form.cost_price)}
+                  onChange={e=>{
+                    const raw = e.target.value;
+                    const parsed = parseBRL(raw);
+                    setForm(f=>({...f, cost_price: parsed }));
+                  }}
+                  inputMode="decimal"
+                  readOnly disabled className="bg-gray-50/60"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium uppercase mb-1">Venda com Margem</label>
+                <Input placeholder="Preço Venda *" value={formatBRL(form.sale_price)}
+                  onChange={e=>{
+                    const raw = e.target.value;
+                    const parsed = parseBRL(raw);
+                    setForm(f=>({...f, sale_price: parsed }));
+                  }}
+                  inputMode="decimal"
+                  readOnly disabled className="bg-gray-50/60"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-40">
+                  <label className="block text-[10px] font-medium uppercase mb-1">Margem %</label>
+                  <Input placeholder="Margem" value={form.margin ?? ''}
+                    onChange={e=>{
+                      const margin = Number(e.target.value.replace(/[^\d.,-]/g, '').replace(',', '.'));
+                      if(!isNaN(margin)) {
+                        setForm(f=>{
+                          const cost = f.cost_price ?? 0;
+                          return { ...f, margin, sale_price: calcSalePrice(cost, margin) };
+                        });
+                      } else {
+                        setForm(f=>({...f, margin: undefined }));
+                      }
+                    }}
+                    inputMode="decimal"
+                    readOnly disabled className="bg-gray-50/60"
+                  />
+                </div>
+                <div className="w-56">
+                  <label className="block text-[10px] font-medium uppercase mb-1 invisible">Margem select</label>
+                  <Select onValueChange={(val) => {
+                    if(val === 'none') { setForm(f=>({...f, margin: undefined })); return; }
+                    const sel = margins.find(x=>x.id===val);
+                    if(sel) setForm(f=>{
+                      const cost = f.cost_price ?? 0;
+                      const newMargin = Number(sel.percent);
+                      return { ...f, margin: newMargin, sale_price: calcSalePrice(cost, newMargin) };
+                    });
+                  }}>
+                    <SelectTrigger className="w-full h-9 text-sm"><SelectValue placeholder="Margens" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Nenhuma</SelectItem>
+                      {margins.map(m => (
+                        <SelectItem key={m.id} value={m.id}>{m.name} — {m.percent}%</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {/* Prazo Pagamento removido conforme solicitação */}
             </div>
           </section>}
           {/* Fiscal */}
