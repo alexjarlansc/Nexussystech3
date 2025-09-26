@@ -480,6 +480,29 @@ export default function QuoteBuilder() {
     });
   }
 
+  function updateItemMargin(index: number, marginId: string | null) {
+    setItems((arr) => {
+      const copy = [...arr];
+      const it = copy[index];
+      let newMargin: QuoteItemSnapshot['margin'] | undefined = undefined;
+      let newUnitPrice = it.unitPrice;
+      if (marginId && marginId !== 'none') {
+        const sel = margins.find(m => m.id === marginId);
+        if (sel) {
+          newMargin = { id: sel.id, name: sel.name, percent: sel.percent };
+          const cost = Number(it.costPrice ?? it.unitPrice ?? 0);
+          if (!isNaN(cost)) {
+            newUnitPrice = +(cost * (1 + sel.percent / 100));
+          }
+        }
+      } else {
+        newMargin = undefined;
+      }
+      copy[index] = { ...it, margin: newMargin, unitPrice: newUnitPrice, subtotal: newUnitPrice * it.quantity } as QuoteItemSnapshot;
+      return copy;
+    });
+  }
+
   function removeItem(index: number) {
     setItems((arr) => arr.filter((_, i) => i !== index));
   }
@@ -1177,6 +1200,18 @@ export default function QuoteBuilder() {
                         {it.costPrice != null && (
                           <div className="mt-1 text-[10px] text-muted-foreground">Custo: {currencyBRL(it.costPrice)}</div>
                         )}
+                        <div className="mt-2">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Margem</div>
+                          <Select value={it.margin?.id ?? ( 'none' )} onValueChange={(v)=> updateItemMargin(idx, v === 'none' ? null : v)}>
+                            <SelectTrigger className="w-44 h-8 text-sm"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Nenhuma</SelectItem>
+                              {margins.map(m => (
+                                <SelectItem key={m.id} value={m.id}>{m.name} — {m.percent}%</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <div className="mt-2 flex justify-end">
                           <Button size="sm" variant="ghost" onClick={() => removeItem(idx)} className="h-7 px-2 text-[12px]">Remover</Button>
                         </div>
@@ -1210,6 +1245,18 @@ export default function QuoteBuilder() {
                       <div className="col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
                       <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] pr-1">
                         {it.costPrice != null ? currencyBRL(it.costPrice) : '—'}
+                      </div>
+                      <div className="col-span-1 text-right pr-1">
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Margem</div>
+                        <Select value={it.margin?.id ?? 'none'} onValueChange={(v)=> updateItemMargin(idx, v === 'none' ? null : v)}>
+                          <SelectTrigger className="w-40 h-8 text-sm"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Nenhuma</SelectItem>
+                            {margins.map(m => (
+                              <SelectItem key={m.id} value={m.id}>{m.name} — {m.percent}%</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="col-span-2 text-right font-medium whitespace-nowrap text-[11px] md:text-sm pl-1 border-l border-muted/30">{currencyBRL(it.subtotal)}</div>
                       <div className="col-span-12 text-right mt-1">
