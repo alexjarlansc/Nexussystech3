@@ -1225,7 +1225,7 @@ function ProductsPricingPlaceholder(){
         }} onBlur={()=>{ if(rawCost){ const n = Number(rawCost.replace(/\./g,'').replace(',','.')); if(!isNaN(n)) setRawCost(n.toFixed(2)); } }} placeholder="0,00" inputMode="decimal" className="h-8" />
       </div>
       {calcMode==='forward' && <div>
-        <label className="block text-[10px] font-medium uppercase mb-1">Margem %</label>
+  <label className="block text-[10px] font-medium uppercase mb-1">Frete %</label>
         <Input
           value={rawMargin}
           onChange={e=>{
@@ -1503,7 +1503,7 @@ function MassRecalcTool(){
     {open && <div className="mt-2 space-y-2">
       <div className="grid md:grid-cols-6 gap-2">
         <div className="col-span-2"><label className="block text-[10px] font-medium mb-1">Filtro (nome ou código)</label><Input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="ex: CAMISA" className="h-7" /></div>
-        <div><label className="block text-[10px] font-medium mb-1">Nova Margem %</label><Input value={newMargin??''} onChange={e=>setNewMargin(e.target.value? Number(e.target.value):undefined)} className="h-7" placeholder="%" /></div>
+  <div><label className="block text-[10px] font-medium mb-1">Nova Frete %</label><Input value={newMargin??''} onChange={e=>setNewMargin(e.target.value? Number(e.target.value):undefined)} className="h-7" placeholder="%" /></div>
         <div className="flex flex-col"><label className="block text-[10px] font-medium mb-1">ICMS %</label><div className="flex items-center gap-1"><Checkbox checked={applyICMS} onCheckedChange={v=>setApplyICMS(!!v)} /><Input disabled={!applyICMS} value={icms??''} onChange={e=>setIcms(e.target.value? Number(e.target.value):undefined)} className="h-7" placeholder="%" /></div></div>
         <div className="flex flex-col"><label className="block text-[10px] font-medium mb-1">PIS %</label><div className="flex items-center gap-1"><Checkbox checked={applyPIS} onCheckedChange={v=>setApplyPIS(!!v)} /><Input disabled={!applyPIS} value={pis??''} onChange={e=>setPis(e.target.value? Number(e.target.value):undefined)} className="h-7" placeholder="%" /></div></div>
         <div className="flex flex-col"><label className="block text-[10px] font-medium mb-1">COFINS %</label><div className="flex items-center gap-1"><Checkbox checked={applyCOFINS} onCheckedChange={v=>setApplyCOFINS(!!v)} /><Input disabled={!applyCOFINS} value={cofins??''} onChange={e=>setCofins(e.target.value? Number(e.target.value):undefined)} className="h-7" placeholder="%" /></div></div>

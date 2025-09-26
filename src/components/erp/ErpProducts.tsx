@@ -951,7 +951,7 @@ export function ErpProducts(){
                 readOnly disabled className="bg-gray-50/60"
               />
               <div className="flex items-center gap-2">
-                <Input placeholder="Margem %" value={form.margin ?? ''}
+                <Input placeholder="Frete %" value={form.margin ?? ''}
                   onChange={e=>{
                     const margin = Number(e.target.value.replace(/[^\d.,-]/g, '').replace(',', '.'));
                     if(!isNaN(margin)) {
