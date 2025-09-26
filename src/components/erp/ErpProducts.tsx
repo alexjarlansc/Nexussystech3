@@ -1008,7 +1008,6 @@ export function ErpProducts(){
             <div className="grid md:grid-cols-2 gap-2 items-start">
               <div className="flex items-center gap-2 flex-wrap">
                 <select className="h-9 border rounded px-2 min-w-[220px]" value={form.default_supplier_id||''} onChange={e=>setForm(f=>({...f,default_supplier_id:e.target.value||undefined}))}>
-                  <option value="" disabled hidden>Selecione fornecedor</option>
                   {suppliers.map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <Button size="sm" variant="outline" onClick={()=>setSupplierSearchOpen(true)}>Buscar fornecedor</Button>
