@@ -1,6 +1,6 @@
 import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
 import { useAuth } from '@/hooks/useAuth';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2, ChevronRight, ChevronDown, Building2 } from 'lucide-react';
@@ -13,6 +13,7 @@ import { ErpCarriers } from '@/components/erp/ErpCarriers';
 import { ErpClients } from '@/components/erp/ErpClients';
 import { ErpProductGroups } from '@/components/erp/ErpProductGroups';
 import ProductsReplenish from '@/components/erp/ProductsReplenish';
+import ErpMargins from '../components/erp/ErpMargins';
 import ErpServiceOrders from '@/components/erp/ErpServiceOrders';
 import ErpStockMovements from '@/components/erp/ErpStockMovements';
 import ErpStockAdjustments from '@/components/erp/ErpStockAdjustments';
@@ -75,7 +76,8 @@ type SectionKey =
   | 'report_sales_full'
   | 'report_finance_full'
   | 'reports_dashboard'
-  | 'inventory';
+  | 'inventory'
+  | 'margins';
 
 export default function Erp() {
   const auth = useAuth();
@@ -107,6 +109,38 @@ export default function Erp() {
   const [inventoryHistory, setInventoryHistory] = useState<any[] | null>(null);
   const [selectedInventory, setSelectedInventory] = useState<any | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const prevExpandedRef = useRef<Record<string, boolean> | null>(null);
+
+  function openSidebar() {
+    // snapshot current expanded groups so we can restore on close
+    prevExpandedRef.current = expandedGroups;
+    setExpandedGroups({});
+    setSidebarOpen(true);
+  }
+
+  function closeSidebar() {
+    setSidebarOpen(false);
+    // restore previous expanded groups if we had a snapshot
+    if (prevExpandedRef.current) {
+      setExpandedGroups(prevExpandedRef.current);
+      prevExpandedRef.current = null;
+    }
+  }
+  function toggleGroup(name: string) {
+    setExpandedGroups((s) => {
+      const currently = !!s[name];
+      if (currently) {
+        // closing: just close this group, leave others as-is
+        return { ...s, [name]: false };
+      }
+      // opening: close others and open this one (accordion behavior)
+      const next: Record<string, boolean> = {};
+      Object.keys(s).forEach(k => { next[k] = false; });
+      next[name] = true;
+      return next;
+    });
+  }
 
   // Carrega contagem inicial e assina mudanças de orçamentos
   useEffect(() => {
@@ -206,7 +240,7 @@ export default function Erp() {
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
       <NexusProtectedHeader />
       <div className="flex items-center justify-between px-4 md:hidden bg-transparent">
-        <button className="p-2 rounded-md" onClick={()=>setSidebarOpen(true)} aria-label="Abrir menu">
+        <button className="p-2 rounded-md" onClick={openSidebar} aria-label="Abrir menu">
           <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
       </div>
@@ -223,17 +257,20 @@ export default function Erp() {
   <aside className={`erp-sidebar w-56 md:flex-shrink-0 border-r bg-white/90 backdrop-blur-sm dark:bg-slate-800/80 flex flex-col transition-transform duration-200 ${sidebarOpen ? 'fixed left-0 top-0 h-full z-40 translate-x-0' : ' -translate-x-full md:translate-x-0 md:relative md:translate-x-0'}`}>
           <div className="px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Módulo ERP</div>
           <div className="md:hidden px-2">
-            <button className="p-2 rounded hover:bg-muted/20" onClick={()=>setSidebarOpen(false)}>Fechar</button>
+            <button className="p-2 rounded hover:bg-muted/20" onClick={closeSidebar}>Fechar</button>
           </div>
           <nav className="flex-1 px-2 space-y-1 text-sm">
             <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Visão Geral" active={section==='dashboard'} onClick={()=>setSection('dashboard')} />
-            <GroupTitle icon={<FolderTree className="h-3.5 w-3.5" />} label="Cadastro" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<Users className='h-4 w-4' />} label="Clientes" active={section==='clients'} onClick={()=>setSection('clients')} />
-              <ErpNavItem icon={<Users className='h-4 w-4' />} label="Fornecedores" active={section==='suppliers'} onClick={()=>setSection('suppliers')} />
-              <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transportadoras" active={section==='carriers'} onClick={()=>setSection('carriers')} />
-            </div>
-            <GroupTitle icon={<Package className="h-3.5 w-3.5" />} label="Produtos" />
+            <GroupTitle icon={<FolderTree className="h-3.5 w-3.5" />} label="Cadastro" onToggle={()=>toggleGroup('cadastro')} isExpanded={!!expandedGroups['cadastro']} />
+            {!!expandedGroups['cadastro'] && (
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                <ErpNavItem icon={<Users className='h-4 w-4' />} label="Clientes" active={section==='clients'} onClick={()=>setSection('clients')} />
+                <ErpNavItem icon={<Users className='h-4 w-4' />} label="Fornecedores" active={section==='suppliers'} onClick={()=>setSection('suppliers')} />
+                <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transportadoras" active={section==='carriers'} onClick={()=>setSection('carriers')} />
+              </div>
+            )}
+            <GroupTitle icon={<Package className="h-3.5 w-3.5" />} label="Produtos" onToggle={()=>toggleGroup('produtos')} isExpanded={!!expandedGroups['produtos']} />
+            {!!expandedGroups['produtos'] && (
               <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
                 {hasPerm('products.manage') && <ErpNavItem icon={<Package className='h-4 w-4' />} label="Gerenciar Produtos" active={section==='products_manage'} onClick={()=>setSection('products_manage')} />}
                 {hasPerm('products.pricing') && <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Valores de Vendas" active={section==='products_pricing'} onClick={()=>setSection('products_pricing')} />}
@@ -242,61 +279,81 @@ export default function Erp() {
                 {hasPerm('products.variations') && <ErpNavItem icon={<Layers className='h-4 w-4' />} label="Grades / Variações" active={section==='product_variations'} onClick={()=>setSection('product_variations')} />}
                 {hasPerm('products.labels') && <ErpNavItem icon={<Tags className='h-4 w-4' />} label="Etiquetas / Códigos" active={section==='product_labels'} onClick={()=>setSection('product_labels')} />}
               </div>
-            <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Kardex do Produto" active={section==='stock'} onClick={()=>setSection('stock')} />
-              <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Inventário" active={section==='inventory'} onClick={()=>setSection('inventory')} />
-              <ErpNavItem icon={<Wrench className='h-4 w-4' />} label="Serviços" active={section==='services'} onClick={()=>setSection('services')} />
-            </div>
-            <GroupTitle icon={<Boxes className="h-3.5 w-3.5" />} label="Estoque" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Movimentações" active={section==='stock_movements'} onClick={()=>setSection('stock_movements')} />
-              <ErpNavItem icon={<RefreshCcw className='h-4 w-4' />} label="Ajustes" active={section==='stock_adjustments'} onClick={()=>setSection('stock_adjustments')} />
-              <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transferências" active={section==='stock_transfers'} onClick={()=>setSection('stock_transfers')} />
-              <ErpNavItem icon={<RotateIcon /> as any} label="Trocas / Devoluções" active={section==='stock_returns'} onClick={()=>setSection('stock_returns')} />
-            </div>
-            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Orçamentos" count={quotesCount} />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Orçamentos" active={section==='budgets'} onClick={()=>setSection('budgets')} />
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Ordens de Serviços" active={section==='service_orders'} onClick={()=>setSection('service_orders')} />
-            </div>
-            <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Vendas" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Vendas" active={section==='sales_orders'} onClick={()=>setSection('sales_orders')} />
-              <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Serviços" active={section==='service_sales_orders'} onClick={()=>setSection('service_sales_orders')} />
-            </div>
-            <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Compras" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Lançamento de Compra" active={section==='purchases_list'} onClick={()=>setSection('purchases_list')} />
-              <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Solicitações de compras" active={section==='purchases_requests'} onClick={()=>setSection('purchases_requests')} badge={purchaseRequestsCount} />
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Gerar via XML" active={section==='purchases_xml'} onClick={()=>setSection('purchases_xml')} />
-              <ErpNavItem icon={<RotateIcon /> as any} label="Troca / Devolução" active={section==='purchases_returns'} onClick={()=>setSection('purchases_returns')} />
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Histórico de Compras" active={section==='purchases_history'} onClick={()=>setSection('purchases_history')} />
-            </div>
-            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Financeiro" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Pagar" active={section==='fin_payables'} onClick={()=>setSection('fin_payables')} />
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Receber" active={section==='fin_receivables'} onClick={()=>setSection('fin_receivables')} />
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Folha de Pagamento" active={section==='fin_payroll'} onClick={()=>setSection('fin_payroll')} />
-            </div>
-            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Notas Fiscais" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Emitir / Gerenciar" active={section==='fiscal_docs'} onClick={()=>setSection('fiscal_docs')} />
-            </div>
-            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Relatórios" />
-            <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Painel (KPIs)" active={section==='reports_dashboard'} onClick={()=>setSection('reports_dashboard')} />
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Estoque completo" active={section==='report_stock_full'} onClick={()=>setSection('report_stock_full')} />
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Vendas completo" active={section==='report_sales_full'} onClick={()=>setSection('report_sales_full')} />
-              <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Financeiro completo" active={section==='report_finance_full'} onClick={()=>setSection('report_finance_full')} />
-            </div>
+            )}
+            <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" onToggle={()=>toggleGroup('operacao')} isExpanded={!!expandedGroups['operacao']} />
+            {!!expandedGroups['operacao'] && (
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Kardex do Produto" active={section==='stock'} onClick={()=>setSection('stock')} />
+                <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Inventário" active={section==='inventory'} onClick={()=>setSection('inventory')} />
+                <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Cadastro de Margens" active={section==='margins'} onClick={()=>setSection('margins')} />
+                <ErpNavItem icon={<Wrench className='h-4 w-4' />} label="Serviços" active={section==='services'} onClick={()=>setSection('services')} />
+              </div>
+            )}
+            <GroupTitle icon={<Boxes className="h-3.5 w-3.5" />} label="Estoque" onToggle={()=>toggleGroup('estoque')} isExpanded={!!expandedGroups['estoque']} />
+            {!!expandedGroups['estoque'] && (
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Movimentações" active={section==='stock_movements'} onClick={()=>setSection('stock_movements')} />
+                <ErpNavItem icon={<RefreshCcw className='h-4 w-4' />} label="Ajustes" active={section==='stock_adjustments'} onClick={()=>setSection('stock_adjustments')} />
+                <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transferências" active={section==='stock_transfers'} onClick={()=>setSection('stock_transfers')} />
+                <ErpNavItem icon={<RotateIcon /> as any} label="Trocas / Devoluções" active={section==='stock_returns'} onClick={()=>setSection('stock_returns')} />
+              </div>
+            )}
+            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Orçamentos" count={quotesCount} onToggle={()=>toggleGroup('orcamentos')} isExpanded={!!expandedGroups['orcamentos']} />
+            {!!expandedGroups['orcamentos'] && (
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Orçamentos" active={section==='budgets'} onClick={()=>setSection('budgets')} />
+                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Ordens de Serviços" active={section==='service_orders'} onClick={()=>setSection('service_orders')} />
+              </div>
+            )}
+            <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Vendas" onToggle={()=>toggleGroup('vendas')} isExpanded={!!expandedGroups['vendas']} />
+            {!!expandedGroups['vendas'] && (
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Vendas" active={section==='sales_orders'} onClick={()=>setSection('sales_orders')} />
+                <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Serviços" active={section==='service_sales_orders'} onClick={()=>setSection('service_sales_orders')} />
+              </div>
+            )}
+            <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Compras" onToggle={()=>toggleGroup('compras')} isExpanded={!!expandedGroups['compras']} />
+            {!!expandedGroups['compras'] && (
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Lançamento de Compra" active={section==='purchases_list'} onClick={()=>setSection('purchases_list')} />
+                <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Solicitações de compras" active={section==='purchases_requests'} onClick={()=>setSection('purchases_requests')} badge={purchaseRequestsCount} />
+                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Gerar via XML" active={section==='purchases_xml'} onClick={()=>setSection('purchases_xml')} />
+                <ErpNavItem icon={<RotateIcon /> as any} label="Troca / Devolução" active={section==='purchases_returns'} onClick={()=>setSection('purchases_returns')} />
+                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Histórico de Compras" active={section==='purchases_history'} onClick={()=>setSection('purchases_history')} />
+              </div>
+            )}
+            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Financeiro" onToggle={()=>toggleGroup('fin')} isExpanded={!!expandedGroups['fin']} />
+            {!!expandedGroups['fin'] && (
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Pagar" active={section==='fin_payables'} onClick={()=>setSection('fin_payables')} />
+                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Receber" active={section==='fin_receivables'} onClick={()=>setSection('fin_receivables')} />
+                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Folha de Pagamento" active={section==='fin_payroll'} onClick={()=>setSection('fin_payroll')} />
+              </div>
+            )}
+            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Notas Fiscais" onToggle={()=>toggleGroup('nf')} isExpanded={!!expandedGroups['nf']} />
+            {!!expandedGroups['nf'] && (
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                <ErpNavItem hideIcon={!!expandedGroups['nf']} icon={<FileText className='h-4 w-4' />} label="Emitir / Gerenciar" active={section==='fiscal_docs'} onClick={()=>setSection('fiscal_docs')} />
+              </div>
+            )}
+            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Relatórios" onToggle={()=>toggleGroup('relatorios')} isExpanded={!!expandedGroups['relatorios']} />
+            {!!expandedGroups['relatorios'] && (
+              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Painel (KPIs)" active={section==='reports_dashboard'} onClick={()=>setSection('reports_dashboard')} />
+                <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Estoque completo" active={section==='report_stock_full'} onClick={()=>setSection('report_stock_full')} />
+                <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Vendas completo" active={section==='report_sales_full'} onClick={()=>setSection('report_sales_full')} />
+                <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Financeiro completo" active={section==='report_finance_full'} onClick={()=>setSection('report_finance_full')} />
+              </div>
+            )}
             {auth?.profile?.role === 'admin' && (
               <>
-                <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Configurações" />
-                <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                  <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Configurações" active={section==='configurations'} onClick={()=>setSection('configurations')} />
-                  <ErpNavItem icon={<Users className='h-4 w-4' />} label="Controle de Acesso" active={section==='access_control'} onClick={()=>setSection('access_control')} />
-                </div>
+                <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Configurações" onToggle={()=>toggleGroup('config')} isExpanded={!!expandedGroups['config']} />
+                {!!expandedGroups['config'] && (
+                  <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                    <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Configurações" active={section==='configurations'} onClick={()=>setSection('configurations')} />
+                    <ErpNavItem icon={<Users className='h-4 w-4' />} label="Controle de Acesso" active={section==='access_control'} onClick={()=>setSection('access_control')} />
+                  </div>
+                )}
               </>
             )}
           </nav>
@@ -304,7 +361,7 @@ export default function Erp() {
             MVP inicial do módulo ERP • Expandir funções posteriormente
           </div>
         </aside>
-          {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-30 md:hidden" onClick={()=>setSidebarOpen(false)} />}
+          {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-30 md:hidden" onClick={closeSidebar} />}
 
         {/* Main content */}
         <main className="flex-1 overflow-auto">
@@ -354,6 +411,7 @@ export default function Erp() {
                   )}
                 </div>
               )}
+              {section === 'margins' && <ErpMargins />}
               {section === 'stock_movements' && <ErpStockMovements />}
               {section === 'services' && <ServicesPlaceholder />}
               {section === 'stock_adjustments' && <ErpStockAdjustments />}
@@ -876,22 +934,22 @@ function ServiceSalesOrdersList(){
 
   }
 
-  function ErpNavItem({ icon, label, active, onClick, badge }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void; badge?: number }) {
+  function ErpNavItem({ icon, label, active, onClick, badge, hideIcon }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void; badge?: number; hideIcon?: boolean }) {
     return (
       <button
         onClick={active ? undefined : onClick}
         disabled={active}
-        className={`w-full flex items-center gap-2 px-2 py-1 rounded-md hover:bg-primary/10 text-left transition-colors ${active ? 'bg-primary/15 text-primary font-medium opacity-60 cursor-default' : 'text-slate-600 dark:text-slate-300'}`}
+        className={`w-full flex items-center gap-2 px-2 py-1 rounded-md hover:bg-primary/10 text-left transition-colors ${active ? 'bg-primary/15 text-primary font-medium opacity-60 cursor-default' : 'text-slate-600 dark:text-slate-300'} ${hideIcon ? 'pl-6' : ''}`}
       >
-        {icon}<span className="truncate">{label}</span>
+        {!hideIcon && icon}<span className="truncate">{label}</span>
         {typeof badge === 'number' && <span className="ml-auto text-[11px] font-medium rounded px-1.5 py-0.5 bg-primary/20 text-primary/90">{badge}</span>}
       </button>
     );
   }
 
-function GroupTitle({ icon, label, count }: { icon: React.ReactNode; label: string; count?: number }) {
+function GroupTitle({ icon, label, count, onToggle, isExpanded }: { icon: React.ReactNode; label: string; count?: number; onToggle?: () => void; isExpanded?: boolean }) {
   return (
-    <div className="mt-5 first:mt-3 mb-1 flex items-center gap-2 px-2 py-1 rounded-md group relative overflow-hidden">
+    <div role={onToggle ? 'button' : undefined} onClick={onToggle} className={`mt-5 first:mt-3 mb-1 flex items-center gap-2 px-2 py-1 rounded-md group relative overflow-hidden ${onToggle ? 'cursor-pointer' : ''}`}>
       <div className="absolute inset-0 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent opacity-70 dark:from-primary/20 dark:via-primary/10 pointer-events-none" />
       <div className="flex items-center gap-2 relative z-10">
         <span className="inline-flex items-center justify-center h-5 w-5 rounded bg-primary/20 text-primary shadow-sm">
@@ -901,7 +959,10 @@ function GroupTitle({ icon, label, count }: { icon: React.ReactNode; label: stri
           {label}
         </span>
       </div>
-      {typeof count === 'number' && <span className="ml-auto relative z-10 text-[10px] font-medium rounded px-1.5 py-0.5 bg-primary/20 text-primary/90">{count}</span>}
+      <div className="ml-auto relative z-10 flex items-center gap-2">
+        {typeof count === 'number' && <span className="text-[10px] font-medium rounded px-1.5 py-0.5 bg-primary/20 text-primary/90">{count}</span>}
+        {onToggle && (isExpanded ? <ChevronDown className="h-4 w-4 text-slate-500" /> : <ChevronRight className="h-4 w-4 text-slate-500" />)}
+      </div>
     </div>
   );
 }

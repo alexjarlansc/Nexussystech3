@@ -20,7 +20,7 @@
     return +(cost * (1 + margin/100)).toFixed(2);
   }
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -76,6 +76,7 @@ export function ErpProducts(){
   const [extendedCols,setExtendedCols]=useState(true); // se false não enviar campos novos
   const [hasCodePrefix, setHasCodePrefix] = useState<boolean|null>(null);
   const [companyId,setCompanyId]=useState<string|undefined>(undefined);
+  const suppliersLoadFailedRef = useRef(false);
 
   type ProductRow = Product & { created_at?: string };
   const load = useCallback(async (pageOverride?: number) => {
@@ -235,21 +236,94 @@ export function ErpProducts(){
   }, [page, debouncedSearch, profile, stockViewColumns, hasCodePrefix]);
   const loadSuppliers = useCallback(async ()=>{
     // carregar fornecedores visíveis para o usuário
-    const { data, error }:{ data: Pick<Supplier,'id'|'name'>[]|null; error: unknown } = await (supabase as unknown as { from: any }).from('suppliers').select('id,name').eq('is_active', true).limit(200);
-    if(!error) {
-      // Filtrar entradas placeholder/importadas que contenham nome 'Fornecedor Padrão'
-      const filtered = (data||[]).filter(s => {
+    // Strategy: try with is_active/company_id (newer schemas); on failure retry with simpler selects
+    async function trySelect(cols: string){
+      return await (supabase as unknown as { from: any }).from('suppliers').select(cols).limit(200);
+    }
+
+    try{
+      let res: any;
+      // tentativa 1: selecionar com is_active (pode não existir em alguns schemas)
+      res = await trySelect('id,name,is_active,company_id');
+      if(res && res.error){
+        if(import.meta.env.DEV) console.warn('[ErpProducts] suppliers select with is_active returned error, will retry without is_active', res.error);
+        // tentativa 2: sem is_active
+        res = await trySelect('id,name,company_id');
+        if(res && res.error){
+          if(import.meta.env.DEV) console.warn('[ErpProducts] suppliers select without is_active returned error, will retry minimal', res.error);
+          // tentativa 3: minimal
+          res = await trySelect('id,name');
+          if(res && res.error){
+            const pretty = (()=>{
+              try{ return JSON.stringify(res.error, Object.getOwnPropertyNames(res.error), 2); }catch(_){ return String(res.error); }
+            })();
+            console.error('[ErpProducts] loadSuppliers - all selects returned errors', pretty);
+            toast.error('Falha ao carregar fornecedores (ver console)');
+            setSuppliers([]);
+            return;
+          }
+        }
+      }
+
+      const { data, error } = res || {};
+      if(error){
+        const pretty = (()=>{
+          try{ return JSON.stringify(error, Object.getOwnPropertyNames(error), 2); }catch(_){ return String(error); }
+        })();
+        if(import.meta.env.DEV) {
+          try{
+            console.warn('[ErpProducts] loadSuppliers error', error, pretty);
+            const keys = Object.getOwnPropertyNames(error || {});
+            const mapped: Record<string, any> = {};
+            keys.forEach(k=> mapped[k] = (error as any)[k]);
+            console.debug('[ErpProducts] loadSuppliers error props:', mapped);
+          }catch(_){ console.warn('[ErpProducts] loadSuppliers error (could not stringify)'); }
+        }
+        if(!suppliersLoadFailedRef.current){
+          suppliersLoadFailedRef.current = true;
+          // tentar extrair campos comuns
+          const anyE = error as any;
+          const status = anyE?.status || anyE?.statusCode || anyE?.code || ''; 
+          const msg = anyE?.message || anyE?.error || anyE?.details || String(anyE) || 'Erro desconhecido';
+          // sugerir diagnóstico de RLS se for permissão
+          if(status === 401 || status === 403) {
+            toast.error('Permissão negada ao carregar fornecedores. Verifique políticas RLS (ver console).');
+          } else {
+            toast.error('Falha ao carregar fornecedores (ver console)');
+          }
+        }
+        setSuppliers([]);
+        return;
+      }
+
+      // Filtrar entradas placeholder/importadas que contenham nome 'Fornecedor Padrão' e aceitar is_active null como ativo
+      if(import.meta.env.DEV){
+        try{ console.debug('[ErpProducts] raw suppliers count=', (data||[]).length, 'sample=', (data||[]).slice(0,10)); }catch(_){ /* ignore debug failure */ }
+      }
+      const filtered = (data||[]).filter((s: any) => {
         try {
+          if(s.is_active === false) return false; // undefined/null => accepted
           const name = String(s.name || '').trim();
           if(!name) return false;
-          if(/^\s*fornecedor padrão\s*$/i.test(name)) return false;
+          if(/^\s*fornecedor padr\xE3o\s*$/i.test(name)) return false;
           if(/^\s*selecione fornecedor\s*$/i.test(name)) return false;
           return true;
-        } catch { return !!s.name; }
+        } catch (e){ if(import.meta.env.DEV) console.warn('loadSuppliers filter err', e); return !!s.name; }
       });
-      setSuppliers(filtered);
+      setSuppliers(filtered as Supplier[]);
+    }catch(e){
+      if(import.meta.env.DEV) console.error('[ErpProducts] loadSuppliers unexpected error', e);
+      toast.error('Erro inesperado ao carregar fornecedores');
+      setSuppliers([]);
     }
   }, []);
+
+  // Recarregar fornecedores quando a company do profile mudar (ex: após criação de fornecedor)
+  useEffect(()=>{
+    try { loadSuppliers(); } catch(_) { /* swallow */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.company_id]);
+
   useEffect(()=>{ load(0); loadSuppliers(); setPage(0); },[load, loadSuppliers]);
 
   // carregar grupos de produto (hierarquia) para os selects em cascata

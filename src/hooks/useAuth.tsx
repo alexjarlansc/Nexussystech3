@@ -116,8 +116,8 @@ export function useAuthInternal() {
     console.log('🔐 Inicializando autenticação...');
     let isMounted = true;
     
-    // Set up auth state listener FIRST
-    let subscription: ReturnType<typeof supabase.auth.onAuthStateChange> | null = null;
+  // Set up auth state listener FIRST
+  let subscription: unknown = null;
     try {
       const subRes = supabase.auth.onAuthStateChange((event, session) => {
         console.log(`🔐 Auth event: ${event}`, session?.user?.email);
@@ -142,8 +142,18 @@ export function useAuthInternal() {
         }
       });
       // subRes may be shaped as { data: { subscription } } in some supabase clients, normalize to subscription
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      subscription = (subRes && (subRes as any).data && (subRes as any).data.subscription) ? (subRes as any).data.subscription : subRes as any;
+      // Use unknown and narrow to avoid no-explicit-any eslint directive
+      const subUnknown = subRes as unknown;
+      if (subUnknown && typeof subUnknown === 'object') {
+        const maybeData = (subUnknown as { data?: unknown }).data;
+        if (maybeData && typeof maybeData === 'object' && 'subscription' in (maybeData as object)) {
+          subscription = (maybeData as { subscription?: unknown }).subscription as unknown;
+        } else {
+          subscription = subRes as unknown;
+        }
+      } else {
+  subscription = subRes as unknown;
+      }
     } catch (e) {
       console.warn('Falha ao registrar auth state listener', e);
     }
@@ -191,16 +201,19 @@ export function useAuthInternal() {
     return () => {
       isMounted = false;
       try {
-        // unsubscribe if available
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const subAny = subscription as any;
-        if (subAny && typeof subAny.unsubscribe === 'function') subAny.unsubscribe();
-        else if (subAny) {
-          // call removeChannel safely (some Supabase SDKs expose removeChannel)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const sbAny = supabase as any;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if (sbAny && typeof sbAny.removeChannel === 'function') sbAny.removeChannel(subAny);
+        // unsubscribe if available (narrow unknown -> any safely)
+        const subCandidate = subscription as unknown;
+        if (subCandidate && typeof subCandidate === 'object') {
+          const subObj = subCandidate as { unsubscribe?: () => void } & Record<string, unknown>;
+          if (typeof subObj.unsubscribe === 'function') {
+            subObj.unsubscribe();
+          } else {
+            const sbCandidate = supabase as unknown;
+            if (sbCandidate && typeof sbCandidate === 'object') {
+              const sbObj = sbCandidate as { removeChannel?: (c: unknown) => void } & Record<string, unknown>;
+              if (typeof sbObj.removeChannel === 'function') sbObj.removeChannel(subCandidate);
+            }
+          }
         }
       } catch (e) { /* noop */ }
       try { window.removeEventListener('erp:reload-profile', reloadHandler as EventListener); } catch (e) { /* noop */ }

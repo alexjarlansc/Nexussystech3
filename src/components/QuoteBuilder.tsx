@@ -9,6 +9,7 @@ import { ClientPicker } from '@/components/ClientPicker';
 import { ErpClients } from '@/components/erp/ErpClients';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/sonner';
 import { Client, Product, Quote, QuoteItemSnapshot, QuoteStatus, QuoteType, PaymentMethod, Vendor, CompanyInfo } from '@/types';
 import { StorageKeys, getString } from '@/utils/storage'; // StorageKeys mantido para compat mas não usado na numeração
@@ -565,18 +566,30 @@ export default function QuoteBuilder() {
       toast.error('Apenas administradores podem excluir orçamentos.');
       return;
     }
-    const pwd = prompt('Digite a senha para excluir (reikar2025)');
-    if (pwd === null) return;
-    if (pwd !== 'reikar2025') {
-      toast.error('Senha incorreta');
+    // abrir modal de confirmação em vez de prompt de senha
+    setPendingDeleteId(id);
+  }
+
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  async function confirmDeletePending() {
+    if (!pendingDeleteId) return;
+    if (profile?.role !== 'admin') {
+      toast.error('Apenas administradores podem excluir orçamentos.');
+      setPendingDeleteId(null);
       return;
     }
-    const { error } = await supabase.from('quotes').delete().eq('id', id);
+    const { error } = await supabase.from('quotes').delete().eq('id', pendingDeleteId);
     if (error) {
-      toast.error('Erro ao excluir orçamento: ' + error.message);
+      // evitar cast any para satisfazer linter/types
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const msg = (error && typeof error === 'object' && 'message' in (error as any)) ? (error as any).message : String(error);
+      toast.error('Erro ao excluir orçamento: ' + (msg || 'desconhecido'));
+      setPendingDeleteId(null);
       return;
     }
     toast.success('Registro excluído');
+    setPendingDeleteId(null);
     fetchQuotes();
   }
 
@@ -1815,6 +1828,20 @@ export default function QuoteBuilder() {
           })()}
         </DialogContent>
       </Dialog>
+    
+      {/* Confirmar exclusão de orçamento */}
+      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => { if (!open) setPendingDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir orçamento?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingDeleteId(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => confirmDeletePending()}>Excluir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </main>
   );
 }
