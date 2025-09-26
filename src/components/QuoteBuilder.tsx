@@ -1919,7 +1919,7 @@ function SearchProductModal({
       {/* margin selector (optional) */}
       {margins.length > 0 && (
         <div className="mb-2">
-          <Label>Margem</Label>
+          <Label>Frete %</Label>
           <Select onValueChange={(v)=> setSelectedMarginId(v === 'none' ? null : v)} value={selectedMarginId ?? undefined}>
             <SelectTrigger className="w-full h-8 text-sm">
               <SelectValue placeholder="Nenhuma" />
@@ -1932,7 +1932,7 @@ function SearchProductModal({
             </SelectContent>
           </Select>
           {!selectedMarginId && (
-            <div className="text-xs text-amber-600 mt-1">Selecione uma margem para habilitar a adição de produtos (os preços serão calculados a partir do custo médio).</div>
+            <div className="text-xs text-amber-600 mt-1">Selecione um frete para habilitar a adição de produtos (os preços serão calculados a partir do custo médio).</div>
           )}
         </div>
       )}
@@ -2005,7 +2005,7 @@ function SearchProductModal({
                     size="sm"
                     className="h-8 w-full"
                     disabled={!selectedMarginId || lowStock}
-                    title={!selectedMarginId ? 'Selecione uma margem antes de adicionar' : (lowStock ? 'Sem disponibilidade' : 'Adicionar produto')}
+                    title={!selectedMarginId ? 'Selecione um frete antes de adicionar' : (lowStock ? 'Sem disponibilidade' : 'Adicionar produto')}
                     onClick={() => {
                       if(!selectedMarginId) return; // safety
                       const margin = margins.find(m => m.id === selectedMarginId) || undefined;

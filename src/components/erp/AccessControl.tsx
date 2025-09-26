@@ -35,7 +35,7 @@ const PERMISSIONS_TREE: PermNode[] = [
     label: 'PRODUTOS',
     children: [
       { id: 'produtos.manage', label: 'Gerenciar Produtos', perm: 'products.manage' },
-      { id: 'produtos.pricing', label: 'Valores de Vendas', perm: 'products.pricing' },
+  { id: 'produtos.pricing', label: 'Custo e Imposto', perm: 'products.pricing' },
       { id: 'produtos.groups', label: 'Grupos de Produtos', perm: 'products.groups' },
       { id: 'produtos.units', label: 'Unidades', perm: 'products.units' },
       { id: 'produtos.variations', label: 'Grades / Variações', perm: 'products.variations' },

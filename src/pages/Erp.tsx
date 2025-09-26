@@ -273,7 +273,7 @@ export default function Erp() {
             {!!expandedGroups['produtos'] && (
               <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
                 {hasPerm('products.manage') && <ErpNavItem icon={<Package className='h-4 w-4' />} label="Gerenciar Produtos" active={section==='products_manage'} onClick={()=>setSection('products_manage')} />}
-                {hasPerm('products.pricing') && <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Valores de Vendas" active={section==='products_pricing'} onClick={()=>setSection('products_pricing')} />}
+                {hasPerm('products.pricing') && <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Custo e Imposto" active={section==='products_pricing'} onClick={()=>setSection('products_pricing')} />}
                 {hasPerm('products.groups') && <ErpNavItem icon={<FolderTree className='h-4 w-4' />} label="Grupos de Produtos" active={section==='product_groups'} onClick={()=>setSection('product_groups')} />}
                 {hasPerm('products.units') && <ErpNavItem icon={<Ruler className='h-4 w-4' />} label="Unidades" active={section==='product_units'} onClick={()=>setSection('product_units')} />}
                 {hasPerm('products.variations') && <ErpNavItem icon={<Layers className='h-4 w-4' />} label="Grades / Variações" active={section==='product_variations'} onClick={()=>setSection('product_variations')} />}
@@ -464,7 +464,7 @@ export default function Erp() {
                       <div className="h-10 w-10 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center">
                         <Percent className="h-5 w-5" />
                       </div>
-                      <div className="text-sm font-medium">Valores de Vendas</div>
+                      <div className="text-sm font-medium">Custo e Imposto</div>
                       <div className="text-xs text-muted-foreground">Configurações de preços e tabelas.</div>
                     </button>
 
@@ -1198,7 +1198,7 @@ function ProductsPricingPlaceholder(){
   }
   return <Card className="p-6 space-y-4">
     <header className="space-y-1">
-      <h2 className="text-xl font-semibold">Valores de Vendas</h2>
+  <h2 className="text-xl font-semibold">Custo e Imposto</h2>
       <p className="text-sm text-muted-foreground">Calcule preço final a partir de custo, margem e tributação ou derive margem a partir do preço.</p>
     </header>
     <div className="flex flex-wrap gap-2 items-end text-xs">
