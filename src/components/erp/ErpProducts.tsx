@@ -26,6 +26,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/sonner';
@@ -966,24 +967,24 @@ export function ErpProducts(){
                   inputMode="decimal"
                   readOnly disabled className="bg-gray-50/60"
                 />
-                {/* seletor rápido de margens */}
-                <div className="relative">
-                  <button type="button" className="h-9 px-2 border rounded bg-white text-sm" title="Selecionar margem">
-                    Margens
-                  </button>
-                  <div className="absolute right-0 mt-1 w-56 bg-white border rounded shadow max-h-48 overflow-auto z-50">
-                    {marginsLoading && <div className="p-2 text-sm text-muted-foreground">Carregando...</div>}
-                    {!marginsLoading && margins.length===0 && <div className="p-2 text-sm text-muted-foreground">Nenhuma margem cadastrada</div>}
-                    {!marginsLoading && margins.map(m=> (
-                      <div key={m.id} className="p-2 hover:bg-muted/30 cursor-pointer text-sm" onClick={()=>{
-                        setForm(f=>{
-                          const cost = f.cost_price ?? 0;
-                          const newMargin = Number(m.percent);
-                          return { ...f, margin: newMargin, sale_price: calcSalePrice(cost, newMargin) };
-                        });
-                      }}>{m.name} — {String(m.percent)}%</div>
-                    ))}
-                  </div>
+                <div className="w-56">
+                  <Select onValueChange={(val) => {
+                    if(val === 'none') { setForm(f=>({...f, margin: undefined })); return; }
+                    const sel = margins.find(x=>x.id===val);
+                    if(sel) setForm(f=>{
+                      const cost = f.cost_price ?? 0;
+                      const newMargin = Number(sel.percent);
+                      return { ...f, margin: newMargin, sale_price: calcSalePrice(cost, newMargin) };
+                    });
+                  }}>
+                    <SelectTrigger className="w-full h-9 text-sm"><SelectValue placeholder="Margens" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Nenhuma</SelectItem>
+                      {margins.map(m => (
+                        <SelectItem key={m.id} value={m.id}>{m.name} — {m.percent}%</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <Input placeholder="Prazo Pagamento" value={form.payment_terms||''} onChange={e=>setForm(f=>({...f,payment_terms:e.target.value}))} readOnly disabled className="bg-gray-50/60" />
