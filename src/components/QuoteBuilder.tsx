@@ -155,9 +155,28 @@ export default function QuoteBuilder() {
     window.addEventListener('erp:client-created', onCreated as EventListener);
     return () => window.removeEventListener('erp:client-created', onCreated as EventListener);
   }, []);
+  // carregar margens visíveis para o usuário/empresa
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const q = (supabase as any).from('margins').select('*').order('created_at', { ascending: false });
+        const { data, error } = await q;
+        if (!mounted) return;
+        if (error) return;
+  const arr = (data || []).map((m: unknown) => { const mm = m as { id: string; name: string; percent: number }; return { id: mm.id, name: mm.name, percent: Number(mm.percent) }; });
+        setMargins(arr);
+      } catch (e) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
   // (types declared at module scope)
   const [products, setProducts] = useState<ProductWithStock[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [margins, setMargins] = useState<{ id: string; name: string; percent: number }[]>([]);
 
   const [clientId, setClientId] = useState<string>('');
   const [items, setItems] = useState<QuoteItemSnapshot[]>([]);
