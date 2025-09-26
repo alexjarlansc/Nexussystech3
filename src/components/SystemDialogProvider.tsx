@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
@@ -22,26 +22,33 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
   const [msgPending, setMsgPending] = useState<SysMessageDetail | null>(null);
 
   useEffect(()=>{
+    // Use refs to avoid re-registering listeners when `open` changes
+    const openRef = { current: open } as { current: boolean };
+    const deferredTimer = { current: 0 } as { current: number | null };
+    const autoCloseTimer = { current: 0 } as { current: number | null };
+
     function handler(e: Event){
       const ce = e as CustomEvent<SysConfirmDetail>;
       console.debug('[SystemDialogProvider] received system:confirm', ce.detail);
       setPending(ce.detail);
       setOpen(true);
     }
-    window.addEventListener('system:confirm', handler as EventListener);
+
     function msgHandler(e: Event){
       const ce = e as CustomEvent<SysMessageDetail>;
       console.debug('[SystemDialogProvider] received system:message', ce.detail);
       // If a confirm dialog is currently open, defer showing the message until after it closes
-      if(open){
+      if(openRef.current){
         console.debug('[SystemDialogProvider] deferring system:message until confirm closed');
         setMsgPending(ce.detail);
-        // show shortly after confirm is closed to avoid z-index/portal conflicts
-        setTimeout(()=>{
+        // clear any existing deferred timer
+        if(deferredTimer.current) { clearTimeout(deferredTimer.current); deferredTimer.current = null; }
+        deferredTimer.current = window.setTimeout(()=>{
           setMsgOpen(true);
           // auto-close if duration provided
           if(ce.detail?.durationMs && typeof ce.detail.durationMs === 'number'){
-            setTimeout(()=>{ setMsgOpen(false); setMsgPending(null); }, ce.detail.durationMs);
+            if(autoCloseTimer.current) { clearTimeout(autoCloseTimer.current); }
+            autoCloseTimer.current = window.setTimeout(()=>{ setMsgOpen(false); setMsgPending(null); }, ce.detail.durationMs);
           }
         }, 180);
         return;
@@ -50,15 +57,27 @@ export default function SystemDialogProvider({ children }: { children: React.Rea
       setMsgOpen(true);
       // auto-close if duration provided
       if(ce.detail?.durationMs && typeof ce.detail.durationMs === 'number'){
-        setTimeout(()=>{ setMsgOpen(false); setMsgPending(null); }, ce.detail.durationMs);
+        if(autoCloseTimer.current) { clearTimeout(autoCloseTimer.current); }
+        autoCloseTimer.current = window.setTimeout(()=>{ setMsgOpen(false); setMsgPending(null); }, ce.detail.durationMs);
       }
     }
+
+    window.addEventListener('system:confirm', handler as EventListener);
     window.addEventListener('system:message', msgHandler as EventListener);
+
     return ()=>{
       window.removeEventListener('system:confirm', handler as EventListener);
       window.removeEventListener('system:message', msgHandler as EventListener);
+      if(deferredTimer.current) { clearTimeout(deferredTimer.current); }
+      if(autoCloseTimer.current) { clearTimeout(autoCloseTimer.current); }
     };
-  },[open]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep a ref in sync with the `open` state so handlers can check it without re-registering
+  // This effect intentionally runs when `open` changes and keeps a stable ref for listeners
+  const openStateRef = useRef(open);
+  useEffect(()=>{ openStateRef.current = open; }, [open]);
 
   function reply(result: boolean){
     console.debug('[SystemDialogProvider] reply', { id: pending?.id, ok: result });

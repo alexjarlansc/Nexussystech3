@@ -117,16 +117,17 @@ export function useAuthInternal() {
     let isMounted = true;
     
     // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+    let subscription: ReturnType<typeof supabase.auth.onAuthStateChange> | null = null;
+    try {
+      const subRes = supabase.auth.onAuthStateChange((event, session) => {
         console.log(`🔐 Auth event: ${event}`, session?.user?.email);
-        
+
         if (!isMounted) return;
-        
+
         setSession(session);
         setUser(session?.user ?? null);
         setError(null);
-        
+
         if (session?.user) {
           // Defer data fetching to prevent deadlocks
           setTimeout(() => {
@@ -139,29 +140,96 @@ export function useAuthInternal() {
           setCompany(null);
           setLoading(false);
         }
-      }
-    );
+      });
+      // subRes may be shaped as { data: { subscription } } in some supabase clients, normalize to subscription
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      subscription = (subRes && (subRes as any).data && (subRes as any).data.subscription) ? (subRes as any).data.subscription : subRes as any;
+    } catch (e) {
+      console.warn('Falha ao registrar auth state listener', e);
+    }
 
-    // THEN check for existing session
+    // THEN check for existing session with timeout fallback
+    let sessionLoaded = false;
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!isMounted) return;
-      
+      sessionLoaded = true;
       console.log('🔐 Sessão inicial:', session?.user?.email);
       setSession(session);
       setUser(session?.user ?? null);
-      
+
       if (session?.user) {
         loadUserData(session.user.id);
       } else {
         setLoading(false);
       }
+    }).catch((err) => {
+      console.warn('Falha ao obter sessão inicial', err);
+      if (!isMounted) setLoading(false);
     });
+
+    // Fallback: se a sessão não for carregada em 5s, limpar loading para evitar spinner preso
+    const fallback = setTimeout(()=>{
+      if (!sessionLoaded && isMounted) {
+        console.warn('Sessão inicial não carregou em tempo — aplicando fallback para evitar loading travado');
+        setLoading(false);
+      }
+    }, 5000);
+
+    // Also allow manual reload via window event for environments without realtime
+    const reloadHandler = () => {
+      try {
+        if (session?.user) {
+          console.log('Manual profile reload triggered');
+          loadUserData(session.user.id);
+        }
+      } catch (e) {
+        console.warn('erp:reload-profile handler failed', e);
+      }
+    };
+    window.addEventListener('erp:reload-profile', reloadHandler as EventListener);
 
     return () => {
       isMounted = false;
-      subscription.unsubscribe();
+      try {
+        // unsubscribe if available
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const subAny = subscription as any;
+        if (subAny && typeof subAny.unsubscribe === 'function') subAny.unsubscribe();
+        else if (subAny) {
+          // call removeChannel safely (some Supabase SDKs expose removeChannel)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sbAny = supabase as any;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (sbAny && typeof sbAny.removeChannel === 'function') sbAny.removeChannel(subAny);
+        }
+      } catch (e) { /* noop */ }
+      try { window.removeEventListener('erp:reload-profile', reloadHandler as EventListener); } catch (e) { /* noop */ }
+      clearTimeout(fallback);
     };
+  // We intentionally only depend on loadUserData here; other values are read dynamically.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadUserData]);
+
+  // Separate effect: subscribe to realtime profile updates for the logged in user so permission changes propagate
+  useEffect(() => {
+    if (!session?.user) return;
+    let profileChannel: unknown = null;
+    try {
+      const client = supabase as unknown as { channel: (name: string) => { on: (event: string, opts: unknown, handler: (payload: unknown) => void) => { subscribe: () => unknown } } };
+      profileChannel = client.channel(`profile-updates-${session.user.id}`).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${session.user.id}` }, (payload: unknown) => {
+        console.log('🔁 Perfil atualizado via realtime:', payload);
+        // Reload full profile data
+        loadUserData(session.user.id);
+      }).subscribe();
+    } catch (e) {
+      console.warn('Não foi possível assinar updates de perfil (separate effect):', e);
+    }
+
+    return () => {
+      try { const remover = supabase as unknown as { removeChannel?: (c: unknown) => void }; if (remover.removeChannel && profileChannel) remover.removeChannel(profileChannel); } catch (e) { /* noop */ }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id, loadUserData]);
 
   // loadUserData redefinido acima
 

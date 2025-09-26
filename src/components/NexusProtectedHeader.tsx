@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -73,6 +73,10 @@ export function NexusProtectedHeader() {
   }, []);
 
   // Listen to global event to open company modal from other pages (ERP)
+  // Use refs to keep a stable listener and access latest company state without re-registering
+  const companyRef = useRef(company);
+  useEffect(() => { companyRef.current = company; }, [company]);
+
   useEffect(() => {
     const handler = (ev?: Event) => {
       try {
@@ -88,12 +92,13 @@ export function NexusProtectedHeader() {
           setLogoDataUrl(undefined);
           setIsCreatingCompany(true);
         } else {
-          // Open for editing current company
-          setCompanyName(company?.name || '');
-          setCnpjCpf(company?.cnpj_cpf || '');
-          setCompanyPhone(company?.phone || '');
-          setCompanyEmail(company?.email || '');
-          setAddress(company?.address || '');
+          // Open for editing current company - read from ref to avoid effect re-registration
+          const current = companyRef.current;
+          setCompanyName(current?.name || '');
+          setCnpjCpf(current?.cnpj_cpf || '');
+          setCompanyPhone(current?.phone || '');
+          setCompanyEmail(current?.email || '');
+          setAddress(current?.address || '');
           setIsCreatingCompany(false);
         }
         setOpenCompany(true);
@@ -103,7 +108,7 @@ export function NexusProtectedHeader() {
     };
     window.addEventListener('erp:open-company-modal', handler as EventListener);
     return () => window.removeEventListener('erp:open-company-modal', handler as EventListener);
-  }, [company]);
+  }, []);
 
   // Listen to event to open invite codes modal from ERP
   // NOTE: moved lower in the file so it can reference memoized helpers (see below)
@@ -268,17 +273,20 @@ export function NexusProtectedHeader() {
   }, [loadInviteCodes, loadCompaniesForInvite]);
 
   // Listen to event to open invite codes modal from ERP (placed after helpers)
+  // Register a single stable listener that calls the latest openInviteModal via ref
+  const openInviteModalRef = useRef(openInviteModal);
+  useEffect(() => { openInviteModalRef.current = openInviteModal; }, [openInviteModal]);
   useEffect(() => {
     const handler = () => {
       try {
-        openInviteModal();
+        openInviteModalRef.current?.();
       } catch (e) {
         console.error('Failed to open invite modal via event', e);
       }
     };
     window.addEventListener('erp:open-invite-modal', handler as EventListener);
     return () => window.removeEventListener('erp:open-invite-modal', handler as EventListener);
-  }, [openInviteModal]);
+  }, []);
 
   // Ensure companies are loaded when the invite modal opens or when the search changes
   useEffect(() => {

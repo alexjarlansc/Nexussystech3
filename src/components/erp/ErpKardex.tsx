@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -38,19 +38,15 @@ export default function ErpKardex(){
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'consulta'|'relatorios'>('consulta');
 
-  useEffect(()=>{
-    (async ()=>{ await loadProducts(); await loadMovements(); })();
-  }, []);
-
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     try{
   const { data, error } = await sbFrom('products', 'id,code,name,unit,stock_min,stock_max');
       if(error) throw error;
       setProducts((data as { id: string; name?: string }[]) || []);
     }catch(err: unknown){ if(import.meta.env.DEV) console.warn('ErpKardex loadProducts', err); }
-  }
+  }, []);
 
-  const loadMovements = async () => {
+  const loadMovements = useCallback(async () => {
     setLoading(true);
     try{
   // consultas mais complexas usam client supabase diretamente
@@ -65,7 +61,12 @@ export default function ErpKardex(){
       setMovements(data || []);
   }catch(err: unknown){ if(import.meta.env.DEV) console.error('ErpKardex loadMovements', err); toast.error('Falha ao carregar movimentos'); }
     finally{ setLoading(false); }
-  }
+  }, [productFilter, typeFilter, fromDate, toDate]);
+
+  useEffect(()=>{
+    (async ()=>{ await loadProducts(); await loadMovements(); })();
+  }, [loadProducts, loadMovements]);
+
 
   const rowsWithBalance = useMemo(()=>{
     // calcula saldo cumulativo por produto

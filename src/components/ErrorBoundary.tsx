@@ -72,10 +72,7 @@ export class ErrorBoundary extends Component<Props, State> {
       console.debug('ErrorBoundary: failed to patch removeChild', e);
     }
   }
-  public componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught', error);
-    this.setState({ hasError: true });
-  }
+  // NOTE: a rich diagnostics implementation is above; ensure we don't duplicate the method.
 
   private handleReload = () => {
     // Clear any corrupted auth state

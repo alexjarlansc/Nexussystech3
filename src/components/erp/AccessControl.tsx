@@ -182,18 +182,105 @@ export default function AccessControl() {
 
   const savePermissions = async (row: ProfileRow) => {
     try {
+      if (!row) {
+        toast.error('Nenhum usuário selecionado para salvar.');
+        return;
+      }
       if (row.role === 'admin') {
         toast.info('Usuário é administrador — permissões globais não serão alteradas via este painel.');
         return;
       }
-      const payload = { permissions: Array.isArray(row.permissions) ? row.permissions : [] };
-      const { error } = await supabase
-        .from('profiles')
-        .update(payload as unknown as Record<string, unknown>)
-        .eq('id', row.id);
-      if (error) throw error;
-      toast.success('Permissões atualizadas');
-      await loadUsers();
+
+      // Coerce permissions to an array of strings to avoid odd types being sent
+      const permissionsPayload = Array.isArray(row.permissions) ? row.permissions.map(p => String(p)) : [];
+      console.log('Saving permissions for user_id=', row.user_id, 'role=', row.role, 'raw permissions:', row.permissions, '-> payload:', permissionsPayload);
+
+      // If admin is trying to save an empty permission set, confirm to avoid accidental wipe
+      if (permissionsPayload.length === 0) {
+        const ok = window.confirm('Você está prestes a salvar SEM permissões para este usuário — isto removerá todas as permissões. Deseja continuar?');
+        if (!ok) {
+          toast.info('Operação cancelada — sem alterações.');
+          return;
+        }
+      }
+      // Try RPC first (safer under RLS). If not present or fails, fallback to direct UPDATE.
+  let data: unknown = null;
+  let error: unknown = null;
+      try {
+        // Note: the RPC expects parameter name `target_id` (not target_user_id) and a jsonb value for perms.
+        console.log('Calling admin_update_permissions RPC for', row.user_id, 'rpc args:', { target_id: row.user_id, perms: permissionsPayload });
+  const rpcRes = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: row.user_id, perms: permissionsPayload });
+  // supabase.rpc returns { data, error }
+  console.log('admin_update_permissions RPC raw response:', rpcRes);
+  data = rpcRes?.data;
+  error = rpcRes?.error;
+        if (error) throw error;
+      } catch (rpcErr) {
+        console.warn('admin_update_permissions RPC failed, falling back to direct update. RPC error:', rpcErr);
+        try {
+          console.log('Attempting direct update to profiles.permissions for', row.user_id, 'with payload:', permissionsPayload);
+          console.log('Running supabase.from("profiles").update(...)');
+          const upd = await supabase
+            .from('profiles')
+            .update({ permissions: permissionsPayload } as unknown as Record<string, unknown>)
+            // Try matching both user_id and id to handle records where profile.user_id may be null or
+            // some environments use id instead of user_id. This increases resiliency of the fallback.
+            .or(`user_id.eq.${row.user_id},id.eq.${row.user_id}`)
+            .select('id,user_id,permissions')
+            .maybeSingle();
+          console.log('Direct update raw response:', upd);
+          data = upd.data;
+          error = upd.error;
+          if (error) throw error;
+        } catch (updErr) {
+          console.error('Direct update fallback failed:', updErr);
+          throw updErr;
+        }
+      }
+
+      if (error) {
+        console.error('Erro ao salvar permissões (supabase):', error);
+        throw error;
+      }
+
+      // If supabase returned the updated row, sync local state instead of forcing a reload
+      if (data) {
+        const updated = data as Partial<ProfileRow>;
+        setUsers(prev => prev.map(p => p.user_id === updated.user_id ? { ...p, permissions: Array.isArray(updated.permissions) ? updated.permissions : [] } : p));
+        setSelectedUser(prev => prev && prev.user_id === updated.user_id ? { ...prev, permissions: Array.isArray(updated.permissions) ? updated.permissions : [] } : prev);
+      } else {
+        // fallback: update local state with what we tried to save
+        setUsers(prev => prev.map(p => p.user_id === row.user_id ? { ...p, permissions: permissionsPayload } : p));
+        setSelectedUser(prev => prev && prev.user_id === row.user_id ? { ...prev, permissions: permissionsPayload } : prev);
+      }
+
+      // Reload from DB to ensure we reflect authoritative state (covers cases where RLS/trigger may modify row)
+      try { await loadUsers(); } catch (_) { /* ignore */ }
+
+      // Extra diagnostic: fetch the single profile row and log it so admin can inspect exactly what was saved
+      try {
+        const { data: probeData, error: probeErr } = await supabase.from('profiles').select('id,user_id,permissions').eq('user_id', row.user_id).maybeSingle();
+        if (probeErr) console.warn('probe select after save returned error', probeErr);
+        console.log('Profiles probe after save:', probeData);
+        if (probeData) {
+          const perms = (probeData as unknown as { permissions?: unknown }).permissions;
+          if (Array.isArray(perms)) {
+            if (perms.length === 0) {
+              toast.error('Aviso: após salvar, a coluna `permissions` está vazia. Verifique políticas RLS, triggers ou formato do payload.');
+              console.warn('Saved permissions are empty for user', row.user_id, probeData);
+            } else {
+              toast.success(`Permissões salvas: ${perms.length} itens`);
+            }
+          } else {
+            toast.success('Permissões atualizadas (verifique console para detalhes)');
+          }
+        } else {
+          toast.success('Permissões atualizadas (verifique console para detalhes)');
+        }
+      } catch (probeEx) {
+        console.warn('Probe select exception', probeEx);
+        toast.success('Permissões atualizadas (probe falhou, verifique console)');
+      }
     } catch (err) {
       const e = err as Error | { message?: string } | null;
       console.error('Erro ao salvar permissões:', e);
@@ -215,6 +302,8 @@ export default function AccessControl() {
     if (idx === -1) current.push(perm);
     else current.splice(idx, 1);
     setUsers(prev => prev.map(p => p.id === u.id ? { ...p, permissions: current } : p));
+    // If we have the modal open and this is the selected user, sync selectedUser so checkboxes in modal update
+    setSelectedUser(prev => (prev && prev.id === u.id ? { ...prev, permissions: current } : prev));
   };
 
   // expanded nodes for tree UI, scoped per user id
