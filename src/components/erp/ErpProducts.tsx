@@ -504,7 +504,7 @@ export function ErpProducts(){
         payload.company_id = companyId;
       }
       if(!extendedCols){
-        const allowed = ['name','description','price','sale_price','status'];
+        const allowed = ['name','description','price','sale_price','status','default_supplier_id'];
         if(hasCodePrefix) allowed.push('code_prefix');
         Object.keys(payload).forEach(k=>{ if(!allowed.includes(k)) delete payload[k]; });
         if(profile && profile.role !== 'admin' && profile.company_id) payload.company_id = profile.company_id; // garantir
