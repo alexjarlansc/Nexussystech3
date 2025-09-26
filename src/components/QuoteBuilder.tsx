@@ -1254,7 +1254,7 @@ export default function QuoteBuilder() {
                           )}
                         </div>
                       </div>
-                      <div className="col-span-2 text-right">
+                      <div className="col-span-1 text-right">
                         <Input
                           type="number"
                           min={1}
