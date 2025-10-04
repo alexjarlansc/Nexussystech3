@@ -325,7 +325,7 @@ export function NexusProtectedHeader() {
                 <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0 transition-transform group-hover:scale-105" />
               ) }
               <div className="leading-tight min-w-0">
-                <h1 className="font-bold text-primary text-lg sm:text-xl tracking-tight group-hover:opacity-90">Nexus System</h1>
+                <h1 className="font-bold text-primary text-lg sm:text-xl tracking-tight group-hover:opacity-90">Nexus Systech</h1>
                 <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px] group-hover:text-primary/80 transition-colors">
                   {company?.name || 'Início'}
                 </p>

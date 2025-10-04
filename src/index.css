@@ -11,9 +11,9 @@ All colors MUST be HSL.
 @layer base {
   :root {
     /* Brand palette (HSL) */
-    --brand-1: 187 83% 14%; /* #063940 - deep teal */
-    --brand-2: 184 60% 24%; /* #195e63 - primary */
-    --brand-3: 187 39% 40%; /* #3e838c - secondary */
+    --brand-1: 270 93% 30%; /* #4e0792 - deep purple base */
+    --brand-2: 270 93% 30%; /* #4e0792 - primary */
+    --brand-3: 270 60% 50%; /* accent purple */
     --brand-sand: 44 52% 85%; /* #ece1c3 - sand */
 
     /* App surfaces */
@@ -43,14 +43,14 @@ All colors MUST be HSL.
 
     --border: 210 20% 88%;
     --input: 210 20% 88%;
-    --ring: var(--brand-2);
+  --ring: var(--brand-2);
 
     --radius: 0.75rem;
 
     /* Sidebar tokens */
     --sidebar-background: 44 52% 96%;
     --sidebar-foreground: var(--brand-1);
-    --sidebar-primary: var(--brand-2);
+  --sidebar-primary: var(--brand-2);
     --sidebar-primary-foreground: 0 0% 98%;
     --sidebar-accent: 44 52% 92%;
     --sidebar-accent-foreground: var(--brand-1);
@@ -58,8 +58,8 @@ All colors MUST be HSL.
     --sidebar-ring: var(--brand-3);
 
     /* Motion + effects */
-    --shadow-elev: 0 10px 30px -10px hsl(var(--brand-2) / 0.25);
-    --shadow-glow: 0 0 40px hsl(var(--brand-3) / 0.25);
+  --shadow-elev: 0 10px 30px -10px hsl(var(--brand-2) / 0.25);
+  --shadow-glow: 0 0 40px hsl(var(--brand-3) / 0.25);
   }
 
   .dark {
@@ -72,10 +72,10 @@ All colors MUST be HSL.
     --popover: 222.2 84% 8%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 187 39% 62%;
+  --primary: 270 70% 60%;
     --primary-foreground: 222.2 47.4% 11.2%;
 
-    --secondary: 187 39% 30%;
+  --secondary: 270 50% 40%;
     --secondary-foreground: 210 40% 98%;
 
     --muted: 217.2 32.6% 17.5%;
@@ -89,16 +89,16 @@ All colors MUST be HSL.
 
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 187 39% 62%;
+  --ring: 270 70% 60%;
 
     --sidebar-background: 222.2 84% 6%;
     --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 187 39% 50%;
+  --sidebar-primary: 270 60% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 217.2 32.6% 17.5%;
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 217.2 32.6% 17.5%;
-    --sidebar-ring: 187 39% 62%;
+  --sidebar-ring: 270 70% 60%;
   }
 }
 

@@ -208,10 +208,14 @@ export default function AccessControl() {
       // Try RPC first (safer under RLS). If not present or fails, fallback to direct UPDATE.
   let data: unknown = null;
   let error: unknown = null;
+  // capture inner errors for debug modal (avoid referencing undefined identifiers)
+  let rpcErrVar: unknown = null;
+  let updErrVar: unknown = null;
   try {
-        // Note: the RPC expects parameter name `target_id` (not target_user_id) and a jsonb value for perms.
-        console.log('Calling admin_update_permissions RPC for', row.user_id, 'rpc args:', { target_id: row.user_id, perms: permissionsPayload });
-        const rpcRes = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: row.user_id, perms: permissionsPayload });
+  // Note: the RPC expects parameter name `target_id` (not target_user_id) and a jsonb value for perms.
+  const targetId = row.id || row.user_id;
+  console.log('Calling admin_update_permissions RPC for', targetId, 'rpc args:', { target_id: targetId, perms: permissionsPayload });
+  const rpcRes = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: permissionsPayload });
         // supabase.rpc returns { data, error }
         console.log('admin_update_permissions RPC raw response:', rpcRes);
         data = rpcRes?.data;
@@ -220,7 +224,7 @@ export default function AccessControl() {
           // Some RPCs expect a JSON string for jsonb args; retry once with stringified payload
           console.warn('RPC returned error, retrying with stringified perms...', error);
           try {
-            const rpcRes2 = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: row.user_id, perms: JSON.stringify(permissionsPayload) });
+            const rpcRes2 = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: JSON.stringify(permissionsPayload) });
             console.log('admin_update_permissions RPC retry raw response:', rpcRes2);
             data = rpcRes2?.data;
             error = rpcRes2?.error;
@@ -230,7 +234,8 @@ export default function AccessControl() {
           }
         }
       } catch (rpcErr) {
-        console.warn('admin_update_permissions RPC failed, falling back to direct update. RPC error:', rpcErr);
+        rpcErrVar = rpcErr;
+        console.warn('admin_update_permissions RPC failed, falling back to direct update. RPC error:', rpcErrVar);
         try {
           console.log('Attempting direct update to profiles.permissions for', row.user_id, 'with payload:', permissionsPayload);
           // Try explicit update by user_id first
@@ -254,16 +259,17 @@ export default function AccessControl() {
           data = upd.data;
           error = upd.error;
           if (error) throw error;
-        } catch (updErr) {
-          console.error('Direct update fallback failed:', updErr);
-          throw updErr;
-        }
+          } catch (updErr) {
+            updErrVar = updErr;
+            console.error('Direct update fallback failed:', updErrVar);
+            throw updErrVar;
+          }
       }
 
         if (error) {
           console.error('Erro ao salvar permissões (supabase):', error);
-          // store debug info and rethrow
-          setDebugResult({ phase: 'rpc_or_update', error: String(error), rpcErr, updErr: (error as unknown) });
+          // store debug info and rethrow (include captured inner errors)
+          setDebugResult({ phase: 'rpc_or_update', error: String(error), rpcErr: rpcErrVar, updErr: updErrVar });
           setDebugModalOpen(true);
           throw error;
         }

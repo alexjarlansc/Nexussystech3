@@ -19,6 +19,26 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 
+// Limpa autenticação ao fechar navegador/aba
+window.addEventListener('beforeunload', () => {
+  try {
+    // Remove tokens do Supabase/localStorage
+    const keysToRemove = Object.keys(localStorage).filter(key =>
+      key.startsWith('supabase.auth.') ||
+      key.includes('sb-') ||
+      key.startsWith('supabase-auth-token')
+    );
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    if (sessionStorage) {
+      Object.keys(sessionStorage).forEach(key => {
+        if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
+          sessionStorage.removeItem(key);
+        }
+      });
+    }
+  } catch (e) { /* noop */ }
+});
+
 // Ajuste global de escala da UI via variável de ambiente VITE_UI_SCALE (porcentagem).
 // Exemplos: VITE_UI_SCALE=80 aplica 80% (reduz para 80% do tamanho base). Padrão: 80.
 try{

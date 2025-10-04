@@ -42,6 +42,26 @@ async function main() {
     process.exit(1);
   }
 
+  // If ADMIN_EMAIL and ADMIN_PASSWORD are provided, sign in first so auth.uid() is set
+  const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+  if (ADMIN_EMAIL && ADMIN_PASSWORD) {
+    console.log('Signing in as admin', ADMIN_EMAIL);
+    try {
+      const { error: signErr } = await client.auth.signInWithPassword({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+      if (signErr) {
+        console.error('Falha ao autenticar admin:', signErr);
+        process.exit(1);
+      }
+      console.log('Admin autenticado, agora chamando RPC...');
+    } catch (se) {
+      console.error('Erro durante sign-in do admin:', se);
+      process.exit(1);
+    }
+  } else {
+    console.warn('Nenhas credenciais de admin informadas (ADMIN_EMAIL/ADMIN_PASSWORD). Se usar uma service_role key, auth.uid() será NULL e a função pode lançar not_authenticated.');
+  }
+
   console.log('Chamando RPC admin_update_permissions para', target, 'com perms=', permsJson);
   try {
     const res = await client.rpc('admin_update_permissions', { target_id: target, perms: permsJson });
