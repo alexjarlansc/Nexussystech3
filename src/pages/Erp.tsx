@@ -373,7 +373,6 @@ export default function Erp() {
                 {!!expandedGroups['config'] && (
                   <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
                     <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Configurações" active={section==='configurations'} onClick={()=>setSection('configurations')} />
-                    <ErpNavItem icon={<Users className='h-4 w-4' />} label="Controle de Acesso" active={section==='access_control'} onClick={()=>setSection('access_control')} />
                   </div>
                 )}
               </>
@@ -468,12 +467,12 @@ export default function Erp() {
                       <div className="text-xs text-muted-foreground">Gerencie códigos de convite para novas contas (admin).</div>
                     </button>
 
-                    <button type="button" onClick={()=>setSection('product_labels')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                    <button type="button" onClick={()=>setSection('access_control')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
                       <div className="h-10 w-10 rounded-md bg-sky-100 text-sky-700 flex items-center justify-center">
-                        <Tags className="h-5 w-5" />
+                        <Users className="h-5 w-5" />
                       </div>
-                      <div className="text-sm font-medium">Etiquetas / Códigos</div>
-                      <div className="text-xs text-muted-foreground">Configurações de etiquetas e códigos de barras.</div>
+                      <div className="text-sm font-medium">Controle de Acesso</div>
+                      <div className="text-xs text-muted-foreground">Gerencie permissões de acesso por usuário.</div>
                     </button>
 
                     <button type="button" onClick={()=>setSection('carriers')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">

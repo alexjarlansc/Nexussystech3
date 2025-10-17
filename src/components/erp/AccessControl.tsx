@@ -145,11 +145,14 @@ export default function AccessControl() {
       const res = await supabase
         .from('profiles')
         .select('id,user_id,first_name,email,role,permissions')
+        // ocultar administradores diretamente na consulta
+        .neq('role', 'admin')
         .order('first_name', { ascending: true })
         .limit(500);
 
       if (res.error) throw res.error;
-      const data = (res.data as unknown as ProfileRow[]) || [];
+  // Filtro defensivo extra caso role venha nulo/indefinido
+  const data = ((res.data as unknown as ProfileRow[]) || []).filter(u => (u.role || '').toLowerCase() !== 'admin');
       // Normalize permissions to array when present
       setUsers(data.map(d => ({ ...d, permissions: Array.isArray(d.permissions) ? d.permissions : [] })));
     } catch (err) {
@@ -162,10 +165,11 @@ export default function AccessControl() {
           const fallback = await supabase
             .from('profiles')
             .select('id,user_id,first_name,email,role')
+            .neq('role', 'admin')
             .order('first_name', { ascending: true })
             .limit(500);
           if (fallback.error) throw fallback.error;
-          const data = (fallback.data as unknown as ProfileRow[]) || [];
+          const data = ((fallback.data as unknown as ProfileRow[]) || []).filter(u => (u.role || '').toLowerCase() !== 'admin');
           setUsers(data.map(d => ({ ...d, permissions: [] })));
           toast.error('Coluna `permissions` não encontrada. Exibindo usuários sem permissões. Rode a migração SQL sugerida.');
         } catch (ferr) {
@@ -223,15 +227,11 @@ export default function AccessControl() {
         if (error) {
           // Some RPCs expect a JSON string for jsonb args; retry once with stringified payload
           console.warn('RPC returned error, retrying with stringified perms...', error);
-          try {
-            const rpcRes2 = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: JSON.stringify(permissionsPayload) });
-            console.log('admin_update_permissions RPC retry raw response:', rpcRes2);
-            data = rpcRes2?.data;
-            error = rpcRes2?.error;
-            if (error) throw error;
-          } catch (rpcErr2) {
-            throw rpcErr2;
-          }
+          const rpcRes2 = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: JSON.stringify(permissionsPayload) });
+          console.log('admin_update_permissions RPC retry raw response:', rpcRes2);
+          data = rpcRes2?.data;
+          error = rpcRes2?.error;
+          if (error) throw error;
         }
       } catch (rpcErr) {
         rpcErrVar = rpcErr;
@@ -239,7 +239,7 @@ export default function AccessControl() {
         try {
           console.log('Attempting direct update to profiles.permissions for', row.user_id, 'with payload:', permissionsPayload);
           // Try explicit update by user_id first
-          let upd: any = await supabase
+          let upd: { data: unknown; error: unknown } = await supabase
             .from('profiles')
             .update({ permissions: permissionsPayload } as unknown as Record<string, unknown>)
             .eq('user_id', row.user_id)
@@ -345,7 +345,7 @@ export default function AccessControl() {
       } else {
         toast.error('Falha ao salvar permissões');
         // Show debug modal with the last known debugResult if available
-        if (!debugResult) setDebugResult({ phase: 'exception', error: String((err as any)?.message || err) });
+  if (!debugResult) setDebugResult({ phase: 'exception', error: String((err as Error)?.message || String(err)) });
         setDebugModalOpen(true);
       }
     }
@@ -421,18 +421,26 @@ export default function AccessControl() {
               </tr>
             </thead>
             <tbody>
-              {users.filter(u=>{
-                if(!query) return true;
-                const q = query.toLowerCase();
-                return (u.first_name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q);
-              }).map(u => (
+              {users
+                // Garantia extra: nunca listar administradores
+                .filter(u => (u.role || '').toLowerCase() !== 'admin')
+                .filter(u=>{
+                  if(!query) return true;
+                  const q = query.toLowerCase();
+                  return (u.first_name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q);
+                })
+                .map(u => (
                 <tr key={u.id} className="border-t align-top">
                   <td className="p-2 align-top">{u.first_name || u.user_id}</td>
                   <td className="p-2 align-top">{u.email || '-'}</td>
                   <td className="p-2 align-top">{u.role || '-'}</td>
                   <td className="p-2 align-top">
                     <div className="text-sm">
-                      {Array.isArray(u.permissions) && u.permissions.length > 0 ? (`${u.permissions.length} permissões`) : '—'}
+                      {(() => {
+                        const totalProducts = Array.isArray(u.permissions) ? u.permissions.filter(p => typeof p === 'string' && p.startsWith('products.')).length : 0;
+                        if (totalProducts <= 0) return '—';
+                        return `${totalProducts} ${totalProducts === 1 ? 'permissão' : 'permissões'}`;
+                      })()}
                     </div>
                   </td>
                   <td className="p-2 align-top">
