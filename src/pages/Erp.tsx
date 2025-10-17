@@ -1,6 +1,6 @@
 import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
 import { useAuth } from '@/hooks/useAuth';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2, ChevronRight, ChevronDown, Building2 } from 'lucide-react';
@@ -102,6 +102,78 @@ export default function Erp() {
       return Array.isArray(perms) && perms.includes(perm);
     } catch (e) { return false; }
   };
+  // Mapa de permissões exigidas por seção (módulo)
+  const SECTION_REQUIRED_PERM = useMemo<Partial<Record<SectionKey, string>>>(() => ({
+    dashboard: 'dashboard.view',
+    clients: 'clients.manage',
+    suppliers: 'suppliers.manage',
+    carriers: 'carriers.manage',
+    stock: 'kardex.view',
+    inventory: 'operation.inventory',
+    margins: 'products.pricing',
+    services: 'operation.services',
+    stock_movements: 'inventory.movements.view',
+    stock_adjustments: 'inventory.adjustments',
+    stock_transfers: 'inventory.transfers',
+    stock_returns: 'inventory.returns',
+    products_manage: 'products.manage',
+    products_pricing: 'products.pricing',
+    product_groups: 'products.groups',
+    product_units: 'products.units',
+    product_variations: 'products.variations',
+    product_labels: 'products.labels',
+    budgets: 'quotes.view',
+    service_orders: 'service_orders.view',
+    sales_orders: 'sales.orders',
+    service_sales_orders: 'sales.list',
+    purchases_list: 'purchases.manage',
+    purchases_xml: 'purchases.xml',
+    purchases_returns: 'purchases.returns',
+    purchases_history: 'purchases.history',
+    purchases_requests: 'purchases.requests',
+    fin_payables: 'finance.payables',
+    fin_receivables: 'finance.receivables',
+    fin_payroll: 'finance.payroll',
+    fiscal_docs: 'invoices.manage',
+    report_stock_full: 'reports.stock',
+    report_sales_full: 'reports.sales',
+    report_finance_full: 'reports.finance',
+    reports_dashboard: 'reports.panel',
+    access_control: 'access.manage',
+  }), []);
+  const canSeeSection = useCallback((s: SectionKey) => {
+    if (!auth?.profile) return false;
+    if (auth.profile.role === 'admin') return true;
+    const need = SECTION_REQUIRED_PERM[s];
+    if (!need) return true; // se não mapeado, não restringe
+    return hasPerm(need);
+  }, [auth?.profile, hasPerm]);
+  const FIRST_SECTION_ORDER: SectionKey[] = [
+    'dashboard',
+    'clients','suppliers','carriers',
+    'products_manage','product_groups','product_units','product_variations','product_labels','products_pricing',
+    'stock','inventory','margins','services',
+    'stock_movements','stock_adjustments','stock_transfers','stock_returns',
+    'budgets','service_orders',
+    'sales_orders','service_sales_orders',
+    'purchases_list','purchases_history','purchases_xml','purchases_returns','purchases_requests',
+    'fin_payables','fin_receivables','fin_payroll',
+    'fiscal_docs',
+    'reports_dashboard','report_stock_full','report_sales_full','report_finance_full',
+    'configurations','access_control',
+  ];
+  const firstAllowedSection = useCallback((): SectionKey | null => {
+    for (const s of FIRST_SECTION_ORDER) { if (canSeeSection(s)) return s; }
+    return null;
+  }, [canSeeSection]);
+  // Se o usuário tentar abrir uma seção sem permissão, redireciona para a primeira permitida
+  useEffect(() => {
+    if (!canAccessErp) return;
+    if (!canSeeSection(section)) {
+      const next = firstAllowedSection();
+      if (next && next !== section) setSection(next);
+    }
+  }, [section, canAccessErp, auth?.profile, canSeeSection, firstAllowedSection]);
   const [section, setSection] = useState<SectionKey>('dashboard');
   const [quotesCount, setQuotesCount] = useState<number>(0);
   const [purchaseRequestsCount, setPurchaseRequestsCount] = useState<number>(0);
@@ -270,7 +342,9 @@ export default function Erp() {
             <button className="p-2 rounded hover:bg-muted/20" onClick={closeSidebar}>Fechar</button>
           </div>
           <nav className="flex-1 px-2 space-y-1 text-sm">
-            <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Visão Geral" active={section==='dashboard'} onClick={()=>setSection('dashboard')} />
+            {canSeeSection('dashboard') && (
+              <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Visão Geral" active={section==='dashboard'} onClick={()=>setSection('dashboard')} />
+            )}
             <GroupTitle icon={<FolderTree className="h-3.5 w-3.5" />} label="Cadastro" onToggle={()=>toggleGroup('cadastro')} isExpanded={!!expandedGroups['cadastro']} />
             {!!expandedGroups['cadastro'] && (
               <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
@@ -293,26 +367,26 @@ export default function Erp() {
             <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" onToggle={()=>toggleGroup('operacao')} isExpanded={!!expandedGroups['operacao']} />
             {!!expandedGroups['operacao'] && (
               <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Kardex do Produto" active={section==='stock'} onClick={()=>setSection('stock')} />
-                <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Inventário" active={section==='inventory'} onClick={()=>setSection('inventory')} />
-                <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Cadastro de Margens" active={section==='margins'} onClick={()=>setSection('margins')} />
-                <ErpNavItem icon={<Wrench className='h-4 w-4' />} label="Serviços" active={section==='services'} onClick={()=>setSection('services')} />
+                {canSeeSection('stock') && <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Kardex do Produto" active={section==='stock'} onClick={()=>setSection('stock')} />}
+                {canSeeSection('inventory') && <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Inventário" active={section==='inventory'} onClick={()=>setSection('inventory')} />}
+                {canSeeSection('margins') && <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Cadastro de Margens" active={section==='margins'} onClick={()=>setSection('margins')} />}
+                {canSeeSection('services') && <ErpNavItem icon={<Wrench className='h-4 w-4' />} label="Serviços" active={section==='services'} onClick={()=>setSection('services')} />}
               </div>
             )}
             <GroupTitle icon={<Boxes className="h-3.5 w-3.5" />} label="Estoque" onToggle={()=>toggleGroup('estoque')} isExpanded={!!expandedGroups['estoque']} />
             {!!expandedGroups['estoque'] && (
               <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Movimentações" active={section==='stock_movements'} onClick={()=>setSection('stock_movements')} />
-                <ErpNavItem icon={<RefreshCcw className='h-4 w-4' />} label="Ajustes" active={section==='stock_adjustments'} onClick={()=>setSection('stock_adjustments')} />
-                <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transferências" active={section==='stock_transfers'} onClick={()=>setSection('stock_transfers')} />
-                <ErpNavItem icon={<RotateIcon /> as any} label="Trocas / Devoluções" active={section==='stock_returns'} onClick={()=>setSection('stock_returns')} />
+                {canSeeSection('stock_movements') && <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Movimentações" active={section==='stock_movements'} onClick={()=>setSection('stock_movements')} />}
+                {canSeeSection('stock_adjustments') && <ErpNavItem icon={<RefreshCcw className='h-4 w-4' />} label="Ajustes" active={section==='stock_adjustments'} onClick={()=>setSection('stock_adjustments')} />}
+                {canSeeSection('stock_transfers') && <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transferências" active={section==='stock_transfers'} onClick={()=>setSection('stock_transfers')} />}
+                {canSeeSection('stock_returns') && <ErpNavItem icon={<RotateIcon /> as any} label="Trocas / Devoluções" active={section==='stock_returns'} onClick={()=>setSection('stock_returns')} />}
               </div>
             )}
             <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Orçamentos" count={quotesCount} onToggle={()=>toggleGroup('orcamentos')} isExpanded={!!expandedGroups['orcamentos']} />
             {!!expandedGroups['orcamentos'] && (
               <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Orçamentos" active={section==='budgets'} onClick={()=>setSection('budgets')} />
-                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Ordens de Serviços" active={section==='service_orders'} onClick={()=>setSection('service_orders')} />
+                {canSeeSection('budgets') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Orçamentos" active={section==='budgets'} onClick={()=>setSection('budgets')} />}
+                {canSeeSection('service_orders') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Ordens de Serviços" active={section==='service_orders'} onClick={()=>setSection('service_orders')} />}
               </div>
             )}
             <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Vendas" onToggle={()=>toggleGroup('vendas')} isExpanded={!!expandedGroups['vendas']} />
