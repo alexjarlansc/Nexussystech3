@@ -221,8 +221,17 @@ export default function AccessControl() {
         return;
       }
 
-      // Coerce permissions to an array of strings to avoid odd types being sent
-      const permissionsPayload = Array.isArray(row.permissions) ? row.permissions.map(p => String(p)) : [];
+      // Sempre capturar o estado MAIS ATUAL das permissões a partir da lista (evita staleness da modal)
+      const latest = users.find(u => u.id === row.id) || row;
+      // Normaliza, filtra tipos estranhos e remove duplicadas
+      const permissionsPayload = Array.from(
+        new Set(
+          (Array.isArray(latest.permissions) ? latest.permissions : [])
+            .filter((p): p is string => typeof p === 'string')
+            .map(p => p.trim())
+            .filter(p => p.length > 0)
+        )
+      );
       console.log('Saving permissions for user_id=', row.user_id, 'role=', row.role, 'raw permissions:', row.permissions, '-> payload:', permissionsPayload);
 
       // If admin is trying to save an empty permission set, confirm to avoid accidental wipe
@@ -261,24 +270,24 @@ export default function AccessControl() {
         rpcErrVar = rpcErr;
         console.warn('admin_update_permissions RPC failed, falling back to direct update. RPC error:', rpcErrVar);
         try {
-          console.log('Attempting direct update to profiles.permissions for', row.user_id, 'with payload:', permissionsPayload);
-          // Try explicit update by user_id first
+          console.log('Attempting direct update to profiles.permissions for id=', row.id, 'user_id=', row.user_id, 'payload:', permissionsPayload);
+          // Tentar por id (mais estável) e, se necessário, por user_id
           let upd: { data: unknown; error: unknown } = await supabase
+            .from('profiles')
+            .update({ permissions: permissionsPayload } as unknown as Record<string, unknown>)
+            .eq('id', row.id)
+            .select('id,user_id,permissions')
+            .maybeSingle();
+          console.log('Direct update by id raw response:', upd);
+          if ((!upd || !upd.data) && row.user_id) {
+            // fallback por user_id
+            upd = await supabase
             .from('profiles')
             .update({ permissions: permissionsPayload } as unknown as Record<string, unknown>)
             .eq('user_id', row.user_id)
             .select('id,user_id,permissions')
             .maybeSingle();
-          console.log('Direct update by user_id raw response:', upd);
-          if ((!upd || !upd.data) && row.id) {
-            // Try matching by profile id fallback
-            upd = await supabase
-              .from('profiles')
-              .update({ permissions: permissionsPayload } as unknown as Record<string, unknown>)
-              .eq('id', row.id)
-              .select('id,user_id,permissions')
-              .maybeSingle();
-            console.log('Direct update by id raw response:', upd);
+            console.log('Direct update by user_id raw response:', upd);
           }
           data = upd.data;
           error = upd.error;
@@ -298,15 +307,15 @@ export default function AccessControl() {
           throw error;
         }
 
-      // If supabase returned the updated row, sync local state instead of forcing a reload
+      // If supabase returned the updated row, sync local state immediately
       if (data) {
         const updated = data as Partial<ProfileRow>;
-        setUsers(prev => prev.map(p => p.user_id === updated.user_id ? { ...p, permissions: Array.isArray(updated.permissions) ? updated.permissions : [] } : p));
-        setSelectedUser(prev => prev && prev.user_id === updated.user_id ? { ...prev, permissions: Array.isArray(updated.permissions) ? updated.permissions : [] } : prev);
+        setUsers(prev => prev.map(p => (p.id === updated.id || p.user_id === updated.user_id) ? { ...p, permissions: Array.isArray(updated.permissions) ? updated.permissions : [] } : p));
+        setSelectedUser(prev => prev && (prev.id === updated.id || prev.user_id === updated.user_id) ? { ...prev, permissions: Array.isArray(updated.permissions) ? updated.permissions : [] } : prev);
       } else {
         // fallback: update local state with what we tried to save
-        setUsers(prev => prev.map(p => p.user_id === row.user_id ? { ...p, permissions: permissionsPayload } : p));
-        setSelectedUser(prev => prev && prev.user_id === row.user_id ? { ...prev, permissions: permissionsPayload } : prev);
+        setUsers(prev => prev.map(p => (p.id === row.id || p.user_id === row.user_id) ? { ...p, permissions: permissionsPayload } : p));
+        setSelectedUser(prev => prev && (prev.id === row.id || prev.user_id === row.user_id) ? { ...prev, permissions: permissionsPayload } : prev);
       }
 
       // Reload from DB to ensure we reflect authoritative state (covers cases where RLS/trigger may modify row)
@@ -318,19 +327,19 @@ export default function AccessControl() {
   let probeData: unknown = null;
   let probeErr: unknown = null;
         try {
-          const p1 = await supabase.from('profiles').select('id,user_id,permissions').eq('user_id', row.user_id).maybeSingle();
+          const p1 = await supabase.from('profiles').select('id,user_id,permissions').eq('id', row.id).maybeSingle();
           probeData = p1.data;
           probeErr = p1.error;
-          console.log('Profiles probe (by user_id) after save:', p1);
+          console.log('Profiles probe (by id) after save:', p1);
         } catch (inner1) {
-          console.warn('Probe by user_id failed', inner1);
+          console.warn('Probe by id failed', inner1);
         }
-        if (!probeData && row.id) {
+        if (!probeData && row.user_id) {
           try {
-            const p2 = await supabase.from('profiles').select('id,user_id,permissions').eq('id', row.id).maybeSingle();
+            const p2 = await supabase.from('profiles').select('id,user_id,permissions').eq('user_id', row.user_id).maybeSingle();
             probeData = p2.data;
             probeErr = p2.error;
-            console.log('Profiles probe (by id) after save:', p2);
+            console.log('Profiles probe (by user_id) after save:', p2);
           } catch (inner2) {
             console.warn('Probe by id failed', inner2);
           }
@@ -455,14 +464,39 @@ export default function AccessControl() {
                 })
                 .map(u => (
                 <tr key={u.id} className="border-t align-top">
-                  <td className="p-2 align-top">{u.first_name || u.user_id}</td>
+                  <td className="p-2 align-top">
+                    {u.first_name || u.user_id}
+                    {(() => {
+                      const total = Array.isArray(u.permissions)
+                        ? u.permissions.filter((x) => typeof x === 'string').length
+                        : 0;
+                      if (total <= 0) {
+                        return (
+                          <span className="ml-2 inline-flex items-center rounded bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px]">
+                            Sem permissões
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="ml-2 inline-flex items-center rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px]">
+                          Total {total}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="p-2 align-top">{u.email || '-'}</td>
                   <td className="p-2 align-top">{u.role || '-'}</td>
                   <td className="p-2 align-top">
                     <div className="text-sm flex flex-wrap gap-1">
                       {(() => {
                         const summary = summarizePermissions(u.permissions);
-                        if (!summary.length) return '—';
+                        if (!summary.length) {
+                          return (
+                            <span className="inline-flex items-center rounded bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px]">
+                              Sem permissões
+                            </span>
+                          );
+                        }
                         return summary.map(s => (
                           <span key={s.label} className="inline-flex items-center rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px]">
                             {s.label} ({s.count})
