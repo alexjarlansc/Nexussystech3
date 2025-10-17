@@ -252,7 +252,8 @@ export default function AccessControl() {
   // Note: the RPC expects parameter name `target_id` (not target_user_id) and a jsonb value for perms.
   const targetId = row.id || row.user_id;
   console.log('Calling admin_update_permissions RPC for', targetId, 'rpc args:', { target_id: targetId, perms: permissionsPayload });
-  const rpcRes = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: permissionsPayload });
+  // Tente overload text[] primeiro (melhor compat com Supabase)
+  const rpcRes = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: permissionsPayload as unknown as string[] });
         // supabase.rpc returns { data, error }
         console.log('admin_update_permissions RPC raw response:', rpcRes);
         data = rpcRes?.data;
