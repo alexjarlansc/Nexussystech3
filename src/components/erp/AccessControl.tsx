@@ -290,7 +290,7 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
           return;
         }
       }
-      // Try RPC first (safer under RLS). If not present or fails, fallback to direct UPDATE.
+      // Try RPC first (safer under RLS). Prefer the jsonb overload for more stable behavior with supabase-js.
   let data: unknown = null;
   let error: unknown = null;
   // capture inner errors for debug modal (avoid referencing undefined identifiers)
@@ -300,8 +300,8 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
   // Note: the RPC expects parameter name `target_id` (not target_user_id) and a jsonb value for perms.
   const targetId = row.id || row.user_id;
   console.log('Calling admin_update_permissions RPC for', targetId, 'rpc args:', { target_id: targetId, perms: permissionsPayload });
-  // Tente overload text[] primeiro (melhor compat com Supabase)
-  const rpcRes = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: permissionsPayload as unknown as string[] });
+        // 1) Tente overload jsonb primeiro (perms como array JSON)
+        const rpcRes = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: permissionsPayload });
         // supabase.rpc returns { data, error }
         console.log('admin_update_permissions RPC raw response:', rpcRes);
         data = rpcRes?.data;
@@ -313,12 +313,20 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
           if (msg.toLowerCase().includes('function') && msg.toLowerCase().includes('admin_update_permissions') && msg.toLowerCase().includes('does not exist')) {
             setRpcMissing(true);
           }
-          // Some RPCs expect a JSON string for jsonb args; retry once with stringified payload
-          console.warn('RPC returned error, retrying with stringified perms...', error);
-          const rpcRes2 = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: JSON.stringify(permissionsPayload) });
-          console.log('admin_update_permissions RPC retry raw response:', rpcRes2);
+          // 2) Tente overload text[] passando array de strings explicitamente
+          console.warn('RPC jsonb returned error, retrying with text[] overload...', error);
+          const rpcRes2 = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: permissionsPayload as unknown as string[] });
+          console.log('admin_update_permissions RPC retry text[] raw response:', rpcRes2);
           data = rpcRes2?.data;
           error = rpcRes2?.error;
+          if (error) {
+            // 3) Última tentativa: enviar string JSON (algumas instalações aceitam como cast)
+            console.warn('RPC text[] returned error, retrying with stringified JSON...', error);
+            const rpcRes3 = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: JSON.stringify(permissionsPayload) });
+            console.log('admin_update_permissions RPC retry stringified raw response:', rpcRes3);
+            data = rpcRes3?.data;
+            error = rpcRes3?.error;
+          }
           if (error) throw error;
         }
       } catch (rpcErr) {
