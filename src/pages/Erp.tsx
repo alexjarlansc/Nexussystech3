@@ -166,6 +166,7 @@ export default function Erp() {
     for (const s of FIRST_SECTION_ORDER) { if (canSeeSection(s)) return s; }
     return null;
   }, [canSeeSection]);
+  const [section, setSection] = useState<SectionKey>('dashboard');
   // Se o usuário tentar abrir uma seção sem permissão, redireciona para a primeira permitida
   useEffect(() => {
     if (!canAccessErp) return;
@@ -174,7 +175,6 @@ export default function Erp() {
       if (next && next !== section) setSection(next);
     }
   }, [section, canAccessErp, auth?.profile, canSeeSection, firstAllowedSection]);
-  const [section, setSection] = useState<SectionKey>('dashboard');
   const [quotesCount, setQuotesCount] = useState<number>(0);
   const [purchaseRequestsCount, setPurchaseRequestsCount] = useState<number>(0);
   const [purchasesRequestsDraft, setPurchasesRequestsDraft] = useState<string[] | null>(null);
