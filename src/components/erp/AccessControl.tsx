@@ -133,6 +133,30 @@ export default function AccessControl() {
   const [debugModalOpen, setDebugModalOpen] = useState(false);
   const [debugResult, setDebugResult] = useState<Record<string, unknown> | null>(null);
 
+  // Conta permissões por categoria (prefixos)
+  function summarizePermissions(perms: string[] | null | undefined) {
+    const groups: { id: string; label: string; prefixes: string[] }[] = [
+      { id: 'produtos', label: 'Produtos', prefixes: ['products.'] },
+      { id: 'cadastro', label: 'Cadastro', prefixes: ['clients.', 'suppliers.', 'carriers.'] },
+      { id: 'operacao', label: 'Operação', prefixes: ['operation.', 'kardex.'] },
+      { id: 'estoque', label: 'Estoque', prefixes: ['inventory.'] },
+      { id: 'orcamentos', label: 'Orçamentos', prefixes: ['quotes.', 'service_orders.'] },
+      { id: 'vendas', label: 'Vendas', prefixes: ['sales.'] },
+      { id: 'compras', label: 'Compras', prefixes: ['purchases.'] },
+      { id: 'financeiro', label: 'Financeiro', prefixes: ['finance.'] },
+      { id: 'notas', label: 'Notas Fiscais', prefixes: ['invoices.'] },
+      { id: 'relatorios', label: 'Relatórios', prefixes: ['reports.'] },
+      { id: 'config', label: 'Config', prefixes: ['access.'] },
+    ];
+    const list: { label: string; count: number }[] = [];
+    const p = Array.isArray(perms) ? perms : [];
+    for (const g of groups) {
+      const count = p.filter(x => typeof x === 'string' && g.prefixes.some(pref => x.startsWith(pref))).length;
+      if (count > 0) list.push({ label: g.label, count });
+    }
+    return list;
+  }
+
   useEffect(() => {
     if (!profile || profile.role !== 'admin') return;
     loadUsers();
@@ -416,7 +440,7 @@ export default function AccessControl() {
                 <th className="p-2">Usuário</th>
                 <th className="p-2">Email</th>
                 <th className="p-2">Papel</th>
-                <th className="p-2">Permissões (Produtos)</th>
+                <th className="p-2">Permissões (Resumo)</th>
                 <th className="p-2">Ações</th>
               </tr>
             </thead>
@@ -435,11 +459,15 @@ export default function AccessControl() {
                   <td className="p-2 align-top">{u.email || '-'}</td>
                   <td className="p-2 align-top">{u.role || '-'}</td>
                   <td className="p-2 align-top">
-                    <div className="text-sm">
+                    <div className="text-sm flex flex-wrap gap-1">
                       {(() => {
-                        const totalProducts = Array.isArray(u.permissions) ? u.permissions.filter(p => typeof p === 'string' && p.startsWith('products.')).length : 0;
-                        if (totalProducts <= 0) return '—';
-                        return `${totalProducts} ${totalProducts === 1 ? 'permissão' : 'permissões'}`;
+                        const summary = summarizePermissions(u.permissions);
+                        if (!summary.length) return '—';
+                        return summary.map(s => (
+                          <span key={s.label} className="inline-flex items-center rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px]">
+                            {s.label} ({s.count})
+                          </span>
+                        ));
                       })()}
                     </div>
                   </td>
