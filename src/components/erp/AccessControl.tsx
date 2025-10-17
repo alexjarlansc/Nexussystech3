@@ -20,6 +20,13 @@ type ProfileRow = {
 type PermNode = { id: string; label: string; perm?: string; children?: PermNode[] };
 
 const PERMISSIONS_TREE: PermNode[] = [
+  {
+    id: 'erp',
+    label: 'Acesso ERP',
+    children: [
+      { id: 'erp.access', label: 'Permitir acesso ao Módulo ERP', perm: 'erp.access' },
+    ],
+  },
   { id: 'visao', label: 'Visão Geral', children: [ { id: 'visao.dashboard', label: 'Painel (KPIs)', perm: 'dashboard.view' } ] },
   {
     id: 'cadastro',
@@ -173,6 +180,7 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
   // Conta permissões por categoria (prefixos)
   function summarizePermissions(perms: string[] | null | undefined) {
     const groups: { id: string; label: string; prefixes: string[] }[] = [
+      { id: 'acesso', label: 'Acesso', prefixes: ['erp.'] },
       { id: 'visao', label: 'Visão', prefixes: ['dashboard.'] },
       { id: 'produtos', label: 'Produtos', prefixes: ['products.'] },
       { id: 'cadastro', label: 'Cadastro', prefixes: ['clients.', 'suppliers.', 'carriers.'] },
