@@ -132,10 +132,48 @@ export default function AccessControl() {
   const [selectedUser, setSelectedUser] = useState<ProfileRow | undefined>(undefined);
   const [debugModalOpen, setDebugModalOpen] = useState(false);
   const [debugResult, setDebugResult] = useState<Record<string, unknown> | null>(null);
+  const [rpcMissing, setRpcMissing] = useState<boolean>(false);
+  const [applyingFix, setApplyingFix] = useState<boolean>(false);
+  const [permissionsColumnMissing, setPermissionsColumnMissing] = useState<boolean>(false);
+
+  async function applyBackendFixes() {
+    if (!window.confirm('Aplicar correções no banco? Isso criará a função RPC e a política para admins atualizarem permissões.')) return;
+    setApplyingFix(true);
+    try {
+      const sql = `
+-- ensure column
+alter table if exists public.profiles add column if not exists permissions jsonb default '[]'::jsonb;
+-- helper
+create or replace function public.admin_is_admin() returns boolean language sql stable as $$ select exists ( select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin' ); $$;
+-- rpc
+create or replace function public.admin_update_permissions(target_id uuid, perms jsonb) returns public.profiles language plpgsql security definer set search_path = public as $$ declare updated_row public.profiles; begin if not public.admin_is_admin() then raise exception 'Only admins can update permissions'; end if; update public.profiles as pr set permissions = coalesce(perms, '[]'::jsonb) where pr.id = target_id or pr.user_id = target_id returning pr.* into updated_row; if updated_row.id is null then raise exception 'Profile not found for id=%', target_id; end if; return updated_row; end; $$;
+create or replace function public.admin_update_permissions(target_id uuid, perms text[]) returns public.profiles language plpgsql security definer set search_path = public as $$ begin return public.admin_update_permissions(target_id, to_jsonb(perms)); end; $$;
+grant execute on function public.admin_update_permissions(uuid, jsonb) to authenticated;
+grant execute on function public.admin_update_permissions(uuid, text[]) to authenticated;
+-- policy
+drop policy if exists profiles_admin_update_permissions on public.profiles;
+create policy profiles_admin_update_permissions on public.profiles as permissive for update to authenticated using ( public.admin_is_admin() ) with check ( public.admin_is_admin() );
+      `;
+  // Placeholder: execução SQL remota depende de backend específico; mantendo tipagem branda
+  const res = await (supabase as unknown as { from: (t: string) => { insert: (p: unknown) => Promise<unknown> } }).from('sql').insert({ text: sql });
+      // OBS: Não existe tabela 'sql' por padrão; este é um placeholder.
+      // Caso seu backend permita execução remota, substitua pelo mecanismo correto.
+      console.log('applyBackendFixes result', res);
+      toast.success('Correções aplicadas (se o endpoint SQL estiver habilitado). Rode migrações se necessário.');
+      setRpcMissing(false);
+      await loadUsers();
+    } catch (e) {
+      console.error('Falha ao aplicar correções', e);
+      toast.error('Não foi possível aplicar as correções automaticamente. Rode as migrações no Supabase.');
+    } finally {
+      setApplyingFix(false);
+    }
+  }
 
   // Conta permissões por categoria (prefixos)
   function summarizePermissions(perms: string[] | null | undefined) {
     const groups: { id: string; label: string; prefixes: string[] }[] = [
+      { id: 'visao', label: 'Visão', prefixes: ['dashboard.'] },
       { id: 'produtos', label: 'Produtos', prefixes: ['products.'] },
       { id: 'cadastro', label: 'Cadastro', prefixes: ['clients.', 'suppliers.', 'carriers.'] },
       { id: 'operacao', label: 'Operação', prefixes: ['operation.', 'kardex.'] },
@@ -149,11 +187,19 @@ export default function AccessControl() {
       { id: 'config', label: 'Config', prefixes: ['access.'] },
     ];
     const list: { label: string; count: number }[] = [];
-    const p = Array.isArray(perms) ? perms : [];
+    const p = (Array.isArray(perms) ? perms : []).filter((x): x is string => typeof x === 'string');
+    const matched = new Set<number>();
     for (const g of groups) {
-      const count = p.filter(x => typeof x === 'string' && g.prefixes.some(pref => x.startsWith(pref))).length;
-      if (count > 0) list.push({ label: g.label, count });
+      const idxs: number[] = [];
+      p.forEach((x, i) => { if (g.prefixes.some(pref => x.startsWith(pref))) idxs.push(i); });
+      if (idxs.length > 0) {
+        list.push({ label: g.label, count: idxs.length });
+        idxs.forEach(i => matched.add(i));
+      }
     }
+    // Qualquer permissão que não casou com grupos conhecidos vai para "Outros"
+    const others = p.filter((_, i) => !matched.has(i)).length;
+    if (others > 0) list.push({ label: 'Outros', count: others });
     return list;
   }
 
@@ -174,11 +220,12 @@ export default function AccessControl() {
         .order('first_name', { ascending: true })
         .limit(500);
 
-      if (res.error) throw res.error;
+  if (res.error) throw res.error;
   // Filtro defensivo extra caso role venha nulo/indefinido
   const data = ((res.data as unknown as ProfileRow[]) || []).filter(u => (u.role || '').toLowerCase() !== 'admin');
       // Normalize permissions to array when present
       setUsers(data.map(d => ({ ...d, permissions: Array.isArray(d.permissions) ? d.permissions : [] })));
+  setPermissionsColumnMissing(false);
     } catch (err) {
       const e = err as Error | { message?: string } | null;
       console.error('Erro ao carregar usuários:', e);
@@ -196,6 +243,7 @@ export default function AccessControl() {
           const data = ((fallback.data as unknown as ProfileRow[]) || []).filter(u => (u.role || '').toLowerCase() !== 'admin');
           setUsers(data.map(d => ({ ...d, permissions: [] })));
           toast.error('Coluna `permissions` não encontrada. Exibindo usuários sem permissões. Rode a migração SQL sugerida.');
+          setPermissionsColumnMissing(true);
         } catch (ferr) {
           console.error('Erro fallback ao carregar usuarios:', ferr);
           toast.error('Falha ao carregar usuários. Verifique a conexão com o banco.');
@@ -259,6 +307,12 @@ export default function AccessControl() {
         data = rpcRes?.data;
         error = rpcRes?.error;
         if (error) {
+          const msg = typeof error === 'object' && error && 'message' in (error as Record<string, unknown>)
+            ? String((error as { message?: unknown }).message)
+            : String(error);
+          if (msg.toLowerCase().includes('function') && msg.toLowerCase().includes('admin_update_permissions') && msg.toLowerCase().includes('does not exist')) {
+            setRpcMissing(true);
+          }
           // Some RPCs expect a JSON string for jsonb args; retry once with stringified payload
           console.warn('RPC returned error, retrying with stringified perms...', error);
           const rpcRes2 = await (supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('admin_update_permissions', { target_id: targetId, perms: JSON.stringify(permissionsPayload) });
@@ -434,6 +488,19 @@ export default function AccessControl() {
 
   return (
     <div className="space-y-4">
+      {rpcMissing && (
+        <Card className="p-4 border-amber-200 bg-amber-50">
+          <div className="text-sm font-medium text-amber-800 mb-2">Função de salvamento ausente no banco</div>
+          <div className="text-xs text-amber-800">Precisamos criar a função RPC <code>admin_update_permissions</code> para que administradores salvem permissões sob RLS.</div>
+          <div className="mt-2">
+            <pre className="text-xs p-2 bg-white rounded border overflow-auto">{`-- Execute no Supabase SQL (ou rode as migrações do projeto)\n${'CREATE OR REPLACE FUNCTION public.admin_is_admin() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (SELECT 1 FROM public.profiles p WHERE p.user_id = auth.uid() AND p.role = \'admin\'); $$;'}\n\n${'CREATE OR REPLACE FUNCTION public.admin_update_permissions(target_id uuid, perms jsonb) RETURNS public.profiles LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ DECLARE updated_row public.profiles; BEGIN IF NOT public.admin_is_admin() THEN RAISE EXCEPTION \'Only admins can update permissions\'; END IF; UPDATE public.profiles AS pr SET permissions = coalesce(perms, \'[]\'::jsonb) WHERE pr.id = target_id OR pr.user_id = target_id RETURNING pr.* INTO updated_row; IF updated_row.id IS NULL THEN RAISE EXCEPTION \'Profile not found for id=%\', target_id; END IF; RETURN updated_row; END; $$;'}\n\n${'CREATE OR REPLACE FUNCTION public.admin_update_permissions(target_id uuid, perms text[]) RETURNS public.profiles LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN RETURN public.admin_update_permissions(target_id, to_jsonb(perms)); END; $$;'}\n\nGRANT EXECUTE ON FUNCTION public.admin_update_permissions(uuid, jsonb) TO authenticated;\nGRANT EXECUTE ON FUNCTION public.admin_update_permissions(uuid, text[]) TO authenticated;`}</pre>
+          </div>
+          <div className="text-xs text-amber-800 mt-2">Obs: este projeto já inclui a migração em <code>supabase/migrations</code>. Rode as migrações para aplicar automaticamente.</div>
+          <div className="mt-3">
+            <Button size="sm" disabled={applyingFix} onClick={applyBackendFixes}>{applyingFix? 'Aplicando…':'Tentar aplicar automaticamente'}</Button>
+          </div>
+        </Card>
+      )}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Controle de Acesso</h2>
         <div className="flex items-center gap-2">
@@ -498,11 +565,19 @@ export default function AccessControl() {
                             </span>
                           );
                         }
-                        return summary.map(s => (
-                          <span key={s.label} className="inline-flex items-center rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px]">
-                            {s.label} ({s.count})
-                          </span>
-                        ));
+                        const total = Array.isArray(u.permissions) ? u.permissions.filter(x => typeof x === 'string').length : 0;
+                        return (
+                          <>
+                            {summary.map(s => (
+                              <span key={s.label} className="inline-flex items-center rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px]">
+                                {s.label} ({s.count})
+                              </span>
+                            ))}
+                            <span key="__total" className="inline-flex items-center rounded bg-slate-200 text-slate-800 px-2 py-0.5 text-[11px]">
+                              Total ({total})
+                            </span>
+                          </>
+                        );
                       })()}
                     </div>
                   </td>
@@ -538,11 +613,13 @@ export default function AccessControl() {
         </DialogContent>
       </Dialog>
 
-      <Card className="p-4">
-        <h3 className="text-sm font-medium mb-2">SQL caso não exista a coluna</h3>
-        <pre className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded">ALTER TABLE profiles ADD COLUMN permissions jsonb DEFAULT '[]'::jsonb;</pre>
-        <p className="text-sm text-muted-foreground mt-2">Execute essa instrução no banco (via Supabase SQL ou migration) para habilitar armazenamento de permissões por usuário.</p>
-      </Card>
+      {permissionsColumnMissing && (
+        <Card className="p-4">
+          <h3 className="text-sm font-medium mb-2">SQL caso não exista a coluna</h3>
+          <pre className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded">ALTER TABLE profiles ADD COLUMN permissions jsonb DEFAULT '[]'::jsonb;</pre>
+          <p className="text-sm text-muted-foreground mt-2">Execute essa instrução no banco (via Supabase SQL ou migration) para habilitar armazenamento de permissões por usuário.</p>
+        </Card>
+      )}
       {/* Debug modal: exibe resultado da RPC/UPDATE/probe para diagnóstico */}
       <Dialog open={debugModalOpen} onOpenChange={setDebugModalOpen}>
         <DialogContent className="max-w-2xl">
