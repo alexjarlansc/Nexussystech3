@@ -68,6 +68,8 @@ type SectionKey =
   | 'configurations'
   | 'access_control'
   | 'purchases_requests'
+  | 'marketing'
+  | 'hr'
   | 'fin_payables'
   | 'fin_receivables'
   | 'fin_payroll'
@@ -112,6 +114,24 @@ export default function Erp() {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const prevExpandedRef = useRef<Record<string, boolean> | null>(null);
 
+  // Persistir estado de grupos expandidos (mantém aberto até clicar para fechar)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('erp:expanded_groups');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          setExpandedGroups(parsed as Record<string, boolean>);
+        }
+      }
+    } catch (_) { /* noop */ }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem('erp:expanded_groups', JSON.stringify(expandedGroups));
+    } catch (_) { /* noop */ }
+  }, [expandedGroups]);
+
   function openSidebar() {
     // snapshot current expanded groups so we can restore on close
     prevExpandedRef.current = expandedGroups;
@@ -128,18 +148,8 @@ export default function Erp() {
     }
   }
   function toggleGroup(name: string) {
-    setExpandedGroups((s) => {
-      const currently = !!s[name];
-      if (currently) {
-        // closing: just close this group, leave others as-is
-        return { ...s, [name]: false };
-      }
-      // opening: close others and open this one (accordion behavior)
-      const next: Record<string, boolean> = {};
-      Object.keys(s).forEach(k => { next[k] = false; });
-      next[name] = true;
-      return next;
-    });
+    // Novo comportamento: alterna somente o grupo clicado, mantendo os demais como estão
+    setExpandedGroups((s) => ({ ...s, [name]: !s[name] }));
   }
 
   // Carrega contagem inicial e assina mudanças de orçamentos
