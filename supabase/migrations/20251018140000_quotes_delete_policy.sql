@@ -18,6 +18,26 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Allow insert of quotes for authenticated users within their company (or self)
+DROP POLICY IF EXISTS quotes_insert_company ON public.quotes;
+CREATE POLICY quotes_insert_company ON public.quotes FOR INSERT WITH CHECK (
+  (EXISTS (SELECT 1 FROM public.profiles p WHERE p.user_id = auth.uid() AND p.role = 'admin'))
+  OR (company_id = current_company_id())
+  OR (created_by = auth.uid())
+);
+
+-- Allow update for admins or record creators/company members
+DROP POLICY IF EXISTS quotes_update_company ON public.quotes;
+CREATE POLICY quotes_update_company ON public.quotes FOR UPDATE USING (
+  (EXISTS (SELECT 1 FROM public.profiles p WHERE p.user_id = auth.uid() AND p.role = 'admin'))
+  OR (company_id = current_company_id())
+  OR (created_by = auth.uid())
+) WITH CHECK (
+  (EXISTS (SELECT 1 FROM public.profiles p WHERE p.user_id = auth.uid() AND p.role = 'admin'))
+  OR (company_id = current_company_id())
+  OR (created_by = auth.uid())
+);
+
 -- Allow delete budgets (ORCAMENTO) for company members or creators
 DROP POLICY IF EXISTS quotes_delete_budgets ON public.quotes;
 CREATE POLICY quotes_delete_budgets ON public.quotes FOR DELETE USING (
