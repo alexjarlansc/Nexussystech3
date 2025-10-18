@@ -1,4 +1,4 @@
-import { StrictMode, lazy, Suspense } from "react";
+import React, { StrictMode, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -55,9 +55,12 @@ function computeAutoScale(): number {
 
 function applyGlobalScale() {
   try {
+    // priority: localStorage override > environment variable > auto compute
+    let override: number | null = null;
+  try { const raw = localStorage.getItem('ui_scale_override'); if (raw) override = Number(raw); } catch (e) { /* ignore localStorage errors */ }
     const envScaleRaw = (typeof import.meta !== 'undefined' && (import.meta as unknown as { env?: Record<string, unknown> })?.env?.VITE_UI_SCALE) as unknown;
     const envScale = Number(envScaleRaw);
-    const scale = Number.isFinite(envScale) && envScale > 0 ? envScale : computeAutoScale();
+    const scale = override && Number.isFinite(override) && override > 0 ? override : (Number.isFinite(envScale) && envScale > 0 ? envScale : computeAutoScale());
     document.documentElement.style.fontSize = `${scale}%`;
   } catch {/* noop */}
 }
@@ -148,6 +151,14 @@ createRoot(document.getElementById("root")!).render(
             </Routes>
             </SystemDialogProvider>
             <Toaster />
+            {/* Mobile UI scale control */}
+            <Suspense fallback={null}>
+              {/** Import lazily to avoid loading in non-browser envs */}
+              {(() => {
+                const UIScale = lazy(() => import('./components/UIScaleControl'));
+                return <UIScale />;
+              })()}
+            </Suspense>
           </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>
