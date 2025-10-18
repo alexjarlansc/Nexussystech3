@@ -10,10 +10,15 @@ import { toast } from '@/components/ui/sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+// SMS standalone removido; fluxo integrado ao Criar Conta
 
 export default function Auth() {
-  const { user, loading, error, signIn, signUp } = useAuth();
+  const { user, loading, error, signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+
+  // Reset password dialog state
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
 
   // Sign In Form State
   const [signInEmail, setSignInEmail] = useState('');
@@ -23,16 +28,10 @@ export default function Auth() {
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
   const [firstName, setFirstName] = useState('');
-  const [companyName, setCompanyName] = useState('');
-  const [companyCode, setCompanyCode] = useState('');
-  const [companies, setCompanies] = useState<Array<{id:string;name:string}>>([]);
-  const [companyModalOpen, setCompanyModalOpen] = useState(false);
-  const [cnpjCpf, setCnpjCpf] = useState('');
-  const [phone, setPhone] = useState('');
-  const [companyEmail, setCompanyEmail] = useState('');
-  const [address, setAddress] = useState('');
   const [role, setRole] = useState<'user' | 'admin'>('user');
   const [inviteCode, setInviteCode] = useState('');
+
+  // Removido fluxo de SMS do Criar Conta
 
   if (loading) {
     return (
@@ -46,52 +45,103 @@ export default function Auth() {
     return <Navigate to="/" replace />;
   }
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) { toast.error('Informe seu email'); return; }
+    try {
+      setIsLoading(true);
+      const { error: err } = await supabase.auth.resetPasswordForEmail(resetEmail.trim());
+      if (err) { toast.error(err.message || 'Falha ao enviar link de redefinição'); }
+      else { toast.success('Enviamos instruções para redefinir sua senha'); setResetOpen(false); }
+    } catch {
+      toast.error('Erro inesperado ao solicitar redefinição');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signInEmail || !signInPassword) {
       toast.error('Preencha email e senha');
       return;
     }
-
-    setIsLoading(true);
-    const { error } = await signIn(signInEmail, signInPassword);
-    
-    if (error) {
-      toast.error(error.message || 'Erro ao fazer login');
+    try {
+      setIsLoading(true);
+      const { error } = await signIn(signInEmail, signInPassword);
+      if (error) toast.error(error.message || 'Erro ao fazer login');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!signUpEmail || !signUpPassword || !firstName || !companyName) {
-      toast.error('Preencha todos os campos obrigatórios');
-      return;
-    }
-
-    if (signUpPassword.length < 6) {
-      toast.error('A senha deve ter pelo menos 6 caracteres');
-      return;
-    }
+    // Validações básicas e exigência de convite
+    if (!firstName) { toast.error('Informe seu nome'); return; }
+    if (!signUpEmail || !signUpPassword) { toast.error('Preencha todos os campos obrigatórios'); return; }
+    if (signUpPassword.length < 6) { toast.error('A senha deve ter pelo menos 6 caracteres'); return; }
+    const codeTrim = (inviteCode || '').trim();
+    if (!codeTrim) { toast.error('Informe o código de convite gerado pelo administrador'); return; }
 
     setIsLoading(true);
-    const { error } = await signUp(signUpEmail, signUpPassword, {
-      firstName,
-      companyName,
-      cnpjCpf,
-      phone,
-      companyEmail,
-      address,
-      role,
-      inviteCode,
-    });
-    
-    if (error) {
-      toast.error(error.message || 'Erro ao criar conta');
+    try {
+      // Validar convite ANTES de criar o usuário
+      type InviteRow = { code?: string; company_id?: string | null; role?: 'user'|'admin'|'pdv'|string };
+      let inviteRow: InviteRow | null = null;
+      try {
+        const rpc = await (supabase as unknown as { rpc: (name: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('validate_invite', { inv_code: codeTrim });
+        const invDataUnknown = rpc?.data as unknown;
+        const invRow = Array.isArray(invDataUnknown) ? invDataUnknown[0] : invDataUnknown;
+        if (invRow) inviteRow = invRow as InviteRow; else { toast.error('Código de convite inválido ou expirado'); setIsLoading(false); return; }
+      } catch (err) {
+        toast.error('Não foi possível validar o convite. Tente novamente.');
+        setIsLoading(false);
+        return;
+      }
+
+      const redirectUrl = `${window.location.origin}/`;
+      const { data, error } = await supabase.auth.signUp({
+        email: signUpEmail.trim(),
+        password: signUpPassword.trim(),
+        options: { emailRedirectTo: redirectUrl, data: { first_name: firstName.trim(), pending_invite_code: codeTrim } }
+      });
+      if (error) { toast.error(error.message || 'Falha ao criar conta'); setIsLoading(false); return; }
+
+      // Se não há sessão (confirmação de email), finaliza aqui
+      if (!data.session) {
+        toast.success('Conta criada! Use o link enviado no email para acessar. Seu perfil será configurado no primeiro login.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Com sessão ativa: garantir profile e aplicar convite se houver
+      try { await (supabase as unknown as { rpc: (name: string) => Promise<unknown> }).rpc('ensure_profile'); } catch (e) { if (import.meta.env.DEV) console.warn('ensure_profile rpc falhou', e); }
+
+      try {
+        const { data: userRes } = await supabase.auth.getUser();
+        const uid = userRes?.user?.id;
+        if (uid) {
+          const patch: Record<string, unknown> = { first_name: firstName, role };
+          if (inviteRow?.role === 'admin') patch.role = 'admin';
+          if (inviteRow?.company_id) patch.company_id = inviteRow.company_id;
+          const { error: upErr } = await supabase.from('profiles').update(patch).eq('user_id', uid);
+          if (upErr && import.meta.env.DEV) console.warn('Falha ao atualizar profile pós-signup', upErr);
+          if (inviteRow?.code) await supabase.from('invite_codes').update({ used_by: uid, used_at: new Date().toISOString() }).eq('code', inviteRow.code);
+          // Limpa a flag de invite pendente nos metadados, já aplicado
+          try { await supabase.auth.updateUser({ data: { pending_invite_code: null } }); } catch (e) { /* noop */ }
+        }
+      } catch (e) { if (import.meta.env.DEV) console.warn('Falha ao finalizar patch de profile/convite', e); }
+
+      toast.success('Conta criada com sucesso!');
+    } catch {
+      toast.error('Erro ao criar conta');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
+
+  // fluxo de SMS está integrado no submit de Criar Conta
 
   return (
     <div className="min-h-screen gradient-hero flex items-center justify-center p-4">
@@ -178,71 +228,7 @@ export default function Auth() {
                 />
               </div>
 
-              <div>
-                <Label htmlFor="company-name">Nome da Empresa *</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="company-name"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    placeholder="Sua empresa"
-                    required
-                  />
-                  <Button type="button" variant="outline" onClick={async ()=>{
-                    setCompanyModalOpen(true);
-                    try {
-                      const { data, error } = await supabase.from('companies').select('id,name').order('name');
-                      if (error) throw error;
-                      setCompanies(((data as unknown) as Array<{id:string;name:string}>) || []);
-                    } catch (err) {
-                      console.error('Erro ao carregar empresas', err);
-                      toast.error('Não foi possível carregar empresas');
-                    }
-                  }}>Selecionar</Button>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="cnpj-cpf">CNPJ/CPF</Label>
-                <Input
-                  id="cnpj-cpf"
-                  value={cnpjCpf}
-                  onChange={(e) => setCnpjCpf(e.target.value)}
-                  placeholder="00.000.000/0000-00"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label htmlFor="phone">Telefone</Label>
-                  <Input
-                    id="phone"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="(00) 00000-0000"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="company-email">Email da Empresa</Label>
-                  <Input
-                    id="company-email"
-                    type="email"
-                    value={companyEmail}
-                    onChange={(e) => setCompanyEmail(e.target.value)}
-                    placeholder="contato@empresa.com"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="address">Endereço</Label>
-                <Input
-                  id="address"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Rua, número, cidade"
-                />
-              </div>
+              {/* Campos de empresa removidos: agora a empresa vem do código de convite */}
 
               <div>
                 <Label htmlFor="role">Tipo de Usuário</Label>
@@ -264,38 +250,11 @@ export default function Auth() {
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
                   placeholder="Código fornecido pelo administrador"
-                  required={role === 'admin'}
+                  required
                 />
               </div>
 
-              <Dialog open={companyModalOpen} onOpenChange={(o)=>setCompanyModalOpen(o)}>
-                <DialogContent className='sm:max-w-lg max-h-[70vh] overflow-y-auto'>
-                  <DialogHeader>
-                    <DialogTitle>Selecionar Empresa</DialogTitle>
-                  </DialogHeader>
-                  <div className='space-y-3 max-h-80 overflow-auto'>
-                    {companies.length === 0 ? (
-                      <div className='text-sm text-muted-foreground p-4'>Nenhuma empresa disponível</div>
-                    ) : (
-                      companies.map(c => (
-                        <div key={c.id} className='flex items-center justify-between p-2 border rounded'>
-                          <div>
-                            <div className='font-medium'>{c.name}</div>
-                            <div className='text-xs text-muted-foreground'>Código: {c.id}</div>
-                          </div>
-                          <div className='flex gap-2'>
-                            <Button size='sm' variant='ghost' onClick={async ()=>{ try{ await navigator.clipboard.writeText(c.id); toast.success('Código copiado para a área de transferência'); }catch(e){ console.error(e); toast.error('Falha ao copiar'); } }}>Copiar código</Button>
-                            <Button size='sm' onClick={()=>{ setCompanyName(c.name); setCompanyCode(c.id); setCompanyModalOpen(false); toast.success('Empresa selecionada'); }}>Selecionar</Button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <DialogFooter>
-                    <Button variant='outline' onClick={()=>setCompanyModalOpen(false)}>Fechar</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              {/* Modal de seleção de empresa removido */}
 
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? 'Criando conta...' : 'Criar Conta'}
@@ -305,8 +264,26 @@ export default function Auth() {
         </Tabs>
 
         <div className="text-center mt-4 text-sm text-muted-foreground">
-          <p>Esqueceu sua senha? Entre em contato com o administrador.</p>
+          <button className="underline" onClick={() => setResetOpen(true)}>Redefinir senha</button>
         </div>
+
+        <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Redefinir senha</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div>
+                <Label htmlFor="reset-email">Email</Label>
+                <Input id="reset-email" type="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="seu@email.com" required />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setResetOpen(false)}>Cancelar</Button>
+                <Button type="submit" disabled={isLoading}>{isLoading ? 'Enviando...' : 'Enviar link'}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </Card>
     </div>
   );

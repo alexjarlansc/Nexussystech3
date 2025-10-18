@@ -53,3 +53,22 @@ Validação rápida:
   - Ou via PowerShell wrapper:
     .\scripts\run_test_rpc.ps1 -Target <user_id> -Perms '["products.manage","dashboard.view"]'
   - Esperado: chamada RPC com sucesso e `profiles.permissions` atualizado.
+
+---
+
+Invite codes (SELECT policy para signup)
+
+Para permitir que o app valide códigos de convite durante o cadastro (contexto anon), aplique a migration:
+
+Opção A) Editor SQL do Supabase:
+  - Abra e rode `supabase/migrations/20251017093000_invite_codes_select_policy.sql`.
+
+Opção B) PowerShell local + psql:
+  - Configure a connection string:
+    $env:DATABASE_URL = 'postgres://user:pass@host:5432/dbname'
+  - Rode o script:
+    .\scripts\apply_invite_policy.ps1
+
+Validação:
+  SELECT * FROM public.invite_codes WHERE used_by IS NULL AND (expires_at IS NULL OR expires_at > now()) LIMIT 5;
+  - Deve retornar convites disponíveis para leitura por roles anon/authenticated.

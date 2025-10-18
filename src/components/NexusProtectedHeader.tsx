@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/sonner";
-import { LogOut, Settings, User, Building2, Copy } from "lucide-react";
+import { LogOut, Settings, User, Building2, Copy, Search } from "lucide-react";
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from "@/hooks/useAuth";
 import type { InviteCode } from '@/hooks/authTypes';
@@ -24,13 +24,11 @@ export function NexusProtectedHeader() {
   // Códigos de convite (tipo centralizado em authTypes com campos opcionais)
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
   const [availableCompanies, setAvailableCompanies] = useState<Array<{id:string;name:string}>>([]);
-  const [companiesPage, setCompaniesPage] = useState(0);
-  const [companiesPageSize] = useState(50);
-  const [companiesHasMore, setCompaniesHasMore] = useState(true);
+  // Não usamos paginação ao listar empresas no modal; buscamos tudo de uma vez
   const [companiesLoading, setCompaniesLoading] = useState(false);
   const [companiesError, setCompaniesError] = useState<string | null>(null);
   const [selectedCompanyForInvite, setSelectedCompanyForInvite] = useState<string | undefined>(undefined);
-  const [showCompanyList, setShowCompanyList] = useState(false);
+  const [openCompanySearchDialog, setOpenCompanySearchDialog] = useState(false);
   const [companySearch, setCompanySearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -39,11 +37,9 @@ export function NexusProtectedHeader() {
     return ()=>clearTimeout(t);
   },[companySearch]);
 
-  // when search changes, reset pagination
+  // when search changes, limpar lista para re-buscar
   useEffect(()=>{
     setAvailableCompanies([]);
-    setCompaniesPage(0);
-    setCompaniesHasMore(true);
   },[debouncedSearch]);
 
   // Profile form
@@ -227,15 +223,11 @@ export function NexusProtectedHeader() {
   };
 
   // loadCompaniesForInvite is used by the invite modal and by the global event handler
-  const loadCompaniesForInvite = useCallback(async (page = 0) => {
-    if (!companiesHasMore && page !== 0) return;
+  const loadCompaniesForInvite = useCallback(async () => {
     setCompaniesError(null);
     try {
       setCompaniesLoading(true);
-      // Use range to paginate
-      const from = page * companiesPageSize;
-      const to = from + companiesPageSize - 1;
-      // supabase client query builder has complex types; allow a local any here
+      // Buscar todas as empresas (sem paginação) para listar no modal
       /* eslint-disable @typescript-eslint/no-explicit-any */
       let query: any = supabase.from('companies').select('id,name').order('name');
       if (debouncedSearch.trim() !== '') {
@@ -243,12 +235,10 @@ export function NexusProtectedHeader() {
         query = supabase.from('companies').select('id,name').ilike('name', `%${s}%`).order('name');
       }
       /* eslint-enable @typescript-eslint/no-explicit-any */
-      const { data, error } = await query.range(from, to);
+      const { data, error } = await query;
       if (error) throw error;
       const list = ((data as unknown) as Array<{id:string;name:string}>) || [];
-      if (page === 0) setAvailableCompanies(list);
-      else setAvailableCompanies(prev => [...prev, ...list]);
-      setCompaniesHasMore(list.length === companiesPageSize);
+  setAvailableCompanies(list);
       // Default to current company if present and none selected yet
       if (company?.id && !selectedCompanyForInvite) setSelectedCompanyForInvite(company.id);
     } catch (err) {
@@ -264,7 +254,7 @@ export function NexusProtectedHeader() {
     } finally {
       setCompaniesLoading(false);
     }
-  }, [companiesHasMore, companiesPageSize, debouncedSearch, company?.id, selectedCompanyForInvite]);
+  }, [debouncedSearch, company?.id, selectedCompanyForInvite]);
 
   const openInviteModal = useCallback(() => {
     setOpenInvites(true);
@@ -294,7 +284,7 @@ export function NexusProtectedHeader() {
     // load first page when modal opens or when debouncedSearch changes
     (async () => {
       try {
-        await loadCompaniesForInvite(0);
+        await loadCompaniesForInvite();
       } catch (e) {
         console.error('Erro ao carregar empresas ao abrir modal de convites', e);
       }
@@ -644,66 +634,16 @@ export function NexusProtectedHeader() {
                 <div className='p-2 pl-3 pr-3 border-r flex flex-col gap-2 min-w-[280px] bg-transparent relative flex-shrink-0'>
                   <div className='flex items-center justify-between'>
                     <Label className='text-xs'>Empresa</Label>
-                    <button type='button' className='text-xs text-muted-foreground' onClick={()=>{ setShowCompanyList(s=>!s); }}>{showCompanyList ? 'Ocultar empresas' : 'Mostrar empresas'}</button>
+                    <Button size='sm' variant='ghost' onClick={()=>setOpenCompanySearchDialog(true)} className='h-7 w-7 p-0'>
+                      <Search className='h-4 w-4' />
+                    </Button>
                   </div>
                   <div>
                     <div className='text-sm font-medium'>{availableCompanies.find(c=>c.id===selectedCompanyForInvite)?.name || company?.name || 'Minha empresa'}</div>
                     <div className='text-xs text-muted-foreground'>{selectedCompanyForInvite || company?.id || ''}</div>
                   </div>
-          {showCompanyList && (
-            <div className='mt-2 relative'>
-            <Input placeholder='Buscar empresa...' value={companySearch} onChange={(e)=>setCompanySearch(e.target.value)} className='mb-2 w-full' />
-            <div
-              className='absolute left-0 top-full mt-1 w-[min(980px,95vw)] max-h-[72vh] overflow-auto space-y-1 border rounded p-2 bg-white z-50 shadow'
-              onScroll={(e) => {
-                const el = e.target as HTMLElement;
-                if (!el) return;
-                const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80;
-                if (nearBottom && !companiesLoading && companiesHasMore) {
-                  const next = companiesPage + 1;
-                  setCompaniesPage(next);
-                  loadCompaniesForInvite(next);
-                }
-              }}
-            >
-              {companiesLoading && companiesPage === 0 && (
-                <div className='text-sm text-muted-foreground'>Carregando...</div>
-              )}
-              {companiesError && !companiesLoading && (
-                <div className='text-sm text-red-600 space-y-2'>
-                  <div>Erro: {companiesError}</div>
-                  <div className='flex gap-2'>
-                    <Button size='sm' variant='outline' onClick={()=>{ setCompaniesPage(0); loadCompaniesForInvite(0); }}>Tentar novamente</Button>
-                    <Button size='sm' onClick={()=>setShowCompanyList(false)}>Fechar</Button>
                   </div>
-                </div>
-              )}
-              {availableCompanies.length === 0 && !companiesLoading && !companiesError && (
-                <div className='text-sm text-muted-foreground'>Nenhuma empresa encontrada</div>
-              )}
-              {availableCompanies.length > 0 && (
-                <>
-                  {availableCompanies.map(c => (
-                    <div key={c.id} className='flex items-center justify-between gap-2 p-1 rounded hover:bg-muted w-full'>
-                      <div className='min-w-0'>
-                        <div className='text-sm truncate'>{c.name}</div>
-                        <div className='text-xs text-muted-foreground truncate'>{c.id}</div>
-                      </div>
-                      <div className='flex gap-1'>
-                        <Button size='sm' variant='ghost' onClick={async ()=>{ try{ await navigator.clipboard.writeText(c.id); toast.success('Código copiado'); }catch(e){ toast.error('Falha ao copiar'); } }}>Copiar</Button>
-                        <Button size='sm' onClick={()=>{ setSelectedCompanyForInvite(c.id); setShowCompanyList(false); }}>{'Selecionar'}</Button>
-                      </div>
-                    </div>
-                  ))}
-                  {companiesLoading && companiesPage > 0 && (<div className='text-sm text-muted-foreground text-center py-2'>Carregando mais...</div>)}
-                  {!companiesHasMore && (<div className='text-xs text-muted-foreground text-center py-2'>Fim da lista</div>)}
-                </>
-              )}
-            </div>
-                    </div>
-                  )}
-                </div>
-                {(['user','admin','pdv'] as const).map(role => (
+        {(['user','admin','pdv'] as const).map(role => (
                   <button
                     key={role}
                     type="button"
@@ -775,6 +715,47 @@ export function NexusProtectedHeader() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Company Search Dialog (abre ao clicar na lupa) */}
+      <Dialog open={openCompanySearchDialog} onOpenChange={setOpenCompanySearchDialog}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pesquisar Empresas</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input placeholder="Buscar empresa..." value={companySearch} onChange={(e)=>setCompanySearch(e.target.value)} />
+            {companiesLoading && (
+              <div className="text-sm text-muted-foreground">Carregando empresas...</div>
+            )}
+            {companiesError && (
+              <div className="text-sm text-red-600">
+                <div>Erro: {companiesError}</div>
+                <div className="mt-2 flex gap-2">
+                  <Button size='sm' variant='outline' onClick={()=>{ loadCompaniesForInvite(); }}>Tentar novamente</Button>
+                  <Button size='sm' onClick={()=>setOpenCompanySearchDialog(false)}>Fechar</Button>
+                </div>
+              </div>
+            )}
+            {!companiesLoading && availableCompanies.length === 0 && !companiesError && (
+              <div className='text-sm text-muted-foreground'>Nenhuma empresa encontrada</div>
+            )}
+            <div className="space-y-2">
+              {availableCompanies.map(c => (
+                <div key={c.id} className='flex items-center justify-between gap-2 p-1 rounded hover:bg-muted'>
+                  <div className='min-w-0'>
+                    <div className='text-sm truncate'>{c.name}</div>
+                    <div className='text-xs text-muted-foreground truncate'>{c.id}</div>
+                  </div>
+                  <div className='flex gap-1'>
+                    <Button size='sm' variant='ghost' onClick={async ()=>{ try{ await navigator.clipboard.writeText(c.id); toast.success('ID copiado'); }catch(e){ toast.error('Falha ao copiar'); } }}>Copiar</Button>
+                    <Button size='sm' onClick={()=>{ setSelectedCompanyForInvite(c.id); setOpenCompanySearchDialog(false); toast.success('Empresa selecionada'); }}>Selecionar</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -79,6 +79,44 @@ export function useAuthInternal() {
           return;
         }
       }
+      // Antes de prosseguir, verifique se há um convite pendente nos metadados do usuário e aplique-o
+        try {
+          const { data: userRes } = await supabase.auth.getUser();
+          const pending = (userRes?.user?.user_metadata as Record<string, unknown> | undefined)?.pending_invite_code as string | undefined;
+          if (pending && typeof pending === 'string' && pending.trim()) {
+            console.log('🎟️ Aplicando convite pendente do metadado:', pending);
+            try {
+              const rpc = await (supabase as unknown as { rpc: (name: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('validate_invite', { inv_code: pending.trim() });
+              const invUnknown = rpc?.data as unknown;
+              const invRow = Array.isArray(invUnknown) ? invUnknown[0] : invUnknown;
+              type InviteRow = { code?: string; company_id?: string | null; role?: 'user'|'admin'|'pdv'|string };
+              const invite = invRow as InviteRow | null;
+              if (invite && (invite.company_id || invite.role)) {
+                const patch: Record<string, unknown> = {};
+                if (invite.company_id) patch.company_id = invite.company_id;
+                if (invite.role === 'admin') patch.role = 'admin';
+                if (Object.keys(patch).length > 0) {
+                  const { error: upErr } = await supabase.from('profiles').update(patch).eq('user_id', userId);
+                  if (upErr) {
+                    console.warn('⚠️ Não foi possível aplicar convite pendente ao profile:', upErr);
+                  } else {
+                    // Marcar convite como usado e limpar metadado
+                    try { await supabase.from('invite_codes').update({ used_by: userId, used_at: new Date().toISOString() }).eq('code', invite.code as string); } catch (e) { /* noop */ }
+                    try { await supabase.auth.updateUser({ data: { pending_invite_code: null } }); } catch (e) { /* noop */ }
+                    // Recarregar dados após aplicar
+                    setTimeout(() => loadUserData(userId, retryCount + 1), 150);
+                    return; // interrompe fluxo atual; recarrega com dados aplicados
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('Falha ao validar/applicar convite pendente', e);
+            }
+          }
+        } catch (e) {
+          console.warn('Não foi possível checar metadado pending_invite_code', e);
+        }
+
   // Normalize permissions to an array if missing
   const maybePerms = (profileData as unknown as { permissions?: unknown }).permissions;
   const permsArray = Array.isArray(maybePerms) ? (maybePerms as string[]) : [];
@@ -124,12 +162,27 @@ export function useAuthInternal() {
 
         if (!isMounted) return;
 
+        // No evento INITIAL_SESSION deixamos o getSession controlar o loading
+        if (event === 'INITIAL_SESSION') {
+          setSession(session);
+          setUser(session?.user ?? null);
+          setError(null);
+          if (session?.user) {
+            setTimeout(() => {
+              if (isMounted) {
+                loadUserData(session.user.id);
+              }
+            }, 100);
+          }
+          return; // não alterar loading aqui quando não houver sessão
+        }
+
+        // Para demais eventos, seguimos fluxo normal
         setSession(session);
         setUser(session?.user ?? null);
         setError(null);
 
         if (session?.user) {
-          // Defer data fetching to prevent deadlocks
           setTimeout(() => {
             if (isMounted) {
               loadUserData(session.user.id);
@@ -186,10 +239,14 @@ export function useAuthInternal() {
     }, 5000);
 
     // Also allow manual reload via window event for environments without realtime
-    const reloadHandler = () => {
+    const reloadHandler = async () => {
       try {
-        if (session?.user) {
+        const { data: { session: cur } } = await supabase.auth.getSession();
+        if (cur?.user) {
           console.log('Manual profile reload triggered');
+          loadUserData(cur.user.id);
+        } else if (session?.user) {
+          // Fallback ao estado local se necessário
           loadUserData(session.user.id);
         }
       } catch (e) {
@@ -311,19 +368,97 @@ export function useAuthInternal() {
 
   const signUp = async (email: string, password: string, userData: AuthSignUpData) => {
     try {
-      // Check invite code if provided
+      // Check invite code if provided and capture company target
+      let inviteMeta: { code: string; company_id?: string | null; role?: 'user'|'admin'|'pdv' } | null = null;
       if (userData.inviteCode) {
-        const { data: inviteData, error: inviteError } = await supabase
-          .from('invite_codes')
-          .select('*')
-          .eq('code', userData.inviteCode)
-          .is('used_by', null)
-          .gt('expires_at', new Date().toISOString())
-          .single();
+        // normalizar código (trim para remover espaços/copiar/colar)
+        userData.inviteCode = userData.inviteCode.trim();
+  // Prepare containers for invite lookup results
+  let inviteData: Record<string, unknown> | null = null;
+  let inviteError: unknown = null;
+
+  // First try: use a server-side RPC validate_invite (SECURITY DEFINER) if available.
+  console.debug('[Auth] Tentando RPC validate_invite for', userData.inviteCode);
+  let rpcReturned = false;
+        try {
+          const sup = supabase as unknown as { rpc?: (name: string, args?: unknown) => Promise<{ data?: unknown; error?: unknown }> };
+          if (typeof sup.rpc === 'function') {
+            const { data: rpcData, error: rpcErr } = await sup.rpc('validate_invite', { inv_code: userData.inviteCode });
+            if (!rpcErr && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+              inviteData = rpcData[0] as Record<string, unknown>;
+              inviteError = null;
+              rpcReturned = true;
+              console.debug('[Auth] RPC validate_invite returned', inviteData);
+            } else if (rpcErr) {
+              console.debug('[Auth] RPC validate_invite errored', rpcErr);
+            }
+          }
+        } catch (rpcEx) {
+          console.debug('[Auth] RPC validate_invite threw', rpcEx);
+        }
+
+        // If RPC didn't return a result, fallback to local query
+        if (!rpcReturned) {
+          console.debug('[Auth] RPC did not return invite, falling back to direct query for', userData.inviteCode);
+        }
+
+  // Simpler approach: fetch invite by code (exact) and used_by IS NULL, then validate expires_at in JS.
+  console.debug('[Auth] Verificando invite code (fase 1) exact match', userData.inviteCode);
+        try {
+          const { data: idata, error: ierr } = await supabase
+            .from('invite_codes')
+            .select('*')
+            .eq('code', userData.inviteCode)
+            .is('used_by', null)
+            .single();
+          inviteData = idata as Record<string, unknown> | null;
+          inviteError = ierr;
+        } catch (e) {
+          console.debug('[Auth] invite exact query threw', e);
+          inviteError = e;
+        }
+
+        // Fallback case-insensitive
+        if ((inviteError || !inviteData) && typeof userData.inviteCode === 'string') {
+          console.debug('[Auth] Tentando fallback ilike para invite code', userData.inviteCode);
+          try {
+            const { data: id2, error: ie2 } = await supabase
+              .from('invite_codes')
+              .select('*')
+              .ilike('code', userData.inviteCode)
+              .is('used_by', null)
+              .single();
+            inviteData = id2 as Record<string, unknown> | null;
+            inviteError = ie2;
+            console.debug('[Auth] invite fallback ilike result', { inviteData, inviteError });
+          } catch (e2) {
+            console.debug('[Auth] invite fallback threw', e2);
+            inviteError = e2;
+          }
+        }
 
         if (inviteError || !inviteData) {
+          console.warn('[Auth] invite not found or used', { inviteError, inviteData });
           return { error: { message: 'Código de convite inválido ou expirado' } };
         }
+
+        // Validate expires_at in JS: accept when null or in future
+        const expires = inviteData.expires_at as string | null | undefined;
+        if (typeof expires === 'string') {
+          const expDate = new Date(expires);
+          if (isNaN(expDate.getTime())) {
+            console.warn('[Auth] invite.expires_at invalid date format', expires);
+          } else if (expDate.getTime() <= Date.now()) {
+            console.warn('[Auth] invite expired at', expires);
+            return { error: { message: 'Código de convite inválido ou expirado' } };
+          }
+        }
+        const invObj = inviteData as unknown as Record<string, unknown>;
+        inviteMeta = {
+          code: String(invObj.code || userData.inviteCode),
+          company_id: (typeof invObj.company_id === 'string' || invObj.company_id === null) ? invObj.company_id as (string|null|undefined) : undefined,
+          role: (invObj.role === 'admin' || invObj.role === 'user' || invObj.role === 'pdv') ? invObj.role as 'user'|'admin'|'pdv' : undefined,
+        };
       }
 
       const redirectUrl = `${window.location.origin}/`;
@@ -341,37 +476,55 @@ export function useAuthInternal() {
 
       if (error) return { error };
 
-      if (data.user) {
-        // Create company first
-        const { data: companyData, error: companyError } = await supabase
-          .from('companies')
-          .insert({
-            name: userData.companyName,
-            cnpj_cpf: userData.cnpjCpf,
-            phone: userData.phone,
-            email: userData.companyEmail,
-            address: userData.address,
-          })
-          .select()
-          .single();
+      // Se não houver sessão ativa após o signUp (ex.: confirmação de email habilitada),
+      // evitamos qualquer operação em tabelas com RLS agora. O perfil/empresa será
+      // criado no primeiro login via ensure_profile()/fluxo pós-login.
+      if (!data.session) {
+        try {
+          toast.info('Conta criada! Verifique seu email para confirmar. Após o primeiro login, seu perfil/empresa será criado automaticamente.');
+        } catch (e) {
+          if (import.meta.env.DEV) console.warn('Toast not available during signup info stage', e);
+        }
+        return { error: null };
+      }
 
-        if (companyError) {
-          console.error('Error creating company:', companyError);
-          return { error: companyError };
+      if (data.user) {
+        // Determine target company: from invite (if present) or create a new one
+        let targetCompanyId: string | null = null;
+        if (inviteMeta?.company_id) {
+          targetCompanyId = inviteMeta.company_id;
+        } else {
+          const { data: companyData, error: companyError } = await supabase
+            .from('companies')
+            .insert({
+              name: userData.companyName,
+              cnpj_cpf: userData.cnpjCpf,
+              phone: userData.phone,
+              email: userData.companyEmail,
+              address: userData.address,
+            })
+            .select()
+            .single();
+
+          if (companyError) {
+            console.error('Error creating company:', companyError);
+            return { error: companyError };
+          }
+          targetCompanyId = companyData.id as string;
         }
 
-        // Create profile
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-    user_id: data.user.id,
-    company_id: companyData.id,
-    first_name: userData.firstName,
-    phone: userData.phone,
-    email: data.user.email,
-  role: userData.role || 'user',
-  permissions: [],
-      });
+        // Create profile pointing to the target company
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: data.user.id,
+            company_id: targetCompanyId,
+            first_name: userData.firstName,
+            phone: userData.phone,
+            email: data.user.email,
+            role: inviteMeta?.role || userData.role || 'user',
+            permissions: [],
+          });
 
         if (profileError) {
           console.error('Error creating profile:', profileError);
@@ -379,14 +532,14 @@ export function useAuthInternal() {
         }
 
         // Mark invite code as used if provided
-        if (userData.inviteCode) {
+        if (inviteMeta?.code) {
           await supabase
             .from('invite_codes')
             .update({
               used_by: data.user.id,
               used_at: new Date().toISOString(),
             })
-            .eq('code', userData.inviteCode);
+            .eq('code', inviteMeta.code);
         }
 
         toast.success('Conta criada com sucesso! Verifique seu email para confirmar.');

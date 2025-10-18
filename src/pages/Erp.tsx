@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2, ChevronRight, ChevronDown, Building2 } from 'lucide-react';
+import CompanyAdminPanel from '@/components/erp/CompanyAdminPanel';
+import UserAdminPanel from '@/components/erp/UserAdminPanel';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 // Ícone simples para trocas/devoluções (setas circulares)
 const RotateIcon = () => <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 6.76 5.36L1 10" /><path d="M3.51 15A9 9 0 0 0 17.24 18.64L23 14" /></svg>;
@@ -67,6 +69,8 @@ type SectionKey =
   | 'purchases_history'
   | 'configurations'
   | 'access_control'
+  | 'user_admin'
+  | 'company_admin'
   | 'purchases_requests'
   | 'marketing'
   | 'hr'
@@ -83,6 +87,8 @@ type SectionKey =
 
 export default function Erp() {
   const auth = useAuth();
+  // Controle para tentativa única de recarregar perfil quando parecer sem acesso
+  const [triedProfileReload, setTriedProfileReload] = useState(false);
   // Determine if the current user may access the ERP module.
   const profilePerms = (auth?.profile as any)?.permissions as string[] | undefined;
   const canAccessErp = (() => {
@@ -93,7 +99,7 @@ export default function Erp() {
       return false;
     } catch (_) { return false; }
   })();
-  const hasPerm = (perm: string) => {
+  const hasPerm = useCallback((perm: string) => {
     try {
       if (!auth?.profile) return false;
       if (auth.profile.role === 'admin') return true;
@@ -101,7 +107,7 @@ export default function Erp() {
       const perms = (auth.profile as any)?.permissions as string[] | undefined;
       return Array.isArray(perms) && perms.includes(perm);
     } catch (e) { return false; }
-  };
+  }, [auth?.profile]);
   // Mapa de permissões exigidas por seção (módulo)
   const SECTION_REQUIRED_PERM = useMemo<Partial<Record<SectionKey, string>>>(() => ({
     dashboard: 'dashboard.view',
@@ -147,8 +153,8 @@ export default function Erp() {
     const need = SECTION_REQUIRED_PERM[s];
     if (!need) return true; // se não mapeado, não restringe
     return hasPerm(need);
-  }, [auth?.profile, hasPerm]);
-  const FIRST_SECTION_ORDER: SectionKey[] = [
+  }, [auth?.profile, hasPerm, SECTION_REQUIRED_PERM]);
+  const FIRST_SECTION_ORDER = useMemo<SectionKey[]>(() => [
     'dashboard',
     'clients','suppliers','carriers',
     'products_manage','product_groups','product_units','product_variations','product_labels','products_pricing',
@@ -161,11 +167,11 @@ export default function Erp() {
     'fiscal_docs',
     'reports_dashboard','report_stock_full','report_sales_full','report_finance_full',
     'configurations','access_control',
-  ];
+  ], []);
   const firstAllowedSection = useCallback((): SectionKey | null => {
     for (const s of FIRST_SECTION_ORDER) { if (canSeeSection(s)) return s; }
     return null;
-  }, [canSeeSection]);
+  }, [canSeeSection, FIRST_SECTION_ORDER]);
   const [section, setSection] = useState<SectionKey>('dashboard');
   // Se o usuário tentar abrir uma seção sem permissão, redireciona para a primeira permitida
   useEffect(() => {
@@ -304,14 +310,79 @@ export default function Erp() {
     } catch (_) { /* noop */ }
   }, [section]);
 
+  // Se ainda estamos carregando auth, evite mostrar tela de pendente
+  if (auth?.loading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <NexusProtectedHeader />
+        <main className="flex-1 flex items-center justify-center p-6">
+          <Card className="p-6 max-w-xl text-center">
+            <h2 className="text-lg font-semibold">Verificando acesso ao ERP…</h2>
+            <p className="text-sm text-muted-foreground mt-2">Carregando seu perfil e permissões.</p>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  // Se não tem acesso, tenta uma vez forçar recarregamento do perfil antes de exibir a tela de pendente
   if (!canAccessErp) {
+    if (!triedProfileReload && auth?.session?.user) {
+      try {
+        const ev = new Event('erp:reload-profile');
+        window.dispatchEvent(ev);
+      } catch (_) { /* noop */ }
+      setTriedProfileReload(true);
+    }
     return (
       <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
         <NexusProtectedHeader />
         <main className="flex-1 flex items-center justify-center p-6">
           <Card className="p-6 max-w-xl text-center">
             <h2 className="text-lg font-semibold">Acesso ao ERP pendente</h2>
-            <p className="text-sm text-muted-foreground mt-2">Seu usuário não possui permissão para acessar o módulo ERP. Solicite ao administrador que conceda acesso via Controle de Acesso.</p>
+            <p className="text-sm text-muted-foreground mt-2">Seu usuário não possui permissão para acessar o módulo ERP. Caso o administrador já tenha concedido, clique abaixo para verificar novamente.</p>
+            <div className="mt-4">
+              <button
+                className="px-3 py-1.5 text-sm rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600"
+                onClick={() => {
+                  try {
+                    const ev = new Event('erp:reload-profile');
+                    window.dispatchEvent(ev);
+                  } catch (_) { /* noop */ }
+                }}
+              >
+                Verificar novamente
+              </button>
+            </div>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  // Se possui acesso ERP, mas nenhum módulo foi liberado, informe claramente
+  const firstAllowed = firstAllowedSection();
+  if (!firstAllowed) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <NexusProtectedHeader />
+        <main className="flex-1 flex items-center justify-center p-6">
+          <Card className="p-6 max-w-xl text-center">
+            <h2 className="text-lg font-semibold">Nenhum módulo liberado</h2>
+            <p className="text-sm text-muted-foreground mt-2">Seu usuário tem acesso ao ERP, porém ainda não há módulos liberados nas permissões. Solicite ao administrador para habilitar ao menos um módulo (ex.: Visão Geral).</p>
+            <div className="mt-4">
+              <button
+                className="px-3 py-1.5 text-sm rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600"
+                onClick={() => {
+                  try {
+                    const ev = new Event('erp:reload-profile');
+                    window.dispatchEvent(ev);
+                  } catch (_) { /* noop */ }
+                }}
+              >
+                Verificar novamente
+              </button>
+            </div>
           </Card>
         </main>
       </div>
@@ -345,90 +416,170 @@ export default function Erp() {
             {canSeeSection('dashboard') && (
               <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Visão Geral" active={section==='dashboard'} onClick={()=>setSection('dashboard')} />
             )}
-            <GroupTitle icon={<FolderTree className="h-3.5 w-3.5" />} label="Cadastro" onToggle={()=>toggleGroup('cadastro')} isExpanded={!!expandedGroups['cadastro']} />
-            {!!expandedGroups['cadastro'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                <ErpNavItem icon={<Users className='h-4 w-4' />} label="Clientes" active={section==='clients'} onClick={()=>setSection('clients')} />
-                <ErpNavItem icon={<Users className='h-4 w-4' />} label="Fornecedores" active={section==='suppliers'} onClick={()=>setSection('suppliers')} />
-                <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transportadoras" active={section==='carriers'} onClick={()=>setSection('carriers')} />
-              </div>
-            )}
-            <GroupTitle icon={<Package className="h-3.5 w-3.5" />} label="Produtos" onToggle={()=>toggleGroup('produtos')} isExpanded={!!expandedGroups['produtos']} />
-            {!!expandedGroups['produtos'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                {hasPerm('products.manage') && <ErpNavItem icon={<Package className='h-4 w-4' />} label="Gerenciar Produtos" active={section==='products_manage'} onClick={()=>setSection('products_manage')} />}
-                {hasPerm('products.pricing') && <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Custo e Imposto" active={section==='products_pricing'} onClick={()=>setSection('products_pricing')} />}
-                {hasPerm('products.groups') && <ErpNavItem icon={<FolderTree className='h-4 w-4' />} label="Grupos de Produtos" active={section==='product_groups'} onClick={()=>setSection('product_groups')} />}
-                {hasPerm('products.units') && <ErpNavItem icon={<Ruler className='h-4 w-4' />} label="Unidades" active={section==='product_units'} onClick={()=>setSection('product_units')} />}
-                {hasPerm('products.variations') && <ErpNavItem icon={<Layers className='h-4 w-4' />} label="Grades / Variações" active={section==='product_variations'} onClick={()=>setSection('product_variations')} />}
-                {hasPerm('products.labels') && <ErpNavItem icon={<Tags className='h-4 w-4' />} label="Etiquetas / Códigos" active={section==='product_labels'} onClick={()=>setSection('product_labels')} />}
-              </div>
-            )}
-            <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" onToggle={()=>toggleGroup('operacao')} isExpanded={!!expandedGroups['operacao']} />
-            {!!expandedGroups['operacao'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                {canSeeSection('stock') && <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Kardex do Produto" active={section==='stock'} onClick={()=>setSection('stock')} />}
-                {canSeeSection('inventory') && <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Inventário" active={section==='inventory'} onClick={()=>setSection('inventory')} />}
-                {canSeeSection('margins') && <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Cadastro de Margens" active={section==='margins'} onClick={()=>setSection('margins')} />}
-                {canSeeSection('services') && <ErpNavItem icon={<Wrench className='h-4 w-4' />} label="Serviços" active={section==='services'} onClick={()=>setSection('services')} />}
-              </div>
-            )}
-            <GroupTitle icon={<Boxes className="h-3.5 w-3.5" />} label="Estoque" onToggle={()=>toggleGroup('estoque')} isExpanded={!!expandedGroups['estoque']} />
-            {!!expandedGroups['estoque'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                {canSeeSection('stock_movements') && <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Movimentações" active={section==='stock_movements'} onClick={()=>setSection('stock_movements')} />}
-                {canSeeSection('stock_adjustments') && <ErpNavItem icon={<RefreshCcw className='h-4 w-4' />} label="Ajustes" active={section==='stock_adjustments'} onClick={()=>setSection('stock_adjustments')} />}
-                {canSeeSection('stock_transfers') && <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transferências" active={section==='stock_transfers'} onClick={()=>setSection('stock_transfers')} />}
-                {canSeeSection('stock_returns') && <ErpNavItem icon={<RotateIcon /> as any} label="Trocas / Devoluções" active={section==='stock_returns'} onClick={()=>setSection('stock_returns')} />}
-              </div>
-            )}
-            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Orçamentos" count={quotesCount} onToggle={()=>toggleGroup('orcamentos')} isExpanded={!!expandedGroups['orcamentos']} />
-            {!!expandedGroups['orcamentos'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                {canSeeSection('budgets') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Orçamentos" active={section==='budgets'} onClick={()=>setSection('budgets')} />}
-                {canSeeSection('service_orders') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Ordens de Serviços" active={section==='service_orders'} onClick={()=>setSection('service_orders')} />}
-              </div>
-            )}
-            <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Vendas" onToggle={()=>toggleGroup('vendas')} isExpanded={!!expandedGroups['vendas']} />
-            {!!expandedGroups['vendas'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Vendas" active={section==='sales_orders'} onClick={()=>setSection('sales_orders')} />
-                <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Serviços" active={section==='service_sales_orders'} onClick={()=>setSection('service_sales_orders')} />
-              </div>
-            )}
-            <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Compras" onToggle={()=>toggleGroup('compras')} isExpanded={!!expandedGroups['compras']} />
-            {!!expandedGroups['compras'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Lançamento de Compra" active={section==='purchases_list'} onClick={()=>setSection('purchases_list')} />
-                <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Solicitações de compras" active={section==='purchases_requests'} onClick={()=>setSection('purchases_requests')} badge={purchaseRequestsCount} />
-                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Gerar via XML" active={section==='purchases_xml'} onClick={()=>setSection('purchases_xml')} />
-                <ErpNavItem icon={<RotateIcon /> as any} label="Troca / Devolução" active={section==='purchases_returns'} onClick={()=>setSection('purchases_returns')} />
-                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Histórico de Compras" active={section==='purchases_history'} onClick={()=>setSection('purchases_history')} />
-              </div>
-            )}
-            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Financeiro" onToggle={()=>toggleGroup('fin')} isExpanded={!!expandedGroups['fin']} />
-            {!!expandedGroups['fin'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Pagar" active={section==='fin_payables'} onClick={()=>setSection('fin_payables')} />
-                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Receber" active={section==='fin_receivables'} onClick={()=>setSection('fin_receivables')} />
-                <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Folha de Pagamento" active={section==='fin_payroll'} onClick={()=>setSection('fin_payroll')} />
-              </div>
-            )}
-            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Notas Fiscais" onToggle={()=>toggleGroup('nf')} isExpanded={!!expandedGroups['nf']} />
-            {!!expandedGroups['nf'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                <ErpNavItem hideIcon={!!expandedGroups['nf']} icon={<FileText className='h-4 w-4' />} label="Emitir / Gerenciar" active={section==='fiscal_docs'} onClick={()=>setSection('fiscal_docs')} />
-              </div>
-            )}
-            <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Relatórios" onToggle={()=>toggleGroup('relatorios')} isExpanded={!!expandedGroups['relatorios']} />
-            {!!expandedGroups['relatorios'] && (
-              <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Painel (KPIs)" active={section==='reports_dashboard'} onClick={()=>setSection('reports_dashboard')} />
-                <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Estoque completo" active={section==='report_stock_full'} onClick={()=>setSection('report_stock_full')} />
-                <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Vendas completo" active={section==='report_sales_full'} onClick={()=>setSection('report_sales_full')} />
-                <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Financeiro completo" active={section==='report_finance_full'} onClick={()=>setSection('report_finance_full')} />
-              </div>
-            )}
+            {(() => {
+              const anyCadastro = canSeeSection('clients') || canSeeSection('suppliers') || canSeeSection('carriers');
+              if (!anyCadastro) return null;
+              return (
+                <>
+                  <GroupTitle icon={<FolderTree className="h-3.5 w-3.5" />} label="Cadastro" onToggle={()=>toggleGroup('cadastro')} isExpanded={!!expandedGroups['cadastro']} />
+                  {!!expandedGroups['cadastro'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {canSeeSection('clients') && <ErpNavItem icon={<Users className='h-4 w-4' />} label="Clientes" active={section==='clients'} onClick={()=>setSection('clients')} />}
+                      {canSeeSection('suppliers') && <ErpNavItem icon={<Users className='h-4 w-4' />} label="Fornecedores" active={section==='suppliers'} onClick={()=>setSection('suppliers')} />}
+                      {canSeeSection('carriers') && <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transportadoras" active={section==='carriers'} onClick={()=>setSection('carriers')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
+              const anyProdutos = hasPerm('products.manage') || hasPerm('products.pricing') || hasPerm('products.groups') || hasPerm('products.units') || hasPerm('products.variations') || hasPerm('products.labels');
+              if (!anyProdutos) return null;
+              return (
+                <>
+                  <GroupTitle icon={<Package className="h-3.5 w-3.5" />} label="Produtos" onToggle={()=>toggleGroup('produtos')} isExpanded={!!expandedGroups['produtos']} />
+                  {!!expandedGroups['produtos'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {hasPerm('products.manage') && <ErpNavItem icon={<Package className='h-4 w-4' />} label="Gerenciar Produtos" active={section==='products_manage'} onClick={()=>setSection('products_manage')} />}
+                      {hasPerm('products.pricing') && <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Custo e Imposto" active={section==='products_pricing'} onClick={()=>setSection('products_pricing')} />}
+                      {hasPerm('products.groups') && <ErpNavItem icon={<FolderTree className='h-4 w-4' />} label="Grupos de Produtos" active={section==='product_groups'} onClick={()=>setSection('product_groups')} />}
+                      {hasPerm('products.units') && <ErpNavItem icon={<Ruler className='h-4 w-4' />} label="Unidades" active={section==='product_units'} onClick={()=>setSection('product_units')} />}
+                      {hasPerm('products.variations') && <ErpNavItem icon={<Layers className='h-4 w-4' />} label="Grades / Variações" active={section==='product_variations'} onClick={()=>setSection('product_variations')} />}
+                      {hasPerm('products.labels') && <ErpNavItem icon={<Tags className='h-4 w-4' />} label="Etiquetas / Códigos" active={section==='product_labels'} onClick={()=>setSection('product_labels')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
+              const anyOperacao = canSeeSection('stock') || canSeeSection('inventory') || canSeeSection('margins') || canSeeSection('services');
+              if (!anyOperacao) return null;
+              return (
+                <>
+                  <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Operação" onToggle={()=>toggleGroup('operacao')} isExpanded={!!expandedGroups['operacao']} />
+                  {!!expandedGroups['operacao'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {canSeeSection('stock') && <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Kardex do Produto" active={section==='stock'} onClick={()=>setSection('stock')} />}
+                      {canSeeSection('inventory') && <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Inventário" active={section==='inventory'} onClick={()=>setSection('inventory')} />}
+                      {canSeeSection('margins') && <ErpNavItem icon={<Percent className='h-4 w-4' />} label="Cadastro de Margens" active={section==='margins'} onClick={()=>setSection('margins')} />}
+                      {canSeeSection('services') && <ErpNavItem icon={<Wrench className='h-4 w-4' />} label="Serviços" active={section==='services'} onClick={()=>setSection('services')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
+              const anyEstoque = canSeeSection('stock_movements') || canSeeSection('stock_adjustments') || canSeeSection('stock_transfers') || canSeeSection('stock_returns');
+              if (!anyEstoque) return null;
+              return (
+                <>
+                  <GroupTitle icon={<Boxes className="h-3.5 w-3.5" />} label="Estoque" onToggle={()=>toggleGroup('estoque')} isExpanded={!!expandedGroups['estoque']} />
+                  {!!expandedGroups['estoque'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {canSeeSection('stock_movements') && <ErpNavItem icon={<Boxes className='h-4 w-4' />} label="Movimentações" active={section==='stock_movements'} onClick={()=>setSection('stock_movements')} />}
+                      {canSeeSection('stock_adjustments') && <ErpNavItem icon={<RefreshCcw className='h-4 w-4' />} label="Ajustes" active={section==='stock_adjustments'} onClick={()=>setSection('stock_adjustments')} />}
+                      {canSeeSection('stock_transfers') && <ErpNavItem icon={<Truck className='h-4 w-4' />} label="Transferências" active={section==='stock_transfers'} onClick={()=>setSection('stock_transfers')} />}
+                      {canSeeSection('stock_returns') && <ErpNavItem icon={<RotateIcon /> as any} label="Trocas / Devoluções" active={section==='stock_returns'} onClick={()=>setSection('stock_returns')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
+              const anyOrc = canSeeSection('budgets') || canSeeSection('service_orders');
+              if (!anyOrc) return null;
+              return (
+                <>
+                  <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Orçamentos" count={quotesCount} onToggle={()=>toggleGroup('orcamentos')} isExpanded={!!expandedGroups['orcamentos']} />
+                  {!!expandedGroups['orcamentos'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {canSeeSection('budgets') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Orçamentos" active={section==='budgets'} onClick={()=>setSection('budgets')} />}
+                      {canSeeSection('service_orders') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Listar Ordens de Serviços" active={section==='service_orders'} onClick={()=>setSection('service_orders')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
+              const anyVendas = canSeeSection('sales_orders') || canSeeSection('service_sales_orders');
+              if (!anyVendas) return null;
+              return (
+                <>
+                  <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Vendas" onToggle={()=>toggleGroup('vendas')} isExpanded={!!expandedGroups['vendas']} />
+                  {!!expandedGroups['vendas'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {canSeeSection('sales_orders') && <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Vendas" active={section==='sales_orders'} onClick={()=>setSection('sales_orders')} />}
+                      {canSeeSection('service_sales_orders') && <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Pedidos de Serviços" active={section==='service_sales_orders'} onClick={()=>setSection('service_sales_orders')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
+              const anyCompras = canSeeSection('purchases_list') || canSeeSection('purchases_requests') || canSeeSection('purchases_xml') || canSeeSection('purchases_returns') || canSeeSection('purchases_history');
+              if (!anyCompras) return null;
+              return (
+                <>
+                  <GroupTitle icon={<ShoppingCart className="h-3.5 w-3.5" />} label="Compras" onToggle={()=>toggleGroup('compras')} isExpanded={!!expandedGroups['compras']} />
+                  {!!expandedGroups['compras'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {canSeeSection('purchases_list') && <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Lançamento de Compra" active={section==='purchases_list'} onClick={()=>setSection('purchases_list')} />}
+                      {canSeeSection('purchases_requests') && <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Solicitações de compras" active={section==='purchases_requests'} onClick={()=>setSection('purchases_requests')} badge={purchaseRequestsCount} />}
+                      {canSeeSection('purchases_xml') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Gerar via XML" active={section==='purchases_xml'} onClick={()=>setSection('purchases_xml')} />}
+                      {canSeeSection('purchases_returns') && <ErpNavItem icon={<RotateIcon /> as any} label="Troca / Devolução" active={section==='purchases_returns'} onClick={()=>setSection('purchases_returns')} />}
+                      {canSeeSection('purchases_history') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Histórico de Compras" active={section==='purchases_history'} onClick={()=>setSection('purchases_history')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
+              const anyFin = canSeeSection('fin_payables') || canSeeSection('fin_receivables') || canSeeSection('fin_payroll');
+              if (!anyFin) return null;
+              return (
+                <>
+                  <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Financeiro" onToggle={()=>toggleGroup('fin')} isExpanded={!!expandedGroups['fin']} />
+                  {!!expandedGroups['fin'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {canSeeSection('fin_payables') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Pagar" active={section==='fin_payables'} onClick={()=>setSection('fin_payables')} />}
+                      {canSeeSection('fin_receivables') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Contas a Receber" active={section==='fin_receivables'} onClick={()=>setSection('fin_receivables')} />}
+                      {canSeeSection('fin_payroll') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Folha de Pagamento" active={section==='fin_payroll'} onClick={()=>setSection('fin_payroll')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
+              const anyNf = canSeeSection('fiscal_docs');
+              if (!anyNf) return null;
+              return (
+                <>
+                  <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Notas Fiscais" onToggle={()=>toggleGroup('nf')} isExpanded={!!expandedGroups['nf']} />
+                  {!!expandedGroups['nf'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {canSeeSection('fiscal_docs') && <ErpNavItem hideIcon={!!expandedGroups['nf']} icon={<FileText className='h-4 w-4' />} label="Emitir / Gerenciar" active={section==='fiscal_docs'} onClick={()=>setSection('fiscal_docs')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
+              const anyRel = canSeeSection('reports_dashboard') || canSeeSection('report_stock_full') || canSeeSection('report_sales_full') || canSeeSection('report_finance_full');
+              if (!anyRel) return null;
+              return (
+                <>
+                  <GroupTitle icon={<FileText className="h-3.5 w-3.5" />} label="Relatórios" onToggle={()=>toggleGroup('relatorios')} isExpanded={!!expandedGroups['relatorios']} />
+                  {!!expandedGroups['relatorios'] && (
+                    <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
+                      {canSeeSection('reports_dashboard') && <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Painel (KPIs)" active={section==='reports_dashboard'} onClick={()=>setSection('reports_dashboard')} />}
+                      {canSeeSection('report_stock_full') && <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Estoque completo" active={section==='report_stock_full'} onClick={()=>setSection('report_stock_full')} />}
+                      {canSeeSection('report_sales_full') && <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Vendas completo" active={section==='report_sales_full'} onClick={()=>setSection('report_sales_full')} />}
+                      {canSeeSection('report_finance_full') && <ErpNavItem hideIcon={!!expandedGroups['relatorios']} icon={<FileText className='h-4 w-4' />} label="Financeiro completo" active={section==='report_finance_full'} onClick={()=>setSection('report_finance_full')} />}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             {auth?.profile?.role === 'admin' && (
               <>
                 <GroupTitle icon={<Users className="h-3.5 w-3.5" />} label="Marketing" onToggle={()=>toggleGroup('marketing')} isExpanded={!!expandedGroups['marketing']} />
@@ -549,20 +700,20 @@ export default function Erp() {
                       <div className="text-xs text-muted-foreground">Gerencie permissões de acesso por usuário.</div>
                     </button>
 
-                    <button type="button" onClick={()=>setSection('carriers')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                    <button type="button" onClick={()=>setSection('user_admin')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
                       <div className="h-10 w-10 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center">
-                        <Truck className="h-5 w-5" />
+                        <Users className="h-5 w-5" />
                       </div>
-                      <div className="text-sm font-medium">Transportadoras</div>
-                      <div className="text-xs text-muted-foreground">Gerencie transportadoras e prazos.</div>
+                      <div className="text-sm font-medium">Usuários: Suspender/Excluir</div>
+                      <div className="text-xs text-muted-foreground">Suspender temporariamente ou excluir usuários.</div>
                     </button>
 
-                    <button type="button" onClick={()=>setSection('products_pricing')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                    <button type="button" onClick={()=>setSection('company_admin')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
                       <div className="h-10 w-10 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center">
-                        <Percent className="h-5 w-5" />
+                        <Building2 className="h-5 w-5" />
                       </div>
-                      <div className="text-sm font-medium">Custo e Imposto</div>
-                      <div className="text-xs text-muted-foreground">Configurações de preços e tabelas.</div>
+                      <div className="text-sm font-medium">Empresas: Suspender/Excluir</div>
+                      <div className="text-xs text-muted-foreground">Suspender temporariamente ou excluir empresas.</div>
                     </button>
 
                     <button type="button" onClick={()=>setSection('purchases_xml')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
@@ -574,6 +725,20 @@ export default function Erp() {
                     </button>
                   </div>
                 </div>
+              )}
+              {section === 'company_admin' && auth?.profile?.role === 'admin' && (
+                <Card className="p-6">
+                  <h2 className="text-xl font-semibold mb-1">Administração de Empresas</h2>
+                  <p className="text-sm text-muted-foreground mb-4">Suspender temporariamente ou excluir empresas.</p>
+                  <CompanyAdminPanel />
+                </Card>
+              )}
+              {section === 'user_admin' && auth?.profile?.role === 'admin' && (
+                <Card className="p-6">
+                  <h2 className="text-xl font-semibold mb-1">Administração de Usuários</h2>
+                  <p className="text-sm text-muted-foreground mb-4">Suspender temporariamente ou excluir usuários da empresa.</p>
+                  <UserAdminPanel />
+                </Card>
               )}
               {section === 'access_control' && auth?.profile?.role === 'admin' && (
                 <AccessControl />

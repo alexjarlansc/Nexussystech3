@@ -142,6 +142,33 @@ export default function AccessControl() {
   const [rpcMissing, setRpcMissing] = useState<boolean>(false);
   const [applyingFix, setApplyingFix] = useState<boolean>(false);
   const [permissionsColumnMissing, setPermissionsColumnMissing] = useState<boolean>(false);
+  const [presetMode, setPresetMode] = useState<'add' | 'replace'>('add');
+
+  // Presets rápidos por área
+  const PRESETS: Record<string, string[]> = {
+    BASICO: ['erp.access', 'dashboard.view'],
+    CADASTRO: ['clients.manage', 'suppliers.manage', 'carriers.manage'],
+    PRODUTOS: ['products.manage', 'products.pricing', 'products.groups', 'products.units', 'products.variations', 'products.labels'],
+    ESTOQUE: ['kardex.view', 'operation.inventory', 'inventory.movements.view', 'inventory.adjustments', 'inventory.transfers', 'inventory.returns'],
+    VENDAS: ['sales.orders', 'sales.list'],
+    COMPRAS: ['purchases.manage', 'purchases.history', 'purchases.requests', 'purchases.xml', 'purchases.returns'],
+    FINANCEIRO: ['finance.payables', 'finance.receivables', 'finance.payroll'],
+    FISCAL: ['invoices.manage'],
+    RELATORIOS: ['reports.panel', 'reports.stock', 'reports.sales', 'reports.finance'],
+  };
+
+  function applyPresetToUser(u: ProfileRow, key: keyof typeof PRESETS, mode: 'add' | 'replace') {
+    const base = Array.isArray(u.permissions) ? u.permissions.filter((p): p is string => typeof p === 'string') : [];
+    const preset = PRESETS[key] || [];
+    let next: string[] = mode === 'replace' ? [...preset] : Array.from(new Set([...base, ...preset]));
+    // Reforço: se tem erp.access mas nenhum módulo, garanta dashboard.view
+    if (next.includes('erp.access')) {
+      const hasAnyModule = next.some(p => p !== 'erp.access');
+      if (!hasAnyModule && !next.includes('dashboard.view')) next = [...next, 'dashboard.view'];
+    }
+    setUsers(prev => prev.map(p => p.id === u.id ? { ...p, permissions: next } : p));
+    setSelectedUser(prev => (prev && prev.id === u.id ? { ...prev, permissions: next } : prev));
+  }
 
   async function applyBackendFixes() {
     if (!window.confirm('Aplicar correções no banco? Isso criará a função RPC e a política para admins atualizarem permissões.')) return;
@@ -179,8 +206,8 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
 
   // Conta permissões por categoria (prefixos)
   function summarizePermissions(perms: string[] | null | undefined) {
+    // Só mostra 'Acesso' quando a permissão exata 'erp.access' existir
     const groups: { id: string; label: string; prefixes: string[] }[] = [
-      { id: 'acesso', label: 'Acesso', prefixes: ['erp.'] },
       { id: 'visao', label: 'Visão', prefixes: ['dashboard.'] },
       { id: 'produtos', label: 'Produtos', prefixes: ['products.'] },
       { id: 'cadastro', label: 'Cadastro', prefixes: ['clients.', 'suppliers.', 'carriers.'] },
@@ -197,6 +224,14 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
     const list: { label: string; count: number }[] = [];
     const p = (Array.isArray(perms) ? perms : []).filter((x): x is string => typeof x === 'string');
     const matched = new Set<number>();
+
+    // Acesso ERP: apenas 'erp.access' conta
+    const idxAccess = p.findIndex(x => x === 'erp.access');
+    if (idxAccess >= 0) {
+      list.push({ label: 'Acesso', count: 1 });
+      matched.add(idxAccess);
+    }
+
     for (const g of groups) {
       const idxs: number[] = [];
       p.forEach((x, i) => { if (g.prefixes.some(pref => x.startsWith(pref))) idxs.push(i); });
@@ -280,7 +315,7 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
       // Sempre capturar o estado MAIS ATUAL das permissões a partir da lista (evita staleness da modal)
       const latest = users.find(u => u.id === row.id) || row;
       // Normaliza, filtra tipos estranhos e remove duplicadas
-      const permissionsPayload = Array.from(
+      let permissionsPayload = Array.from(
         new Set(
           (Array.isArray(latest.permissions) ? latest.permissions : [])
             .filter((p): p is string => typeof p === 'string')
@@ -288,6 +323,13 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
             .filter(p => p.length > 0)
         )
       );
+      // Reforço: se tem erp.access mas falta qualquer módulo, garanta dashboard.view
+      if (permissionsPayload.includes('erp.access')) {
+        const hasAnyModule = permissionsPayload.some(p => p !== 'erp.access');
+        if (!hasAnyModule && !permissionsPayload.includes('dashboard.view')) {
+          permissionsPayload = [...permissionsPayload, 'dashboard.view'];
+        }
+      }
       console.log('Saving permissions for user_id=', row.user_id, 'role=', row.role, 'raw permissions:', row.permissions, '-> payload:', permissionsPayload);
 
       // If admin is trying to save an empty permission set, confirm to avoid accidental wipe
@@ -458,8 +500,19 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
   const togglePermission = (u: ProfileRow, perm: string) => {
     const current = Array.isArray(u.permissions) ? [...u.permissions] : [];
     const idx = current.indexOf(perm);
-    if (idx === -1) current.push(perm);
-    else current.splice(idx, 1);
+    if (idx === -1) {
+      current.push(perm);
+      // Se o admin habilitou o acesso ERP, garanta um módulo básico para o usuário entrar no sistema
+      if (perm === 'erp.access' && !current.includes('dashboard.view')) {
+        current.push('dashboard.view');
+      }
+    }
+    else {
+      // Remoção
+      current.splice(idx, 1);
+      // Caso o admin remova acidentalmente todos os módulos enquanto mantém o ERP aberto,
+      // não forçamos nenhum módulo aqui. A tela do ERP já orienta quando nenhum módulo está liberado.
+    }
     setUsers(prev => prev.map(p => p.id === u.id ? { ...p, permissions: current } : p));
     // If we have the modal open and this is the selected user, sync selectedUser so checkboxes in modal update
     setSelectedUser(prev => (prev && prev.id === u.id ? { ...prev, permissions: current } : prev));
@@ -574,6 +627,8 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
                     <div className="text-sm flex flex-wrap gap-1">
                       {(() => {
                         const summary = summarizePermissions(u.permissions);
+                        const hasErpAccess = Array.isArray(u.permissions) && u.permissions.includes('erp.access');
+                        const hasAnyModule = Array.isArray(u.permissions) && u.permissions.some(p => p !== 'erp.access');
                         if (!summary.length) {
                           return (
                             <span className="inline-flex items-center rounded bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px]">
@@ -589,6 +644,11 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
                                 {s.label} ({s.count})
                               </span>
                             ))}
+                            {hasAnyModule && !hasErpAccess && (
+                              <span className="inline-flex items-center rounded bg-amber-100 text-amber-800 px-2 py-0.5 text-[11px]">
+                                Falta Acesso ERP
+                              </span>
+                            )}
                             <span key="__total" className="inline-flex items-center rounded bg-slate-200 text-slate-800 px-2 py-0.5 text-[11px]">
                               Total ({total})
                             </span>
@@ -617,6 +677,44 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
           {selectedUser ? (
             <div className='space-y-4'>
               <div className='text-sm'><strong>{selectedUser.first_name || selectedUser.user_id}</strong> — {selectedUser.email || ''}</div>
+              {/* Presets rápidos */}
+              <div className='border rounded p-2'>
+                <div className='flex items-center justify-between gap-2 mb-2'>
+                  <div className='text-xs font-medium'>Presets rápidos</div>
+                  <div className='flex items-center gap-2 text-xs'>
+                    <label className='inline-flex items-center gap-1'>
+                      <input type='radio' name='presetMode' checked={presetMode==='add'} onChange={()=>setPresetMode('add')} /> Adicionar
+                    </label>
+                    <label className='inline-flex items-center gap-1'>
+                      <input type='radio' name='presetMode' checked={presetMode==='replace'} onChange={()=>setPresetMode('replace')} /> Substituir
+                    </label>
+                  </div>
+                </div>
+                <div className='flex flex-wrap gap-2'>
+                  {(
+                    [
+                      ['BÁSICO', 'BASICO'],
+                      ['Cadastro', 'CADASTRO'],
+                      ['Produtos', 'PRODUTOS'],
+                      ['Estoque', 'ESTOQUE'],
+                      ['Vendas', 'VENDAS'],
+                      ['Compras', 'COMPRAS'],
+                      ['Financeiro', 'FINANCEIRO'],
+                      ['Nota Fiscal', 'FISCAL'],
+                      ['Relatórios', 'RELATORIOS'],
+                    ] as Array<[string, keyof typeof PRESETS]>
+                  ).map(([label, key]) => (
+                    <button
+                      key={key}
+                      type='button'
+                      className='px-2 py-1 text-xs rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600'
+                      onClick={() => applyPresetToUser(selectedUser, key, presetMode)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className='max-h-96 overflow-auto'>
                 {PERMISSIONS_TREE.map(node => renderPermNode(node, selectedUser))}
               </div>

@@ -19,34 +19,63 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 
-// Limpa autenticação ao fechar navegador/aba
-window.addEventListener('beforeunload', () => {
-  try {
-    // Remove tokens do Supabase/localStorage
-    const keysToRemove = Object.keys(localStorage).filter(key =>
-      key.startsWith('supabase.auth.') ||
-      key.includes('sb-') ||
-      key.startsWith('supabase-auth-token')
-    );
-    keysToRemove.forEach(key => localStorage.removeItem(key));
-    if (sessionStorage) {
-      Object.keys(sessionStorage).forEach(key => {
-        if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
-          sessionStorage.removeItem(key);
-        }
-      });
-    }
-  } catch (e) { /* noop */ }
-});
+// Mantemos a sessão do Supabase entre recargas; não limpar tokens em beforeunload.
 
-// Ajuste global de escala da UI via variável de ambiente VITE_UI_SCALE (porcentagem).
-// Exemplos: VITE_UI_SCALE=80 aplica 80% (reduz para 80% do tamanho base). Padrão: 80.
-try{
-  const envScale = Number(import.meta.env.VITE_UI_SCALE ?? 80);
-  const scale = Number.isFinite(envScale) && envScale > 0 ? envScale : 80;
-  // Usamos font-size no root para escalar componentes baseados em rem (Tailwind usa rem)
-  document.documentElement.style.fontSize = `${scale}%`;
-}catch(e){ /* noop */ }
+// Escala automática no mobile, com override opcional por VITE_UI_SCALE
+// - Se VITE_UI_SCALE estiver definido, usa esse valor (em %)
+// - Caso contrário, calcula dinamicamente com base no viewport (largura/altura/DPR)
+function computeAutoScale(): number {
+  const w = window.innerWidth || document.documentElement.clientWidth || 360;
+  const h = window.innerHeight || document.documentElement.clientHeight || 640;
+  const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+
+  // Base por largura (mobile-first)
+  let scale = 100;
+  if (w <= 340) scale = 78;
+  else if (w <= 360) scale = 82;
+  else if (w <= 390) scale = 88;
+  else if (w <= 430) scale = 92;
+  else if (w <= 768) scale = 96;
+  else scale = 100;
+
+  // Ajuste por altura muito pequena (teclado/landscape)
+  if (h <= 600) scale -= 4;
+  if (h <= 520) scale -= 4;
+
+  // Pequeno ajuste para telas muito densas e estreitas
+  if (dpr >= 2 && w <= 390) scale += 2;
+
+  // Limites seguros
+  scale = Math.max(74, Math.min(102, scale));
+  return Math.round(scale);
+}
+
+function applyGlobalScale() {
+  try {
+    const envScaleRaw = (typeof import.meta !== 'undefined' && (import.meta as unknown as { env?: Record<string, unknown> })?.env?.VITE_UI_SCALE) as unknown;
+    const envScale = Number(envScaleRaw);
+    const scale = Number.isFinite(envScale) && envScale > 0 ? envScale : computeAutoScale();
+    document.documentElement.style.fontSize = `${scale}%`;
+  } catch {/* noop */}
+}
+
+applyGlobalScale();
+
+// Atualiza em resize/orientationchange (debounced)
+{
+  let raf = 0; let last = 0;
+  const handler = () => {
+    const now = Date.now();
+    if (now - last < 50) { // debounce ~50ms
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => { last = now; applyGlobalScale(); });
+    } else {
+      last = now; applyGlobalScale();
+    }
+  };
+  window.addEventListener('resize', handler);
+  window.addEventListener('orientationchange', handler as EventListener);
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
