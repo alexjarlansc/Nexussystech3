@@ -39,7 +39,7 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({ clients, value, onSe
   // Simplificação: sempre permitimos substring para qualquer tamanho >0
   const allowNameSubstring = true;
   const allowDigitsSubstring = qDigits.length >= 4;
-  const tokens = qNorm ? qNorm.split(' ').filter(Boolean) : [];
+  const tokens = useMemo(() => (qNorm ? qNorm.split(' ').filter(Boolean) : []), [qNorm]);
 
   const filtered = useMemo(()=>{
     if(!qNorm && !qDigits) return clients.slice(0,100);
@@ -115,7 +115,7 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({ clients, value, onSe
             size="icon"
             variant="ghost"
             className="text-destructive"
-            onClick={()=> { onClear? onClear(): onSelect(selected); /* fallback mantém comportamento */ }}
+            onClick={() => { if (onClear) { onClear(); } else if (selected) { onSelect(selected); } }}
             title="Limpar seleção"
           >✕</Button>
         )}

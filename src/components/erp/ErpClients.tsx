@@ -192,7 +192,12 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
     }
   toast.success('Cliente criado');
   // Dispara evento global para notificar criadores de lista (ex: QuoteBuilder)
-  try { window.dispatchEvent(new CustomEvent('erp:client-created', { detail: { client: ( (error? null : ( (await (supabase as any).from('clients').select('*').eq('name', payload.name).limit(1)).data?.[0]) ) ) } })); } catch(e){}
+  try { window.dispatchEvent(new CustomEvent('erp:client-created', { detail: { client: ( (error? null : ( (await (supabase as any).from('clients').select('*').eq('name', payload.name).limit(1)).data?.[0]) ) ) } })); } catch(e){
+    // ignore dispatch errors (e.g., window not available in some environments)
+    if (import.meta?.env?.DEV) {
+      console.debug('[ErpClients] erp:client-created dispatch failed', e);
+    }
+  }
   setCreateOpen(false); setNovo(emptyNew); load();
   }
 

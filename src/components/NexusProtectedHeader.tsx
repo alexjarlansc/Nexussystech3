@@ -378,83 +378,9 @@ export function NexusProtectedHeader() {
                 </Badge>
               </div>
 
-              {/* ERP acessível a todos usuários autenticados */}
-              <Link
-                to="/erp"
-                onClick={async (e) => {
-                  console.debug('[Header] ERP click', { openProfile, openCompany, openInvites, path: window.location.pathname });
-                  try { e.preventDefault(); e.stopPropagation(); } catch(_) { /* ignore */ }
-                  // fechar possíveis modais abertos imediatamente
-                  setOpenProfile(false);
-                  setOpenCompany(false);
-                  setOpenInvites(false);
-                  // remover foco ativo que pode capturar o primeiro clique
-                  try { (document.activeElement as HTMLElement | null)?.blur(); } catch(_) { /* ignore */ }
-
-                  // Helper: aguarda até que não haja portais/dialogs no DOM ou até timeout
-                  const waitForNoPortals = (timeout = 1200) => new Promise<boolean>((resolve) => {
-                    const start = Date.now();
-                    const check = () => {
-                      const portals = document.querySelectorAll('[data-radix-portal], [data-reach-dialog], [role="dialog"], .radix-portal, [data-radix-select-content]');
-                      if (portals.length === 0) return resolve(true);
-                      if (Date.now() - start > timeout) return resolve(false);
-                      setTimeout(check, 50);
-                    };
-                    check();
-                  });
-
-                  const cleared = await waitForNoPortals(1200);
-                  console.debug('[Header] portals cleared before navigate?', cleared);
-                  try {
-                    navigate('/erp');
-                    // fallback se SPA navigation for bloqueada
-                    setTimeout(() => { if (window.location.pathname !== '/erp') window.location.href = '/erp'; }, 400);
-                  } catch (err) {
-                    console.error('[Header] navigation error', err);
-                    window.location.href = '/erp';
-                  }
-                }}
-                className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted order-0"
-                aria-label="ERP"
-                title="ERP"
-              >ERP</Link>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                aria-label="Configurações da empresa"
-                onClick={() => {
-                  // garantir exclusividade: fechar perfil antes de abrir empresa
-                  setOpenProfile(false);
-                  setCompanyName(company?.name || '');
-                  setCnpjCpf(company?.cnpj_cpf || '');
-                  setCompanyPhone(company?.phone || '');
-                  setCompanyEmail(company?.email || '');
-                  setAddress(company?.address || '');
-                  setOpenCompany(true);
-                }}
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
               {profile?.role === 'pdv' && (
                 <Link to="/pdv" className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted">PDV</Link>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                aria-label="Editar perfil"
-                onClick={() => {
-                  // garantir exclusividade: fechar empresa antes de abrir perfil
-                  setOpenCompany(false);
-                  setFirstName(profile?.first_name || '');
-                  setPhone(profile?.phone || '');
-                  setEmail(profile?.email || '');
-                  setOpenProfile(true);
-                }}
-              >
-                <User className="h-4 w-4" />
-              </Button>
               {/* Botão de acesso rápido a convites removido — já disponível em Configurações */}
               <Button
                 variant="ghost"
