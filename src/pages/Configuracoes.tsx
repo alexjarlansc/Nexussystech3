@@ -21,7 +21,7 @@ export default function Configuracoes() {
     }
   };
   return (
-    <div className="min-h-screen gradient-hero">
+    <div className="min-h-svh gradient-hero">
       <NexusProtectedHeader />
       <main className="mx-auto max-w-4xl p-4 sm:p-6">
         <h1 className="text-2xl sm:text-3xl font-semibold mb-4">Configuração</h1>

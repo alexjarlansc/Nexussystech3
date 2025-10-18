@@ -313,7 +313,7 @@ export default function Erp() {
   // Se ainda estamos carregando auth, evite mostrar tela de pendente
   if (auth?.loading) {
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+  <div className="min-h-svh flex flex-col bg-slate-50 dark:bg-slate-900">
         <NexusProtectedHeader />
         <main className="flex-1 flex items-center justify-center p-6">
           <Card className="p-6 max-w-xl text-center">
@@ -335,7 +335,7 @@ export default function Erp() {
       setTriedProfileReload(true);
     }
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+  <div className="min-h-svh flex flex-col bg-slate-50 dark:bg-slate-900">
         <NexusProtectedHeader />
         <main className="flex-1 flex items-center justify-center p-6">
           <Card className="p-6 max-w-xl text-center">
@@ -364,7 +364,7 @@ export default function Erp() {
   const firstAllowed = firstAllowedSection();
   if (!firstAllowed) {
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+  <div className="min-h-svh flex flex-col bg-slate-50 dark:bg-slate-900">
         <NexusProtectedHeader />
         <main className="flex-1 flex items-center justify-center p-6">
           <Card className="p-6 max-w-xl text-center">
@@ -390,7 +390,7 @@ export default function Erp() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+  <div className="min-h-svh flex flex-col bg-slate-50 dark:bg-slate-900">
       <NexusProtectedHeader />
       <div className="flex items-center justify-between px-4 md:hidden bg-transparent">
         <button className="p-2 rounded-md" onClick={openSidebar} aria-label="Abrir menu">

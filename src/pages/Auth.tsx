@@ -35,7 +35,7 @@ export default function Auth() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-svh flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
       </div>
     );
@@ -144,7 +144,7 @@ export default function Auth() {
   // fluxo de SMS está integrado no submit de Criar Conta
 
   return (
-    <div className="min-h-screen gradient-hero flex items-center justify-center p-4">
+  <div className="min-h-svh gradient-hero flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-6 card-elevated">
         <div className="flex flex-col items-center mb-6">
           <img src="/NEXUS_SYSTECH.svg" alt="Nexus Systech" className="h-24 mb-1" style={{maxWidth:'90%'}} />

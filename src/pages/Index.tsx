@@ -10,7 +10,7 @@ export default function Index() {
   const displayName = profile?.first_name || user?.email || "Usuário";
 
   return (
-    <div className="min-h-screen gradient-hero">
+    <div className="min-h-svh gradient-hero">
       <NexusProtectedHeader />
       <main className="mx-auto max-w-6xl p-4 sm:p-6">
         <div className="mb-6">
