@@ -23,6 +23,8 @@ export function NexusProtectedHeader() {
   const [openInvites, setOpenInvites] = useState(false);
   // Códigos de convite (tipo centralizado em authTypes com campos opcionais)
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
+  // Mapa id->nome para resolver nomes de empresas dos convites
+  const [companyLookup, setCompanyLookup] = useState<Record<string, string>>({});
   const [availableCompanies, setAvailableCompanies] = useState<Array<{id:string;name:string}>>([]);
   // Não usamos paginação ao listar empresas no modal; buscamos tudo de uma vez
   const [companiesLoading, setCompaniesLoading] = useState(false);
@@ -226,6 +228,20 @@ export function NexusProtectedHeader() {
     const { data, error } = await getInviteCodes();
     if (!error) {
       setInviteCodes(data);
+      // Resolver nomes das empresas referenciadas pelos convites
+      try {
+        const ids = Array.from(new Set((data || []).map((i) => i.company_id).filter((v): v is string => !!v)));
+        if (ids.length > 0) {
+          const { data: compRows, error: compErr } = await supabase.from('companies').select('id,name').in('id', ids);
+          if (!compErr && Array.isArray(compRows)) {
+            const map: Record<string, string> = {};
+            compRows.forEach((r) => { const id = (r as { id?: string }).id; const name = (r as { name?: string }).name; if (id && name) map[id] = name; });
+            setCompanyLookup(map);
+          }
+        }
+      } catch (e) {
+        console.warn('Falha ao resolver nomes de empresas dos convites', e);
+      }
     }
   }, [getInviteCodes]);
 
@@ -652,7 +668,7 @@ export function NexusProtectedHeader() {
                   const isExpired = expiresDate ? expiresDate < new Date() : false;
                   const statusColor = invite.used_by ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : isExpired ? 'bg-red-100 text-red-700 border-red-300' : 'bg-blue-100 text-blue-700 border-blue-300';
                   const statusLabel = invite.used_by ? 'Usado' : isExpired ? 'Expirado' : 'Disponível';
-                  const compName = invite.company_id ? (availableCompanies.find(c=>c.id===invite.company_id)?.name || invite.company_id) : undefined;
+                  const compName = invite.company_id ? (companyLookup[invite.company_id] || availableCompanies.find(c=>c.id===invite.company_id)?.name || invite.company_id) : undefined;
                   return (
                     <div key={invite.id} className="rounded-lg border p-2.5 bg-white shadow-sm flex items-center gap-3">
                       <div className="flex flex-col gap-1 min-w-0 flex-1">
