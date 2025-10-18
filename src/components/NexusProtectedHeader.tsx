@@ -295,6 +295,7 @@ export function NexusProtectedHeader() {
   useEffect(() => {
     const onOpenProfile = () => {
       try {
+        setOpenCompany(false);
         setFirstName(profile?.first_name || '');
         setPhone(profile?.phone || '');
         setEmail(profile?.email || '');
@@ -303,6 +304,7 @@ export function NexusProtectedHeader() {
     };
     const onOpenCompany = () => {
       try {
+        setOpenProfile(false);
         setCompanyName(company?.name || '');
         setCnpjCpf(company?.cnpj_cpf || '');
         setCompanyPhone(company?.phone || '');
@@ -410,6 +412,8 @@ export function NexusProtectedHeader() {
                 className="h-8 w-8 p-0"
                 aria-label="Configurações da empresa"
                 onClick={() => {
+                  // garantir exclusividade: fechar perfil antes de abrir empresa
+                  setOpenProfile(false);
                   setCompanyName(company?.name || '');
                   setCnpjCpf(company?.cnpj_cpf || '');
                   setCompanyPhone(company?.phone || '');
@@ -429,6 +433,8 @@ export function NexusProtectedHeader() {
                 className="h-8 w-8 p-0"
                 aria-label="Editar perfil"
                 onClick={() => {
+                  // garantir exclusividade: fechar empresa antes de abrir perfil
+                  setOpenCompany(false);
                   setFirstName(profile?.first_name || '');
                   setPhone(profile?.phone || '');
                   setEmail(profile?.email || '');
