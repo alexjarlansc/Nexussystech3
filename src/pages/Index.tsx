@@ -53,22 +53,6 @@ export default function Index() {
             </Card>
           </Link>
 
-          {/* Novo card: Configuração (atalho para área de configurações dentro do ERP) */}
-          <Link to="/erp" className="group">
-            <Card className="p-4 h-full transition hover:shadow-md">
-              <div className="h-12 w-12 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center mb-3">
-                <Building2 className="h-6 w-6" />
-              </div>
-              <div className="font-medium">Configuração</div>
-              <div className="text-sm text-muted-foreground">
-                Acesse permissões, usuários e empresas.
-              </div>
-              <div className="mt-3">
-                <Button size="sm" variant="outline" className="transition group-hover:translate-x-0.5">Abrir Configurações</Button>
-              </div>
-            </Card>
-          </Link>
-
           <Link to="/pdv" className="group">
             <Card className="p-4 h-full transition hover:shadow-md">
               <div className="h-12 w-12 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3">
@@ -95,6 +79,22 @@ export default function Index() {
               </div>
               <div className="mt-3">
                 <Button size="sm" variant="outline" className="transition group-hover:translate-x-0.5">Explorar</Button>
+              </div>
+            </Card>
+          </Link>
+
+          {/* Card Configuração: agora por último e levando para /config */}
+          <Link to="/config" className="group">
+            <Card className="p-4 h-full transition hover:shadow-md">
+              <div className="h-12 w-12 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center mb-3">
+                <Building2 className="h-6 w-6" />
+              </div>
+              <div className="font-medium">Configuração</div>
+              <div className="text-sm text-muted-foreground">
+                Editar Perfil e Configurações da Empresa.
+              </div>
+              <div className="mt-3">
+                <Button size="sm" variant="outline" className="transition group-hover:translate-x-0.5">Abrir</Button>
               </div>
             </Card>
           </Link>

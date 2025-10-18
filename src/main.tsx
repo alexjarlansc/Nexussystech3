@@ -14,6 +14,7 @@ import NotFound from "./pages/NotFound";
 import PDV from "./pages/PDV";
 import Orcamento from "./pages/Orcamento";
 import AI from "./pages/AI";
+import Configuracoes from "./pages/Configuracoes";
 const Erp = lazy(() => import('./pages/Erp'));
 // rota de debug para desenvolvimento: renderiza o Inventário sem passar pelo ProtectedRoute
 const ErpInventoryDebug = lazy(() => import('./components/erp/ErpInventory'));
@@ -106,6 +107,11 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/ai" element={
                 <ProtectedRoute>
                   <AI />
+                </ProtectedRoute>
+              } />
+              <Route path="/config" element={
+                <ProtectedRoute>
+                  <Configuracoes />
                 </ProtectedRoute>
               } />
               <Route path="/erp" element={

@@ -291,6 +291,34 @@ export function NexusProtectedHeader() {
     })();
   }, [openInvites, debouncedSearch, loadCompaniesForInvite]);
 
+  // Abertura de modais via eventos globais para a página /config
+  useEffect(() => {
+    const onOpenProfile = () => {
+      try {
+        setFirstName(profile?.first_name || '');
+        setPhone(profile?.phone || '');
+        setEmail(profile?.email || '');
+        setOpenProfile(true);
+      } catch {/* noop */}
+    };
+    const onOpenCompany = () => {
+      try {
+        setCompanyName(company?.name || '');
+        setCnpjCpf(company?.cnpj_cpf || '');
+        setCompanyPhone(company?.phone || '');
+        setCompanyEmail(company?.email || '');
+        setAddress(company?.address || '');
+        setOpenCompany(true);
+      } catch {/* noop */}
+    };
+    window.addEventListener('open-profile-settings', onOpenProfile as EventListener);
+    window.addEventListener('open-company-settings', onOpenCompany as EventListener);
+    return () => {
+      window.removeEventListener('open-profile-settings', onOpenProfile as EventListener);
+      window.removeEventListener('open-company-settings', onOpenCompany as EventListener);
+    };
+  }, [profile?.first_name, profile?.phone, profile?.email, company?.name, company?.cnpj_cpf, company?.phone, company?.email, company?.address]);
+
   
 
   // Type guard para extrair mensagem de erro sem usar `any`
