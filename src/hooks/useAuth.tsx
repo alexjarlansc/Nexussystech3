@@ -496,6 +496,7 @@ export function useAuthInternal() {
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
+            id: data.user.id,
             user_id: data.user.id,
             company_id: targetCompanyId, // pode ser null; será associado via convite posteriormente
             first_name: userData.firstName,
