@@ -402,7 +402,7 @@ export default function Erp() {
         .erp-sidebar .pl-1{ padding-left: 0 !important; }
         .erp-sidebar .border-l{ border-left: 0 !important; }
       }`}</style>
-  <div className="flex flex-1 overflow-x-auto md:overflow-hidden relative">
+  <div id="erp-main-scroll" className="flex flex-1 overflow-auto relative" style={{ height: 'calc(100svh - var(--header-height))' }}>
     {/* mobile sidebar state */}
     {/* we'll use a simple state hook below */}
         

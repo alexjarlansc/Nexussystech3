@@ -56,6 +56,8 @@ All colors MUST be HSL.
     --sidebar-accent-foreground: var(--brand-1);
     --sidebar-border: 44 30% 84%;
     --sidebar-ring: var(--brand-3);
+  /* height used by sticky header offset */
+  --header-height: 64px;
 
     /* Motion + effects */
   --shadow-elev: 0 10px 30px -10px hsl(var(--brand-2) / 0.25);
@@ -110,6 +112,7 @@ All colors MUST be HSL.
 
   html, body, #root {
     min-height: 100svh; /* prefer safe viewport height on mobile */
+    height: auto;
   }
 
   body {
@@ -117,6 +120,21 @@ All colors MUST be HSL.
     font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
     width: 100%;
     overflow-x: hidden;
+    /* Allow vertical scrolling on mobile with native momentum */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: auto;
+  }
+
+  /* Ensure content is pushed below the fixed header to avoid being cut off */
+  header + main {
+    padding-top: var(--header-height);
+  }
+
+  /* Apply header offset to any sibling element that follows the header to catch pages that
+     don't use a <main> tag — ensures no page is hidden under the fixed header. */
+  header ~ * {
+    padding-top: var(--header-height);
   }
 
   h1, h2, h3 {

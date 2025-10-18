@@ -342,14 +342,14 @@ export function NexusProtectedHeader() {
 
   return (
     <>
-      <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-  <div className="w-full mx-auto px-2 sm:px-4 py-2">
+    <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 fixed top-0 left-0 right-0 z-40" style={{height: 'var(--header-height)'}}>
+  <div className="w-full mx-auto px-2 sm:px-4 py-2 h-full">
           {/* Wrapper que permite empilhar no mobile e alinhar lado a lado em telas maiores */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-row flex-nowrap items-center justify-between gap-2">
             <Link
               to="/"
               aria-label="Ir para início"
-              className="flex items-center gap-3 min-w-0 group cursor-pointer select-none pr-4 mr-auto -ml-1 sm:-ml-2"
+              className="flex items-center gap-3 min-w-0 group cursor-pointer select-none pr-3 sm:pr-4 mr-2"
             >
               { (company?.logo_url || logoDataUrl) ? (
                 <img src={company?.logo_url || logoDataUrl} alt={company?.name || 'Logo'} className="h-7 w-7 sm:h-8 sm:w-8 object-contain flex-shrink-0 rounded-sm bg-white border" />
@@ -357,17 +357,17 @@ export function NexusProtectedHeader() {
                 <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0 transition-transform group-hover:scale-105" />
               ) }
               <div className="leading-tight min-w-0">
-                <h1 className="font-bold text-primary text-lg sm:text-xl tracking-tight group-hover:opacity-90">Nexus Systech</h1>
-                <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px] group-hover:text-primary/80 transition-colors">
+                <h1 className="font-bold text-primary text-lg sm:text-xl tracking-tight group-hover:opacity-90 truncate">Nexus Systech</h1>
+                <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px] group-hover:text-primary/80 transition-colors whitespace-nowrap">
                   {company?.name || 'Início'}
                 </p>
               </div>
             </Link>
 
             {/* Ações / usuário */}
-            <div className="flex items-center flex-wrap gap-1 sm:gap-2 justify-end">
-              <div className="flex flex-col items-end leading-tight gap-0.5 pr-2 border-r sm:border-r-0">
-                <p className="text-xs sm:text-sm font-medium max-w-[120px] truncate">
+            <div className="flex items-center gap-1 sm:gap-2 justify-end flex-nowrap min-w-0">
+              <div className="flex flex-col items-end leading-tight gap-0.5 pr-2 border-r sm:border-r-0 min-w-0">
+                <p className="text-xs sm:text-sm font-medium max-w-[140px] truncate whitespace-nowrap">
                   {profile?.first_name}
                 </p>
                 <Badge

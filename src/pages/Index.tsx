@@ -10,9 +10,9 @@ export default function Index() {
   const displayName = profile?.first_name || user?.email || "Usuário";
 
   return (
-    <div className="min-h-svh gradient-hero">
-      <NexusProtectedHeader />
-      <main className="mx-auto max-w-6xl p-4 sm:p-6">
+  <div className="min-h-svh gradient-hero" style={{ paddingTop: 'var(--header-height)' }}>
+  <NexusProtectedHeader />
+  <main className="mx-auto max-w-6xl p-4 sm:p-6">
         <div className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-semibold">
             Olá, {displayName}
@@ -22,7 +22,7 @@ export default function Index() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link to="/orcamento" className="group">
             <Card className="p-4 h-full transition hover:shadow-md">
               <div className="h-12 w-12 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center mb-3">
