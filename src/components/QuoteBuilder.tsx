@@ -611,8 +611,10 @@ export default function QuoteBuilder() {
   }
 
   async function handleDeleteQuote(id: string) {
-    if (profile?.role !== 'admin') {
-      toast.error('Apenas administradores podem excluir orçamentos.');
+    const q = quotes.find(x => x.id === id);
+    // Segurança na UI: somente admin pode excluir PEDIDO; ORCAMENTO liberado a todos
+    if (q && q.type === 'PEDIDO' && profile?.role !== 'admin') {
+      toast.error('Pedidos (vendas) não podem ser excluídos por usuários comuns.');
       return;
     }
     // abrir modal de confirmação em vez de prompt de senha
@@ -623,8 +625,10 @@ export default function QuoteBuilder() {
 
   async function confirmDeletePending() {
     if (!pendingDeleteId) return;
-    if (profile?.role !== 'admin') {
-      toast.error('Apenas administradores podem excluir orçamentos.');
+    const q = quotes.find(x => x.id === pendingDeleteId);
+    if (q && q.type === 'PEDIDO' && profile?.role !== 'admin') {
+      // Dupla checagem antes de chamar o backend
+      toast.error('Pedidos (vendas) não podem ser excluídos por usuários comuns.');
       setPendingDeleteId(null);
       return;
     }
@@ -1659,10 +1663,15 @@ export default function QuoteBuilder() {
                           }
                         }}>Retornar para Orçamento</Button>
                       )}
-                      {profile?.role === 'admin' ? (
+                      {q.type === 'ORCAMENTO' && (
                         <Button size="sm" variant="destructive" onClick={() => handleDeleteQuote(q.id)}>Excluir</Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground text-center">Somente administradores podem excluir orçamentos</span>
+                      )}
+                      {q.type === 'PEDIDO' && (
+                        profile?.role === 'admin' ? (
+                          <Button size="sm" variant="destructive" onClick={() => handleDeleteQuote(q.id)}>Excluir</Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground text-center">Pedidos (vendas) não podem ser excluídos</span>
+                        )
                       )}
                     </div>
                   </div>
@@ -1900,11 +1909,11 @@ export default function QuoteBuilder() {
         </DialogContent>
       </Dialog>
     
-      {/* Confirmar exclusão de orçamento */}
+      {/* Confirmar exclusão de registro (orçamento/pedido) */}
       <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => { if (!open) setPendingDeleteId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir orçamento?</AlertDialogTitle>
+            <AlertDialogTitle>Confirmar exclusão?</AlertDialogTitle>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setPendingDeleteId(null)}>Cancelar</AlertDialogCancel>
