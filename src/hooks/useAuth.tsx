@@ -489,36 +489,15 @@ export function useAuthInternal() {
       }
 
       if (data.user) {
-        // Determine target company: from invite (if present) or create a new one
-        let targetCompanyId: string | null = null;
-        if (inviteMeta?.company_id) {
-          targetCompanyId = inviteMeta.company_id;
-        } else {
-          const { data: companyData, error: companyError } = await supabase
-            .from('companies')
-            .insert({
-              name: userData.companyName,
-              cnpj_cpf: userData.cnpjCpf,
-              phone: userData.phone,
-              email: userData.companyEmail,
-              address: userData.address,
-            })
-            .select()
-            .single();
-
-          if (companyError) {
-            console.error('Error creating company:', companyError);
-            return { error: companyError };
-          }
-          targetCompanyId = companyData.id as string;
-        }
+        // Determine target company: from invite (if present). Não criar empresa automaticamente.
+        const targetCompanyId: string | null = inviteMeta?.company_id ?? null;
 
         // Create profile pointing to the target company
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
             user_id: data.user.id,
-            company_id: targetCompanyId,
+            company_id: targetCompanyId, // pode ser null; será associado via convite posteriormente
             first_name: userData.firstName,
             phone: userData.phone,
             email: data.user.email,
@@ -637,12 +616,18 @@ export function useAuthInternal() {
       // Build payload conditionally to avoid inserting `company_id` when the
       // column doesn't exist in the target database (prevent Postgres errors)
       type InviteInsert = AppDatabase['public']['Tables']['invite_codes']['Insert'];
-      const payload: Partial<InviteInsert> = {
+      // Usa a empresa informada ou, por padrão, a empresa atual do perfil
+      const resolvedCompanyId = companyId || profile?.company_id || null;
+      if (!resolvedCompanyId) {
+        return { error: { message: 'Selecione uma empresa antes de gerar o código' } };
+      }
+
+      const payload: Partial<InviteInsert & { company_id?: string }> = {
         code: (code as unknown as { data?: string })?.data || '',
         created_by: user?.id || '',
         role,
-      } as Partial<InviteInsert>;
-  if (companyId) (payload as Partial<InviteInsert & { company_id?: string }>).company_id = companyId;
+        company_id: resolvedCompanyId,
+      } as Partial<InviteInsert & { company_id?: string }>;
 
       // Debug log to help diagnose server-side errors
       console.debug('[Auth] Inserting invite code payload:', payload);
