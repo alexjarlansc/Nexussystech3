@@ -15,7 +15,7 @@ export default function Index() {
       <main className="mx-auto max-w-6xl p-4 sm:p-6">
         <div className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-semibold">
-            Bem-vindo, {displayName}
+            Olá, {displayName}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Escolha uma opção para começar.
@@ -49,6 +49,22 @@ export default function Index() {
               </div>
               <div className="mt-3">
                 <Button size="sm" variant="outline" className="transition group-hover:translate-x-0.5">Ir para ERP</Button>
+              </div>
+            </Card>
+          </Link>
+
+          {/* Novo card: Configuração (atalho para área de configurações dentro do ERP) */}
+          <Link to="/erp" className="group">
+            <Card className="p-4 h-full transition hover:shadow-md">
+              <div className="h-12 w-12 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center mb-3">
+                <Building2 className="h-6 w-6" />
+              </div>
+              <div className="font-medium">Configuração</div>
+              <div className="text-sm text-muted-foreground">
+                Acesse permissões, usuários e empresas.
+              </div>
+              <div className="mt-3">
+                <Button size="sm" variant="outline" className="transition group-hover:translate-x-0.5">Abrir Configurações</Button>
               </div>
             </Card>
           </Link>
