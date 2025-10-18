@@ -73,13 +73,21 @@ export function NexusProtectedHeader() {
   const companyRef = useRef(company);
   useEffect(() => { companyRef.current = company; }, [company]);
 
+  // Exclusividade: se um modal abrir, garanta que o outro feche
   useEffect(() => {
-    const handler = (ev?: Event) => {
+    if (openProfile) setOpenCompany(false);
+  }, [openProfile]);
+  useEffect(() => {
+    if (openCompany) setOpenProfile(false);
+  }, [openCompany]);
+
+  const openCompanyFromEventRef = useRef<(ev?: Event)=>void>();
+  useEffect(() => {
+    openCompanyFromEventRef.current = (ev?: Event) => {
       try {
         const detail = ev && (ev as CustomEvent)?.detail as Record<string, unknown> | undefined;
         const mode = detail?.mode as string | undefined;
         if (mode === 'create') {
-          // Prepare modal for creating a new company
           setCompanyName('');
           setCnpjCpf('');
           setCompanyPhone('');
@@ -88,7 +96,6 @@ export function NexusProtectedHeader() {
           setLogoDataUrl(undefined);
           setIsCreatingCompany(true);
         } else {
-          // Open for editing current company - read from ref to avoid effect re-registration
           const current = companyRef.current;
           setCompanyName(current?.name || '');
           setCnpjCpf(current?.cnpj_cpf || '');
@@ -97,13 +104,18 @@ export function NexusProtectedHeader() {
           setAddress(current?.address || '');
           setIsCreatingCompany(false);
         }
+        // fechar perfil se estiver aberto e abrir empresa
+        setOpenProfile(false);
         setOpenCompany(true);
       } catch (e) {
         console.error('Failed to open company modal via event', e);
       }
     };
-    window.addEventListener('erp:open-company-modal', handler as EventListener);
-    return () => window.removeEventListener('erp:open-company-modal', handler as EventListener);
+  }, []);
+  useEffect(() => {
+    const bound = (ev: Event) => openCompanyFromEventRef.current?.(ev);
+    window.addEventListener('erp:open-company-modal', bound as EventListener);
+    return () => window.removeEventListener('erp:open-company-modal', bound as EventListener);
   }, []);
 
   // Listen to event to open invite codes modal from ERP
