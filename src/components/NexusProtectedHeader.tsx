@@ -669,23 +669,20 @@ export function NexusProtectedHeader() {
                   const statusColor = invite.used_by ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : isExpired ? 'bg-red-100 text-red-700 border-red-300' : 'bg-blue-100 text-blue-700 border-blue-300';
                   const statusLabel = invite.used_by ? 'Usado' : isExpired ? 'Expirado' : 'Disponível';
                   const compName = invite.company_id ? (companyLookup[invite.company_id] || availableCompanies.find(c=>c.id===invite.company_id)?.name || invite.company_id) : undefined;
+                  const compShort = typeof compName === 'string' ? (compName.length > 24 ? compName.slice(0,24) + '…' : compName) : undefined;
                   return (
                     <div key={invite.id} className="rounded-lg border p-2.5 bg-white shadow-sm flex items-center gap-3">
                       <div className="flex flex-col gap-1 min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <code className="px-2 py-1 rounded bg-muted text-xs font-mono tracking-wide">{invite.code}</code>
                           <span className={`text-[10px] uppercase px-2 py-0.5 rounded-full border font-medium ${invite.role==='admin' ? 'bg-primary text-primary-foreground border-primary/70' : invite.role==='pdv' ? 'bg-secondary text-secondary-foreground border-secondary/60' : 'bg-slate-200 text-slate-700 border-slate-300'}`}>{invite.role==='admin'?'Admin': invite.role==='pdv'?'PDV':'Usuário'}</span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${statusColor}`}>{statusLabel}</span>
-                          {compName && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200" title={typeof compName === 'string' ? compName : ''}>
-                              Empresa: {typeof compName === 'string' ? (compName.length>24? compName.slice(0,24)+'…' : compName) : ''}
-                            </span>
-                          )}
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${statusColor}`}>
+                            {compShort ? `${compShort} ${statusLabel}` : statusLabel}
+                          </span>
                         </div>
                         <div className="text-[10px] text-muted-foreground flex gap-2 flex-wrap">
                           <span>Expira: {expiresDate ? expiresDate.toLocaleDateString('pt-BR') : '—'}</span>
                           {invite.used_by && <span>Usuário: {invite.used_by.slice(0,8)}…</span>}
-                          {compName && <span>Empresa: {compName}</span>}
                         </div>
                       </div>
                       <div className="flex flex-col gap-1 items-end">
