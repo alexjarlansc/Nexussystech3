@@ -115,6 +115,12 @@ All colors MUST be HSL.
     height: auto;
   }
 
+  /* Manter a largura estável mesmo quando o body for bloqueado por overlays (Dialog/Select) */
+  html {
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
@@ -122,7 +128,7 @@ All colors MUST be HSL.
     overflow-x: hidden;
     /* Reservar o espaço da barra de rolagem para evitar "pulo" quando modais/menus bloqueiam o scroll */
     overflow-y: scroll;
-    scrollbar-gutter: stable both-edges;
+    scrollbar-gutter: stable;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: auto;
   }
