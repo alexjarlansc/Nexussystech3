@@ -14,7 +14,7 @@ No diretório do projeto, execute:
 ```
 
 O script irá:
-- Definir as secrets SUPABASE_SERVICE_ROLE_KEY e SUPABASE_URL para as funções.
+- Definir as secrets SUPABASE_SERVICE_ROLE_KEY/SERVICE_ROLE_KEY e SUPABASE_URL/PROJECT_URL para as funções.
 - Fazer o deploy de `admin-create-user` e `admin-delete-user`.
 
 Você pode também passar as variáveis via ambiente:
@@ -30,8 +30,8 @@ $env:SUPABASE_URL = "https://<seu_ref>.supabase.co"
 
 ```powershell
 # 1) Defina as secrets
-supabase functions secrets set SUPABASE_SERVICE_ROLE_KEY=<service_role_key> --project-ref <project_ref>
-supabase functions secrets set SUPABASE_URL=https://<project_ref>.supabase.co --project-ref <project_ref>
+supabase functions secrets set SUPABASE_SERVICE_ROLE_KEY=<service_role_key> SERVICE_ROLE_KEY=<service_role_key> --project-ref <project_ref>
+supabase functions secrets set SUPABASE_URL=https://<project_ref>.supabase.co PROJECT_URL=https://<project_ref>.supabase.co --project-ref <project_ref>
 
 # 2) Deploy de cada função
 supabase functions deploy admin-create-user --project-ref <project_ref>
@@ -51,6 +51,6 @@ Após o deploy, no painel Supabase > Functions, teste a função `admin-create-u
 }
 ```
 
-Obs.: Apenas usuários com perfil `admin` ou `master` podem invocar com sucesso.
+Obs.: Apenas usuários com perfil `master` podem invocar com sucesso.
 
 Se aparecer “Service role not configured”, confira se a secret foi definida e redeploy a função.

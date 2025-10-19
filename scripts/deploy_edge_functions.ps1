@@ -28,9 +28,10 @@ if (-not $ProjectRef) { $ProjectRef = Read-Host "Informe SUPABASE_PROJECT_REF (e
 if (-not $ServiceRoleKey) { $ServiceRoleKey = Read-Host "Informe a Service Role Key (SERVICE_ROLE_KEY)" }
 if (-not $SupabaseUrl) { $SupabaseUrl = Read-Host "Informe o URL do projeto (ex: https://<ref>.supabase.co)" }
 
-Write-Host "Definindo secrets do projeto (usadas pelas Functions)..."
-supabase secrets set SERVICE_ROLE_KEY=$ServiceRoleKey PROJECT_URL=$SupabaseUrl --project-ref $ProjectRef
-if ($LASTEXITCODE -ne 0) { Write-Error "Falha ao setar secrets do projeto"; exit 1 }
+Write-Host "Definindo secrets para as Functions no projeto..."
+# Define tanto os nomes SUPABASE_* quanto os fallbacks lidos pela função (PROJECT_URL/SERVICE_ROLE_KEY)
+supabase functions secrets set SUPABASE_SERVICE_ROLE_KEY=$ServiceRoleKey SERVICE_ROLE_KEY=$ServiceRoleKey SUPABASE_URL=$SupabaseUrl PROJECT_URL=$SupabaseUrl --project-ref $ProjectRef
+if ($LASTEXITCODE -ne 0) { Write-Error "Falha ao setar secrets das Functions"; exit 1 }
 
 $functions = @('admin-create-user','admin-delete-user')
 foreach ($fn in $functions) {
