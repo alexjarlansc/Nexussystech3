@@ -89,9 +89,9 @@ export default function Index() {
               <div className="h-12 w-12 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center mb-3">
                 <Building2 className="h-6 w-6" />
               </div>
-              <div className="font-medium">Configuração</div>
+              <div className="font-medium">Configuração Mestre</div>
               <div className="text-sm text-muted-foreground">
-                Editar Perfil e Configurações da Empresa.
+                Editar Perfil e Configuração Mestre da Empresa.
               </div>
               <div className="mt-3">
                 <Button size="sm" variant="outline" className="transition group-hover:translate-x-0.5">Abrir</Button>

@@ -594,10 +594,10 @@ export default function Erp() {
                     <ErpNavItem icon={<Users className='h-4 w-4' />} label="Colaboradores" active={section==='hr'} onClick={()=>setSection('hr')} />
                   </div>
                 )}
-                <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Configurações" onToggle={()=>toggleGroup('config')} isExpanded={!!expandedGroups['config']} />
+                <GroupTitle icon={<Settings2 className="h-3.5 w-3.5" />} label="Configuração Mestre" onToggle={()=>toggleGroup('config')} isExpanded={!!expandedGroups['config']} />
                 {!!expandedGroups['config'] && (
                   <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
-                    <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Configurações" active={section==='configurations'} onClick={()=>setSection('configurations')} />
+                    <ErpNavItem icon={<Settings2 className='h-4 w-4' />} label="Configuração Mestre" active={section==='configurations'} onClick={()=>setSection('configurations')} />
                   </div>
                 )}
               </>
