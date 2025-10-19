@@ -151,14 +151,9 @@ createRoot(document.getElementById("root")!).render(
             </Routes>
             </SystemDialogProvider>
             <Toaster />
-            {/* Mobile UI scale control */}
-            <Suspense fallback={null}>
-              {/** Import lazily to avoid loading in non-browser envs */}
-              {(() => {
-                const UIScale = lazy(() => import('./components/UIScaleControl'));
-                return <UIScale />;
-              })()}
-            </Suspense>
+            {/* Mobile UI scale control removed per UX request (indicator hidden).
+                The component `src/components/UIScaleControl.tsx` remains in the codebase
+                if we need to re-enable it later. */}
           </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>

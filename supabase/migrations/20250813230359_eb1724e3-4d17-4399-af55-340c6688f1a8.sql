@@ -6,7 +6,6 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
-
 -- Fix generate invite code function
 CREATE OR REPLACE FUNCTION public.generate_invite_code()
 RETURNS TEXT AS $$

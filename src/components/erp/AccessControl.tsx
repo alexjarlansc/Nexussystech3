@@ -247,28 +247,28 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
   }
 
   useEffect(() => {
-    if (!profile || profile.role !== 'admin') return;
-    loadUsers();
+    // Carrega usuários para perfis admin ou master (master é dono do sistema)
+    if (!profile || (profile.role !== 'admin' && profile.role !== 'master')) return;
+    (async () => { try { await loadUsers(); } catch (_) { /* ignore */ } })();
   }, [profile]);
 
   async function loadUsers() {
     setLoading(true);
     try {
-      // Busca perfis
       const res = await supabase
         .from('profiles')
         .select('id,user_id,first_name,email,role,permissions')
-        // ocultar administradores diretamente na consulta
         .neq('role', 'admin')
         .order('first_name', { ascending: true })
         .limit(500);
-
-  if (res.error) throw res.error;
-  // Filtro defensivo extra caso role venha nulo/indefinido
-  const data = ((res.data as unknown as ProfileRow[]) || []).filter(u => (u.role || '').toLowerCase() !== 'admin');
+      if ((res as any).error) throw (res as any).error;
+      const data = ((res.data as unknown as ProfileRow[]) || []).filter(u => {
+        const r = (u.role || '').toLowerCase();
+        return r !== 'admin' && r !== 'master';
+      });
       // Normalize permissions to array when present
       setUsers(data.map(d => ({ ...d, permissions: Array.isArray(d.permissions) ? d.permissions : [] })));
-  setPermissionsColumnMissing(false);
+      setPermissionsColumnMissing(false);
     } catch (err) {
       const e = err as Error | { message?: string } | null;
       console.error('Erro ao carregar usuários:', e);
@@ -282,8 +282,11 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
             .neq('role', 'admin')
             .order('first_name', { ascending: true })
             .limit(500);
-          if (fallback.error) throw fallback.error;
-          const data = ((fallback.data as unknown as ProfileRow[]) || []).filter(u => (u.role || '').toLowerCase() !== 'admin');
+          if ((fallback as any).error) throw (fallback as any).error;
+          const data = ((fallback.data as unknown as ProfileRow[]) || []).filter(u => {
+            const r = (u.role || '').toLowerCase();
+            return r !== 'admin' && r !== 'master';
+          });
           setUsers(data.map(d => ({ ...d, permissions: [] })));
           toast.error('Coluna `permissions` não encontrada. Exibindo usuários sem permissões. Rode a migração SQL sugerida.');
           setPermissionsColumnMissing(true);
@@ -307,8 +310,8 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
         toast.error('Nenhum usuário selecionado para salvar.');
         return;
       }
-      if (row.role === 'admin') {
-        toast.info('Usuário é administrador — permissões globais não serão alteradas via este painel.');
+      if (row.role === 'admin' || row.role === 'master') {
+        toast.info('Usuário é administrador — permissões globais não serão alteradas via este painel (inclui Administrador Mestre).');
         return;
       }
 
@@ -551,7 +554,7 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
     );
   }
 
-  if (!profile || profile.role !== 'admin') {
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'master')) {
     return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Acesso negado</h2><p className="text-sm text-muted-foreground">Apenas administradores podem acessar o Controle de Acesso.</p></Card>;
   }
 
@@ -562,7 +565,7 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
           <div className="text-sm font-medium text-amber-800 mb-2">Função de salvamento ausente no banco</div>
           <div className="text-xs text-amber-800">Precisamos criar a função RPC <code>admin_update_permissions</code> para que administradores salvem permissões sob RLS.</div>
           <div className="mt-2">
-            <pre className="text-xs p-2 bg-white rounded border overflow-auto">{`-- Execute no Supabase SQL (ou rode as migrações do projeto)\n${'CREATE OR REPLACE FUNCTION public.admin_is_admin() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (SELECT 1 FROM public.profiles p WHERE p.user_id = auth.uid() AND p.role = \'admin\'); $$;'}\n\n${'CREATE OR REPLACE FUNCTION public.admin_update_permissions(target_id uuid, perms jsonb) RETURNS public.profiles LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ DECLARE updated_row public.profiles; BEGIN IF NOT public.admin_is_admin() THEN RAISE EXCEPTION \'Only admins can update permissions\'; END IF; UPDATE public.profiles AS pr SET permissions = coalesce(perms, \'[]\'::jsonb) WHERE pr.id = target_id OR pr.user_id = target_id RETURNING pr.* INTO updated_row; IF updated_row.id IS NULL THEN RAISE EXCEPTION \'Profile not found for id=%\', target_id; END IF; RETURN updated_row; END; $$;'}\n\n${'CREATE OR REPLACE FUNCTION public.admin_update_permissions(target_id uuid, perms text[]) RETURNS public.profiles LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN RETURN public.admin_update_permissions(target_id, to_jsonb(perms)); END; $$;'}\n\nGRANT EXECUTE ON FUNCTION public.admin_update_permissions(uuid, jsonb) TO authenticated;\nGRANT EXECUTE ON FUNCTION public.admin_update_permissions(uuid, text[]) TO authenticated;`}</pre>
+            <pre className="text-xs p-2 bg-white rounded border overflow-auto">{`-- Execute no Supabase SQL (ou rode as migrações do projeto)\n${'CREATE OR REPLACE FUNCTION public.admin_is_admin() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (SELECT 1 FROM public.profiles p WHERE p.user_id = auth.uid() AND (p.role = \'admin\' OR p.role = \'master\')); $$;'}\n\n${'CREATE OR REPLACE FUNCTION public.admin_update_permissions(target_id uuid, perms jsonb) RETURNS public.profiles LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ DECLARE updated_row public.profiles; BEGIN IF NOT public.admin_is_admin() THEN RAISE EXCEPTION \'Only admins can update permissions\'; END IF; UPDATE public.profiles AS pr SET permissions = coalesce(perms, \'[]\'::jsonb) WHERE pr.id = target_id OR pr.user_id = target_id RETURNING pr.* INTO updated_row; IF updated_row.id IS NULL THEN RAISE EXCEPTION \'Profile not found for id=%\', target_id; END IF; RETURN updated_row; END; $$;'}\n\n${'CREATE OR REPLACE FUNCTION public.admin_update_permissions(target_id uuid, perms text[]) RETURNS public.profiles LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN RETURN public.admin_update_permissions(target_id, to_jsonb(perms)); END; $$;'}\n\nGRANT EXECUTE ON FUNCTION public.admin_update_permissions(uuid, jsonb) TO authenticated;\nGRANT EXECUTE ON FUNCTION public.admin_update_permissions(uuid, text[]) TO authenticated;`}</pre>
           </div>
           <div className="text-xs text-amber-800 mt-2">Obs: este projeto já inclui a migração em <code>supabase/migrations</code>. Rode as migrações para aplicar automaticamente.</div>
           <div className="mt-3">
@@ -592,8 +595,11 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
             </thead>
             <tbody>
               {users
-                // Garantia extra: nunca listar administradores
-                .filter(u => (u.role || '').toLowerCase() !== 'admin')
+                // Garantia extra: nunca listar administradores ou master
+                .filter(u => {
+                  const r = (u.role || '').toLowerCase();
+                  return r !== 'admin' && r !== 'master';
+                })
                 .filter(u=>{
                   if(!query) return true;
                   const q = query.toLowerCase();
@@ -627,8 +633,9 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
                     <div className="text-sm flex flex-wrap gap-1">
                       {(() => {
                         const summary = summarizePermissions(u.permissions);
-                        const hasErpAccess = Array.isArray(u.permissions) && u.permissions.includes('erp.access');
-                        const hasAnyModule = Array.isArray(u.permissions) && u.permissions.some(p => p !== 'erp.access');
+                        // master sempre conta como com acesso total
+                        const hasErpAccess = u.role === 'master' || (Array.isArray(u.permissions) && u.permissions.includes('erp.access'));
+                        const hasAnyModule = u.role === 'master' || (Array.isArray(u.permissions) && u.permissions.some(p => p !== 'erp.access'));
                         if (!summary.length) {
                           return (
                             <span className="inline-flex items-center rounded bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px]">

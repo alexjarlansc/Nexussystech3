@@ -1,4 +1,6 @@
 /* eslint-disable */
+// deno-lint-ignore-file
+// @ts-nocheck
 // Supabase Edge Function: admin-delete-user
 // Exclui definitivamente um usuário: apaga profile e usuário de autenticação (Auth)
 // Requer configurar a secret SUPABASE_SERVICE_ROLE_KEY no ambiente de funções.
@@ -16,8 +18,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const url = Deno.env.get('SUPABASE_URL')!;
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const url = Deno.env.get('SUPABASE_URL') ?? Deno.env.get('PROJECT_URL');
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SERVICE_ROLE_KEY');
     if (!url || !serviceKey) {
       return new Response(JSON.stringify({ error: 'Service role not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
     }
@@ -42,8 +44,17 @@ Deno.serve(async (req) => {
     }
     const service = createClient(url, serviceKey);
     const { data: prof, error: profErr } = await service.from('profiles').select('role').eq('user_id', callerId).maybeSingle();
-    if (profErr || !prof || prof.role !== 'admin') {
+    if (profErr || !prof || (prof.role !== 'admin' && prof.role !== 'master')) {
       return new Response(JSON.stringify({ error: 'Apenas administradores podem executar esta ação' }), { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+    }
+
+    // Server-side guard: do not allow deletion of users with role 'master'
+    const { data: targetProf, error: targetProfErr } = await service.from('profiles').select('role').eq('user_id', targetUserId).maybeSingle();
+    if (targetProfErr) {
+      return new Response(JSON.stringify({ error: targetProfErr.message || 'Erro ao verificar perfil alvo' }), { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+    }
+    if (targetProf && targetProf.role === 'master') {
+      return new Response(JSON.stringify({ error: 'Operação proibida: não é permitido excluir Administrador Mestre' }), { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
     }
 
     // Remove profile primeiro (idempotente)

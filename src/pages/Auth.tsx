@@ -145,15 +145,15 @@ export default function Auth() {
 
   return (
   <div className="min-h-svh gradient-hero flex items-center justify-center p-4">
+      <div className="flex flex-col items-center mb-6">
+          <img src="/NEXUS_SYSTECH.svg" alt="Nexus Systech" className="h-40 mb-1" style={{maxWidth:'90%'}} />
+      </div>
       <Card className="w-full max-w-md p-6 card-elevated">
-  <div className="flex flex-col items-center mb-6">
-          <img src="/NEXUS_SYSTECH.svg" alt="Nexus Systech" className="h-24 mb-1" style={{maxWidth:'90%'}} />
-          {error && (
-            <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm">
-              {error}
-            </div>
-          )}
-        </div>
+        {error && (
+          <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm">
+            {error}
+          </div>
+        )}
 
         <div className="space-y-4 w-full">
           <form onSubmit={handleSignIn} className="space-y-4">

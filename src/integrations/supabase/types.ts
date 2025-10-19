@@ -702,7 +702,7 @@ export type AppDatabase = {
       }
     }
     Enums: {
-  user_role: "user" | "admin" | "pdv"
+  user_role: "user" | "admin" | "pdv" | "master"
     }
     CompositeTypes: {
       [_ in never]: never

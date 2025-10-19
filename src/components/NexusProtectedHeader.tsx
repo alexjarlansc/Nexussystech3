@@ -203,9 +203,9 @@ export function NexusProtectedHeader() {
     }
   };
 
-  const handleGenerateInvite = async (role: 'user' | 'admin' | 'pdv') => {
+  const handleGenerateInvite = async (role: 'user' | 'admin' | 'pdv' | 'master') => {
     // typed wrapper to allow optional company id without touching global type inference
-    const gen = (generateInviteCode as unknown) as (r: 'user'|'admin'|'pdv', companyId?: string) => Promise<{ code?: string; error?: unknown }>;
+  const gen = (generateInviteCode as unknown) as (r: 'user'|'admin'|'pdv'|'master', companyId?: string) => Promise<{ code?: string; error?: unknown }>;
     const { code, error } = await gen(role, selectedCompanyForInvite);
 
     if (error) {
@@ -359,45 +359,41 @@ export function NexusProtectedHeader() {
   return (
     <>
     <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 fixed top-0 left-0 right-0 z-40" style={{height: 'var(--header-height)'}}>
-  <div className="w-full mx-auto px-2 sm:px-4 py-2 h-full">
-          {/* Wrapper que permite empilhar no mobile e alinhar lado a lado em telas maiores */}
-          <div className="flex flex-row flex-nowrap items-center justify-between gap-2">
+  <div className="w-full mx-auto px-4 sm:px-6 py-0 h-full">
+    {/* Wrapper que permite empilhar no mobile e alinhar lado a lado em telas maiores */}
+    <div className="flex h-full items-center gap-2">
             <Link
               to="/"
               aria-label="Ir para início"
-              className="flex items-center gap-3 min-w-0 group cursor-pointer select-none pr-3 sm:pr-4 mr-2"
+              className="flex items-center gap-3 min-w-0 group cursor-pointer select-none"
             >
               { (company?.logo_url || logoDataUrl) ? (
-                <img src={company?.logo_url || logoDataUrl} alt={company?.name || 'Logo'} className="h-7 w-7 sm:h-8 sm:w-8 object-contain flex-shrink-0 rounded-sm bg-white border" />
+                <img src={company?.logo_url || logoDataUrl} alt={company?.name || 'Logo'} className="h-12 w-12 sm:h-16 sm:w-16 object-contain flex-shrink-0" />
               ) : (
-                <Building2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0 transition-transform group-hover:scale-105" />
+                <Building2 className="h-12 w-12 sm:h-16 sm:w-16 text-primary flex-shrink-0 transition-transform group-hover:scale-105" />
               ) }
-              <div className="leading-tight min-w-0">
-                <h1 className="font-bold text-primary text-lg sm:text-xl tracking-tight group-hover:opacity-90 truncate">Nexus Systech</h1>
-                <p className="text-[10px] sm:text-xs text-muted-foreground truncate max-w-[160px] sm:max-w-[240px] group-hover:text-primary/80 transition-colors whitespace-nowrap">
-                  {company?.name || 'Início'}
-                </p>
-              </div>
+              <span className="sr-only">{company?.name || 'Início'}</span>
             </Link>
 
-            {/* Ações / usuário */}
-            <div className="flex items-center gap-1 sm:gap-2 justify-end flex-nowrap min-w-0">
-              <div className="flex flex-col items-end leading-tight gap-0.5 pr-2 border-r sm:border-r-0 min-w-0">
-                <p className="text-xs sm:text-sm font-medium max-w-[140px] truncate whitespace-nowrap">
-                  {profile?.first_name}
-                </p>
+            {/* spacer to keep center clean */}
+            <div className="flex-1" />
+
+            {/* User actions on the right */}
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex flex-col items-end leading-tight gap-0.5 min-w-0">
+                <p className="text-sm font-medium max-w-[160px] truncate">{profile?.first_name}</p>
                 <Badge
-                  variant={profile?.role === 'admin' ? 'default' : 'secondary'}
-                  className="text-[10px] sm:text-xs px-1.5 py-0.5"
+                  variant={(profile?.role === 'admin' || profile?.role === 'master') ? 'default' : 'secondary'}
+                  className="text-[11px] sm:text-xs px-2 py-1 rounded-full"
                 >
-                  {profile?.role === 'admin' ? 'Administrador' : profile?.role === 'pdv' ? 'PDV' : 'Usuário'}
+                  {profile?.role === 'master' ? 'Administrador Mestre' : profile?.role === 'admin' ? 'Administrador' : profile?.role === 'pdv' ? 'PDV' : 'Usuário'}
                 </Badge>
               </div>
 
               {profile?.role === 'pdv' && (
                 <Link to="/pdv" className="text-xs font-medium px-2 py-1 border rounded hover:bg-muted">PDV</Link>
               )}
-              {/* Botão de acesso rápido a convites removido — já disponível em Configurações */}
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -609,8 +605,8 @@ export function NexusProtectedHeader() {
         </DialogContent>
       </Dialog>
 
-      {/* Invite Codes Modal (Admin Only) */}
-      {profile?.role === 'admin' && (
+  {/* Invite Codes Modal (Admin or Master) */}
+  {(profile?.role === 'admin' || profile?.role === 'master') && (
         <Dialog open={openInvites} onOpenChange={setOpenInvites}>
   <DialogContent className="max-w-5xl w-[min(1100px,96vw)] max-h-[92vh] overflow-y-auto overflow-x-hidden">
             <DialogHeader>
@@ -631,19 +627,20 @@ export function NexusProtectedHeader() {
                     <div className='text-xs text-muted-foreground'>{selectedCompanyForInvite || company?.id || ''}</div>
                   </div>
                   </div>
-        {(['user','admin','pdv'] as const).map(role => (
+  {(['user','admin','pdv','master'] as const).map(role => (
                   <button
                     key={role}
                     type="button"
                     onClick={() => handleGenerateInvite(role)}
                     className={"flex-1 px-3 py-2 text-sm font-medium focus:outline-none transition-colors rounded-none " +
-                      (role==='user' ? 'data-[role=user]' : role==='admin' ? 'data-[role=admin]' : 'data-[role=pdv]') + ' '}
+                      (role==='user' ? 'data-[role=user]' : role==='admin' ? 'data-[role=admin]' : role==='pdv' ? 'data-[role=pdv]' : 'data-[role=master]') + ' '}
                     data-active={false}
                     data-role={role}
                   >
                     {role==='user' && 'Gerar Código Usuário'}
                     {role==='admin' && 'Gerar Código Admin'}
                     {role==='pdv' && 'Gerar Código PDV'}
+                    {role==='master' && 'Gerar Código Master'}
                   </button>
                 ))}
               </div>

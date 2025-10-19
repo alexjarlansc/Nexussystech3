@@ -1,11 +1,12 @@
 import { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { hasPermission } from '@/lib/permissions';
 
 interface ProtectedRouteProps {
   children: ReactNode;
   requireAdmin?: boolean;
-  allowedRoles?: Array<'user' | 'admin' | 'pdv'>;
+  allowedRoles?: Array<'user' | 'admin' | 'pdv' | 'master'>;
 }
 
 export function ProtectedRoute({ children, requireAdmin = false, allowedRoles }: ProtectedRouteProps) {
@@ -24,8 +25,13 @@ export function ProtectedRoute({ children, requireAdmin = false, allowedRoles }:
     return <Navigate to="/auth" replace />;
   }
 
+  // Administrador Master não deve ser barrado de nada
+  if (profile?.role === 'master') {
+    return <>{children}</>;
+  }
+
   // Bloqueia usuários suspensos
-  const isSuspended = Array.isArray(profile?.permissions) && profile?.permissions?.includes('suspended');
+  const isSuspended = hasPermission(profile, 'suspended');
   if (isSuspended) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -48,7 +54,7 @@ export function ProtectedRoute({ children, requireAdmin = false, allowedRoles }:
     );
   }
 
-  if (allowedRoles && profile?.role && !allowedRoles.includes(profile.role)) {
+  if (allowedRoles && profile?.role && !allowedRoles.includes(profile.role as 'user' | 'admin' | 'pdv' | 'master')) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">

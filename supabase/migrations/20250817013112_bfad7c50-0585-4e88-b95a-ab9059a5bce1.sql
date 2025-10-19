@@ -11,10 +11,8 @@ CREATE TABLE public.products (
   created_at timestamp with time zone DEFAULT now() NOT NULL,
   updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
 -- Enable RLS
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
-
 -- RLS policies for products
 -- Users can view products from their company
 CREATE POLICY "Users can view company products" 
@@ -25,7 +23,6 @@ USING (company_id IN (
   FROM profiles 
   WHERE profiles.user_id = auth.uid()
 ));
-
 -- Only admins can create products
 CREATE POLICY "Admins can create products" 
 ON public.products 
@@ -43,7 +40,6 @@ WITH CHECK (
     AND profiles.role = 'admin'
   )
 );
-
 -- Only admins can update products
 CREATE POLICY "Admins can update products" 
 ON public.products 
@@ -60,7 +56,6 @@ USING (
     AND profiles.role = 'admin'
   )
 );
-
 -- Only admins can delete products
 CREATE POLICY "Admins can delete products" 
 ON public.products 
@@ -77,10 +72,8 @@ USING (
     AND profiles.role = 'admin'
   )
 );
-
 -- Create index for better performance
 CREATE INDEX idx_products_company_id ON public.products(company_id);
-
 -- Add trigger for updated_at
 CREATE TRIGGER update_products_updated_at
   BEFORE UPDATE ON public.products

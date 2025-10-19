@@ -12,7 +12,8 @@
     "preview": "vite preview",
   "db:push": "supabase db push",
   "db:ensure:carriers": "node scripts/ensure_carriers_table.mjs",
-  "db:ensure:erp": "node scripts/ensure_erp_tables.mjs"
+  "db:ensure:erp": "node scripts/ensure_erp_tables.mjs",
+  "functions:deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy_edge_functions.ps1"
   },
   "engines": {
     "node": ">=18.18.0 <23",

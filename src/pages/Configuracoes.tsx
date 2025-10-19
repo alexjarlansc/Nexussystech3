@@ -24,8 +24,8 @@ export default function Configuracoes() {
   <div className="min-h-svh gradient-hero" style={{ paddingTop: 'var(--header-height)' }}>
       <NexusProtectedHeader />
       <main className="mx-auto max-w-4xl p-4 sm:p-6">
-  <h1 className="text-2xl sm:text-3xl font-semibold mb-4">Configuração Mestre</h1>
-  <p className="text-sm text-muted-foreground mb-6">Gerencie suas informações de perfil e a Configuração Mestre da empresa.</p>
+  <h1 className="text-2xl sm:text-3xl font-semibold mb-4">Configuração</h1>
+  <p className="text-sm text-muted-foreground mb-6">Gerencie suas informações de perfil e a configuração da empresa.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Card className="p-4">
             <div className="h-12 w-12 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center mb-3">

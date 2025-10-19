@@ -94,7 +94,7 @@ export default function Erp() {
   const canAccessErp = (() => {
     try {
       if (!auth?.profile) return false;
-      if (auth.profile.role === 'admin') return true;
+      if (auth.profile.role === 'admin' || auth.profile.role === 'master') return true;
       if (Array.isArray(profilePerms) && profilePerms.includes('erp.access')) return true;
       return false;
     } catch (_) { return false; }
@@ -102,7 +102,7 @@ export default function Erp() {
   const hasPerm = useCallback((perm: string) => {
     try {
       if (!auth?.profile) return false;
-      if (auth.profile.role === 'admin') return true;
+      if (auth.profile.role === 'admin' || auth.profile.role === 'master') return true;
       // permissions stored as jsonb array in profiles.permissions
       const perms = (auth.profile as any)?.permissions as string[] | undefined;
       return Array.isArray(perms) && perms.includes(perm);
@@ -149,7 +149,7 @@ export default function Erp() {
   }), []);
   const canSeeSection = useCallback((s: SectionKey) => {
     if (!auth?.profile) return false;
-    if (auth.profile.role === 'admin') return true;
+    if (auth.profile.role === 'admin' || auth.profile.role === 'master') return true;
     const need = SECTION_REQUIRED_PERM[s];
     if (!need) return true; // se não mapeado, não restringe
     return hasPerm(need);
@@ -580,7 +580,7 @@ export default function Erp() {
                 </>
               );
             })()}
-            {auth?.profile?.role === 'admin' && (
+            {(auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
               <>
                 <GroupTitle icon={<Users className="h-3.5 w-3.5" />} label="Marketing" onToggle={()=>toggleGroup('marketing')} isExpanded={!!expandedGroups['marketing']} />
                 {!!expandedGroups['marketing'] && (
@@ -670,7 +670,7 @@ export default function Erp() {
               {section === 'sales_orders' && <SalesOrdersList />}
               {section === 'service_sales_orders' && <ServiceSalesOrdersList />}
               {section === 'purchases_list' && <ErpPurchasesList />}
-              {section === 'configurations' && auth?.profile?.role === 'admin' && (
+              {section === 'configurations' && (auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
                 <div className="space-y-4">
                   <h2 className="text-xl font-semibold">Configurações</h2>
                   <p className="text-sm text-muted-foreground">Área de configurações do ERP.</p>
@@ -682,14 +682,6 @@ export default function Erp() {
                       </div>
                       <div className="text-sm font-medium">Cadastro de Empresa</div>
                       <div className="text-xs text-muted-foreground">Gerencie dados da empresa, endereço, contatos e logo.</div>
-                    </button>
-
-                    <button type="button" onClick={()=>{ window.dispatchEvent(new CustomEvent('erp:open-invite-modal')); }} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
-                      <div className="h-10 w-10 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11a4 4 0 0 1 8 0v1h-1v3h3v4h4v-6h3a2 2 0 0 0 2-2v-1a4 4 0 0 0-4-4h-8"/></svg>
-                      </div>
-                      <div className="text-sm font-medium">Códigos de Convite</div>
-                      <div className="text-xs text-muted-foreground">Gerencie códigos de convite para novas contas (admin).</div>
                     </button>
 
                     <button type="button" onClick={()=>setSection('access_control')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
@@ -726,21 +718,21 @@ export default function Erp() {
                   </div>
                 </div>
               )}
-              {section === 'company_admin' && auth?.profile?.role === 'admin' && (
+              {section === 'company_admin' && (auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
                 <Card className="p-6">
                   <h2 className="text-xl font-semibold mb-1">Administração de Empresas</h2>
                   <p className="text-sm text-muted-foreground mb-4">Suspender temporariamente ou excluir empresas.</p>
                   <CompanyAdminPanel />
                 </Card>
               )}
-              {section === 'user_admin' && auth?.profile?.role === 'admin' && (
+              {section === 'user_admin' && (auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
                 <Card className="p-6">
                   <h2 className="text-xl font-semibold mb-1">Administração de Usuários</h2>
                   <p className="text-sm text-muted-foreground mb-4">Suspender temporariamente ou excluir usuários da empresa.</p>
                   <UserAdminPanel />
                 </Card>
               )}
-              {section === 'access_control' && auth?.profile?.role === 'admin' && (
+              {section === 'access_control' && (auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
                 <AccessControl />
               )}
               {section === 'purchases_requests' && <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Solicitações de Compras</h2><p className="text-sm text-muted-foreground">Lista de solicitações pendentes. Implementar CRUD quando especificado.</p></Card>}

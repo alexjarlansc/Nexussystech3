@@ -3,7 +3,7 @@ export interface Profile {
   id: string;
   user_id: string;
   company_id: string;
-  role: 'user' | 'admin' | 'pdv';
+  role: 'user' | 'admin' | 'pdv' | 'master';
   first_name?: string;
   phone?: string;
   email?: string;
@@ -23,7 +23,7 @@ export interface Company {
 export interface InviteCode {
   id?: string;
   code: string;
-  role: 'user' | 'admin' | 'pdv';
+  role: 'user' | 'admin' | 'pdv' | 'master';
   created_at?: string;
   expires_at?: string;
   used_by?: string | null;
@@ -41,6 +41,6 @@ export interface AuthSignUpData {
   phone?: string;
   companyEmail?: string;
   address?: string;
-  role?: 'user' | 'admin' | 'pdv';
+  role?: 'user' | 'admin' | 'pdv' | 'master';
   inviteCode?: string;
 }

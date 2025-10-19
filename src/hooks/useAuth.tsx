@@ -18,7 +18,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   updateProfile: (data: Partial<Profile>) => Promise<BasicResult>;
   updateCompany: (data: Partial<Company>) => Promise<BasicResult>;
-  generateInviteCode: (role: 'user' | 'admin' | 'pdv', companyId?: string) => Promise<InviteCodeResult>;
+  generateInviteCode: (role: 'user' | 'admin' | 'pdv' | 'master', companyId?: string) => Promise<InviteCodeResult>;
   getInviteCodes: () => Promise<CodesResult>;
 }
 
@@ -89,12 +89,12 @@ export function useAuthInternal() {
               const rpc = await (supabase as unknown as { rpc: (name: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('validate_invite', { inv_code: pending.trim() });
               const invUnknown = rpc?.data as unknown;
               const invRow = Array.isArray(invUnknown) ? invUnknown[0] : invUnknown;
-              type InviteRow = { code?: string; company_id?: string | null; role?: 'user'|'admin'|'pdv'|string };
+              type InviteRow = { code?: string; company_id?: string | null; role?: 'user'|'admin'|'pdv'|'master'|string };
               const invite = invRow as InviteRow | null;
               if (invite && (invite.company_id || invite.role)) {
                 const patch: Record<string, unknown> = {};
                 if (invite.company_id) patch.company_id = invite.company_id;
-                if (invite.role === 'admin') patch.role = 'admin';
+                if (invite.role === 'admin' || invite.role === 'master') patch.role = invite.role as 'admin'|'master';
                 if (Object.keys(patch).length > 0) {
                   const { error: upErr } = await supabase.from('profiles').update(patch).eq('user_id', userId);
                   if (upErr) {
@@ -369,7 +369,7 @@ export function useAuthInternal() {
   const signUp = async (email: string, password: string, userData: AuthSignUpData) => {
     try {
       // Check invite code if provided and capture company target
-      let inviteMeta: { code: string; company_id?: string | null; role?: 'user'|'admin'|'pdv' } | null = null;
+  let inviteMeta: { code: string; company_id?: string | null; role?: 'user'|'admin'|'pdv'|'master' } | null = null;
       if (userData.inviteCode) {
         // normalizar código (trim para remover espaços/copiar/colar)
         userData.inviteCode = userData.inviteCode.trim();
@@ -457,7 +457,7 @@ export function useAuthInternal() {
         inviteMeta = {
           code: String(invObj.code || userData.inviteCode),
           company_id: (typeof invObj.company_id === 'string' || invObj.company_id === null) ? invObj.company_id as (string|null|undefined) : undefined,
-          role: (invObj.role === 'admin' || invObj.role === 'user' || invObj.role === 'pdv') ? invObj.role as 'user'|'admin'|'pdv' : undefined,
+          role: (invObj.role === 'admin' || invObj.role === 'user' || invObj.role === 'pdv' || invObj.role === 'master') ? invObj.role as 'user'|'admin'|'pdv'|'master' : undefined,
         };
       }
 
@@ -606,7 +606,7 @@ export function useAuthInternal() {
     }
   };
 
-  const generateInviteCode = async (role: 'user' | 'admin' | 'pdv', companyId?: string) => {
+  const generateInviteCode = async (role: 'user' | 'admin' | 'pdv' | 'master', companyId?: string) => {
     try {
       if (profile?.role !== 'admin') {
         return { error: { message: 'Apenas administradores podem gerar códigos de convite' } };
