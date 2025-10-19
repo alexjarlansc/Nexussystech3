@@ -146,7 +146,7 @@ export default function Auth() {
   return (
   <div className="min-h-svh gradient-hero flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-6 card-elevated">
-        <div className="flex flex-col items-center mb-6">
+  <div className="flex flex-col items-center mb-6">
           <img src="/NEXUS_SYSTECH.svg" alt="Nexus Systech" className="h-24 mb-1" style={{maxWidth:'90%'}} />
           {error && (
             <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm">
@@ -155,113 +155,35 @@ export default function Auth() {
           )}
         </div>
 
-        <Tabs defaultValue="signin" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="signin">Entrar</TabsTrigger>
-            <TabsTrigger value="signup">Criar Conta</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="signin">
-            <form onSubmit={handleSignIn} className="space-y-4">
-              <div>
-                <Label htmlFor="signin-email">Email</Label>
-                <Input
-                  id="signin-email"
-                  type="email"
-                  value={signInEmail}
-                  onChange={(e) => setSignInEmail(e.target.value)}
-                  placeholder="seu@email.com"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="signin-password">Senha</Label>
-                <Input
-                  id="signin-password"
-                  type="password"
-                  value={signInPassword}
-                  onChange={(e) => setSignInPassword(e.target.value)}
-                  placeholder="Sua senha"
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? 'Entrando...' : 'Entrar'}
-              </Button>
-            </form>
-          </TabsContent>
-
-          <TabsContent value="signup">
-            <form onSubmit={handleSignUp} className="space-y-4">
-              <div>
-                <Label htmlFor="first-name">Nome *</Label>
-                <Input
-                  id="first-name"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="Nome"
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="signup-email">Email *</Label>
-                <Input
-                  id="signup-email"
-                  type="email"
-                  value={signUpEmail}
-                  onChange={(e) => setSignUpEmail(e.target.value)}
-                  placeholder="seu@email.com"
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="signup-password">Senha *</Label>
-                <Input
-                  id="signup-password"
-                  type="password"
-                  value={signUpPassword}
-                  onChange={(e) => setSignUpPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                  required
-                />
-              </div>
-
-              {/* Campos de empresa removidos: agora a empresa vem do código de convite */}
-
-              <div>
-                <Label htmlFor="role">Tipo de Usuário</Label>
-                <Select value={role} onValueChange={(v: 'user' | 'admin') => setRole(v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="user">Usuário</SelectItem>
-                    <SelectItem value="admin">Administrador</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="invite-code">Código de Convite (obrigatório para Admin)</Label>
-                <Input
-                  id="invite-code"
-                  value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value)}
-                  placeholder="Código fornecido pelo administrador"
-                  required
-                />
-              </div>
-
-              {/* Modal de seleção de empresa removido */}
-
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? 'Criando conta...' : 'Criar Conta'}
-              </Button>
-            </form>
-          </TabsContent>
-        </Tabs>
+        <div className="space-y-4 w-full">
+          <form onSubmit={handleSignIn} className="space-y-4">
+            <div>
+              <Label htmlFor="signin-email">Email</Label>
+              <Input
+                id="signin-email"
+                type="email"
+                value={signInEmail}
+                onChange={(e) => setSignInEmail(e.target.value)}
+                placeholder="seu@email.com"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="signin-password">Senha</Label>
+              <Input
+                id="signin-password"
+                type="password"
+                value={signInPassword}
+                onChange={(e) => setSignInPassword(e.target.value)}
+                placeholder="Sua senha"
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? 'Entrando...' : 'Entrar'}
+            </Button>
+          </form>
+        </div>
 
         <div className="text-center mt-4 text-sm text-muted-foreground">
           <button className="underline" onClick={() => setResetOpen(true)}>Redefinir senha</button>
