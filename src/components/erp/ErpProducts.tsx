@@ -738,9 +738,9 @@ export function ErpProducts(){
         ))}
       </div>
     )}
-    <div className="border rounded max-h-[520px] overflow-auto">
-      {/* horizontal scroll on small screens; table becomes full-width on md+ */}
-      <div className="overflow-x-auto">
+    {/* wrapper: keep vertical scroll for the panel, and horizontal scroll for table; enable momentum scrolling on iOS */}
+    <div className="border rounded max-h-[520px] overflow-y-auto">
+      <div className="overflow-x-auto touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
         <table className="w-full text-xs min-w-[820px] md:min-w-full table-auto">
           <thead className="bg-muted/50 sticky top-0">
             <tr>
