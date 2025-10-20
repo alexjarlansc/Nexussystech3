@@ -533,7 +533,7 @@ export function NexusProtectedHeader() {
               <input
                 type="file"
                 accept="image/*"
-                disabled={uploadingLogo}
+                disabled={uploadingLogo || profile?.role === 'user' || profile?.role === 'pdv'}
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
