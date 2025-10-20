@@ -469,6 +469,8 @@ export function NexusProtectedHeader() {
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 placeholder="Nome da empresa"
+                readOnly={profile?.role === 'user' || profile?.role === 'pdv'}
+                disabled={profile?.role === 'user' || profile?.role === 'pdv'}
               />
             </div>
             <div>
@@ -478,6 +480,8 @@ export function NexusProtectedHeader() {
                 value={cnpjCpf}
                 onChange={(e) => setCnpjCpf(e.target.value)}
                 placeholder="00.000.000/0000-00"
+                readOnly={profile?.role === 'user' || profile?.role === 'pdv'}
+                disabled={profile?.role === 'user' || profile?.role === 'pdv'}
               />
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -488,6 +492,8 @@ export function NexusProtectedHeader() {
                   value={companyPhone}
                   onChange={(e) => setCompanyPhone(e.target.value)}
                   placeholder="(00) 00000-0000"
+                  readOnly={profile?.role === 'user' || profile?.role === 'pdv'}
+                  disabled={profile?.role === 'user' || profile?.role === 'pdv'}
                 />
               </div>
               <div>
@@ -498,6 +504,8 @@ export function NexusProtectedHeader() {
                   value={companyEmail}
                   onChange={(e) => setCompanyEmail(e.target.value)}
                   placeholder="contato@empresa.com"
+                  readOnly={profile?.role === 'user' || profile?.role === 'pdv'}
+                  disabled={profile?.role === 'user' || profile?.role === 'pdv'}
                 />
               </div>
             </div>
@@ -508,13 +516,15 @@ export function NexusProtectedHeader() {
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="Rua, número, cidade"
+                readOnly={profile?.role === 'user' || profile?.role === 'pdv'}
+                disabled={profile?.role === 'user' || profile?.role === 'pdv'}
               />
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setOpenCompany(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleUpdateCompany}>
+              <Button onClick={handleUpdateCompany} disabled={profile?.role === 'user' || profile?.role === 'pdv'}>
                 Salvar
               </Button>
             </div>
