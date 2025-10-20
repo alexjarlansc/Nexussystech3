@@ -739,48 +739,55 @@ export function ErpProducts(){
       </div>
     )}
     <div className="border rounded max-h-[520px] overflow-auto">
-      <table className="w-full text-xs">
-  <thead className="bg-muted/50 sticky top-0"><tr>
-    <th className="px-2 py-1">&nbsp;</th>
-    <th className="px-2 py-1 text-left">Código</th>
-    <th className="px-2 py-1 text-left">Nome</th>
-    <th className="px-2 py-1">Un</th>
-    <th className="px-2 py-1 text-right">Custo Médio</th>
-    <th className="px-2 py-1 text-right">Preço Venda</th>
-    <th className="px-2 py-1 text-right">Estoque</th>
-    <th className="px-2 py-1 text-right">Reservado</th>
-    <th className="px-2 py-1 text-right">Disp.</th>
-    <th className="px-2 py-1">Status</th>
-    <th className="px-2 py-1"/>
-  </tr></thead>
-        <tbody>
-          {rows.map(r=> <tr key={r.id} className="border-t hover:bg-muted/40">
-            <td className="px-2 py-1"><div className="h-8 w-8 bg-gray-100 rounded overflow-hidden border"><img src={(r as any).image_url||''} alt="" className="h-8 w-8 object-cover" onError={(e:any)=>{ e.currentTarget.style.display='none'; }} /></div></td>
-            <td className="px-2 py-1 font-mono truncate max-w-[120px]" title={r.code||''}>{r.code||'-'}</td>
-            <td className="px-2 py-1 truncate max-w-[240px]" title={r.name}>{r.name}</td>
-            <td className="px-2 py-1 text-center">{r.unit||'-'}</td>
-            <td className="px-2 py-1 text-right">{r.cost_price != null ? r.cost_price.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '-'}</td>
-            <td className="px-2 py-1 text-right">{(r.sale_price||r.price||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
-            <td className="px-2 py-1 text-right">{r.stock ?? '-'}</td>
-            <td className="px-2 py-1 text-right">{r.reserved ?? '-'}</td>
-            <td className="px-2 py-1 text-right">{r.available ?? ((r.stock ?? 0) - (r.reserved ?? 0))}</td>
-            <td className="px-2 py-1 text-center"><button onClick={()=>toggleStatus(r)} className={"underline-offset-2 hover:underline "+(r.status==='INATIVO'? 'text-red-500':'text-green-600')}>{r.status||'ATIVO'}</button></td>
-            <td className="px-2 py-1 text-right flex gap-1 justify-end">
-              <Button size="sm" variant="outline" onClick={()=>startEdit(r)}>Editar</Button>
-              <button
-                onClick={()=>setConfirmDelete(r)}
-                aria-label="Excluir"
-                title="Excluir"
-                className="text-red-600 font-bold text-lg leading-none px-1 hover:text-red-700 focus:outline-none"
-              >
-                ×
-              </button>
-            </td>
-          </tr>)}
-          {rows.length===0 && !loading && <tr><td colSpan={9} className="text-center py-6 text-muted-foreground">Sem produtos</td></tr>}
-          {loading && <tr><td colSpan={9} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
-        </tbody>
-      </table>
+      {/* horizontal scroll on small screens; table becomes full-width on md+ */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs min-w-[820px] md:min-w-full table-auto">
+          <thead className="bg-muted/50 sticky top-0">
+            <tr>
+              <th className="px-2 py-1">&nbsp;</th>
+              <th className="px-2 py-1 text-left">Código</th>
+              <th className="px-2 py-1 text-left">Nome</th>
+              <th className="px-2 py-1">Un</th>
+              <th className="px-2 py-1 text-right hidden md:table-cell">Custo Médio</th>
+              <th className="px-2 py-1 text-right">Preço Venda</th>
+              <th className="px-2 py-1 text-right">Estoque</th>
+              <th className="px-2 py-1 text-right hidden md:table-cell">Reservado</th>
+              <th className="px-2 py-1 text-right hidden md:table-cell">Disp.</th>
+              <th className="px-2 py-1">Status</th>
+              <th className="px-2 py-1"/>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r=> (
+              <tr key={r.id} className="border-t hover:bg-muted/40">
+                <td className="px-2 py-1"><div className="h-8 w-8 bg-gray-100 rounded overflow-hidden border"><img src={(r as any).image_url||''} alt="" className="h-8 w-8 object-cover" onError={(e:any)=>{ e.currentTarget.style.display='none'; }} /></div></td>
+                <td className="px-2 py-1 font-mono truncate max-w-[100px] md:max-w-[120px]" title={r.code||''}>{r.code||'-'}</td>
+                <td className="px-2 py-1 truncate max-w-[160px] md:max-w-[240px]" title={r.name}>{r.name}</td>
+                <td className="px-2 py-1 text-center">{r.unit||'-'}</td>
+                <td className="px-2 py-1 text-right hidden md:table-cell">{r.cost_price != null ? r.cost_price.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '-'}</td>
+                <td className="px-2 py-1 text-right">{(r.sale_price||r.price||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+                <td className="px-2 py-1 text-right">{r.stock ?? '-'}</td>
+                <td className="px-2 py-1 text-right hidden md:table-cell">{r.reserved ?? '-'}</td>
+                <td className="px-2 py-1 text-right hidden md:table-cell">{r.available ?? ((r.stock ?? 0) - (r.reserved ?? 0))}</td>
+                <td className="px-2 py-1 text-center"><button onClick={()=>toggleStatus(r)} className={"underline-offset-2 hover:underline "+(r.status==='INATIVO'? 'text-red-500':'text-green-600')}>{r.status||'ATIVO'}</button></td>
+                <td className="px-2 py-1 text-right flex gap-1 justify-end">
+                  <Button size="sm" variant="outline" onClick={()=>startEdit(r)}>Editar</Button>
+                  <button
+                    onClick={()=>setConfirmDelete(r)}
+                    aria-label="Excluir"
+                    title="Excluir"
+                    className="text-red-600 font-bold text-lg leading-none px-1 hover:text-red-700 focus:outline-none"
+                  >
+                    ×
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {rows.length===0 && !loading && <tr><td colSpan={11} className="text-center py-6 text-muted-foreground">Sem produtos</td></tr>}
+            {loading && <tr><td colSpan={11} className="text-center py-6 text-muted-foreground">Carregando...</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </div>
     <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
       <div>Página {page+1} • {rows.length} itens {debouncedSearch? 'filtrados':''}</div>
