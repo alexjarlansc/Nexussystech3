@@ -79,7 +79,7 @@ export function useAuthInternal() {
           return;
         }
       }
-      // Antes de prosseguir, verifique se há um convite pendente nos metadados do usuário e aplique-o
+      // Antes de prosseguir, verifique se há metadados pendentes e aplique-os (convite/company)
         try {
           const { data: userRes } = await supabase.auth.getUser();
           const pending = (userRes?.user?.user_metadata as Record<string, unknown> | undefined)?.pending_invite_code as string | undefined;
@@ -113,8 +113,32 @@ export function useAuthInternal() {
               console.warn('Falha ao validar/applicar convite pendente', e);
             }
           }
+          // Aplicar pending_company_id (vínculo direto por UUID) se existir
+          const pendingCompany = (userRes?.user?.user_metadata as Record<string, unknown> | undefined)?.pending_company_id as string | undefined;
+          if (pendingCompany && typeof pendingCompany === 'string' && pendingCompany.trim()) {
+            console.log('🏢 Aplicando pending_company_id do metadado:', pendingCompany);
+            try {
+              // Validação leve de UUID
+              const uuidLike = /^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$/;
+              if (!uuidLike.test(pendingCompany)) {
+                console.warn('pending_company_id inválido (não UUID). Ignorando.');
+              } else {
+                const { error: upErrPc } = await supabase.from('profiles').update({ company_id: pendingCompany }).eq('user_id', userId);
+                if (upErrPc) {
+                  console.warn('⚠️ Não foi possível aplicar pending_company_id ao profile:', upErrPc);
+                } else {
+                  try { await supabase.auth.updateUser({ data: { pending_company_id: null } }); } catch (e) { /* noop */ }
+                  // Recarrega dados após aplicar company_id
+                  setTimeout(() => loadUserData(userId, retryCount + 1), 150);
+                  return;
+                }
+              }
+            } catch (e) {
+              console.warn('Falha ao aplicar pending_company_id', e);
+            }
+          }
         } catch (e) {
-          console.warn('Não foi possível checar metadado pending_invite_code', e);
+          console.warn('Não foi possível checar metadados pendentes (invite/company)', e);
         }
 
   // Normalize permissions to an array if missing

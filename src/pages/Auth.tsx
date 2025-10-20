@@ -4,8 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+// removed tabs/select to keep design simple and consistent
 import { toast } from '@/components/ui/sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 export default function Auth() {
   const { user, loading, error, signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [showSignUp, setShowSignUp] = useState(false);
 
   // Reset password dialog state
   const [resetOpen, setResetOpen] = useState(false);
@@ -28,8 +28,9 @@ export default function Auth() {
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
   const [firstName, setFirstName] = useState('');
-  const [role, setRole] = useState<'user' | 'admin'>('user');
-  const [inviteCode, setInviteCode] = useState('');
+  const [signUpPhone, setSignUpPhone] = useState('');
+  const [role] = useState<'user' | 'admin'>('user');
+  const [companyIdInput, setCompanyIdInput] = useState('');
 
   // Removido fluxo de SMS do Criar Conta
 
@@ -77,34 +78,24 @@ export default function Auth() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Validações básicas e exigência de convite
+  // Validações básicas e exigência de ID da empresa
     if (!firstName) { toast.error('Informe seu nome'); return; }
-    if (!signUpEmail || !signUpPassword) { toast.error('Preencha todos os campos obrigatórios'); return; }
+  if (!signUpEmail || !signUpPassword) { toast.error('Preencha todos os campos obrigatórios'); return; }
     if (signUpPassword.length < 6) { toast.error('A senha deve ter pelo menos 6 caracteres'); return; }
-    const codeTrim = (inviteCode || '').trim();
-    if (!codeTrim) { toast.error('Informe o código de convite gerado pelo administrador'); return; }
+  if (!signUpPhone.trim()) { toast.error('Informe seu telefone'); return; }
+  const companyId = (companyIdInput || '').trim();
+  if (!companyId) { toast.error('Informe o ID da empresa'); return; }
+  // validação simples de UUID v4 (best-effort), não bloqueia se falhar
+  const uuidLike = /^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$/;
+  if (!uuidLike.test(companyId)) { toast.error('ID de empresa inválido (esperado UUID)'); return; }
 
     setIsLoading(true);
     try {
-      // Validar convite ANTES de criar o usuário
-      type InviteRow = { code?: string; company_id?: string | null; role?: 'user'|'admin'|'pdv'|string };
-      let inviteRow: InviteRow | null = null;
-      try {
-        const rpc = await (supabase as unknown as { rpc: (name: string, args: Record<string, unknown>) => Promise<{ data?: unknown; error?: unknown }> }).rpc('validate_invite', { inv_code: codeTrim });
-        const invDataUnknown = rpc?.data as unknown;
-        const invRow = Array.isArray(invDataUnknown) ? invDataUnknown[0] : invDataUnknown;
-        if (invRow) inviteRow = invRow as InviteRow; else { toast.error('Código de convite inválido ou expirado'); setIsLoading(false); return; }
-      } catch (err) {
-        toast.error('Não foi possível validar o convite. Tente novamente.');
-        setIsLoading(false);
-        return;
-      }
-
       const redirectUrl = `${window.location.origin}/`;
       const { data, error } = await supabase.auth.signUp({
         email: signUpEmail.trim(),
         password: signUpPassword.trim(),
-        options: { emailRedirectTo: redirectUrl, data: { first_name: firstName.trim(), pending_invite_code: codeTrim } }
+        options: { emailRedirectTo: redirectUrl, data: { first_name: firstName.trim(), phone: signUpPhone.trim(), pending_company_id: companyId } }
       });
       if (error) { toast.error(error.message || 'Falha ao criar conta'); setIsLoading(false); return; }
 
@@ -115,21 +106,18 @@ export default function Auth() {
         return;
       }
 
-      // Com sessão ativa: garantir profile e aplicar convite se houver
+  // Com sessão ativa: garantir profile e aplicar company_id informado
       try { await (supabase as unknown as { rpc: (name: string) => Promise<unknown> }).rpc('ensure_profile'); } catch (e) { if (import.meta.env.DEV) console.warn('ensure_profile rpc falhou', e); }
 
       try {
         const { data: userRes } = await supabase.auth.getUser();
         const uid = userRes?.user?.id;
         if (uid) {
-          const patch: Record<string, unknown> = { first_name: firstName, role };
-          if (inviteRow?.role === 'admin') patch.role = 'admin';
-          if (inviteRow?.company_id) patch.company_id = inviteRow.company_id;
+          const patch: Record<string, unknown> = { first_name: firstName, phone: signUpPhone.trim(), role, company_id: companyId };
           const { error: upErr } = await supabase.from('profiles').update(patch).eq('user_id', uid);
           if (upErr && import.meta.env.DEV) console.warn('Falha ao atualizar profile pós-signup', upErr);
-          if (inviteRow?.code) await supabase.from('invite_codes').update({ used_by: uid, used_at: new Date().toISOString() }).eq('code', inviteRow.code);
-          // Limpa a flag de invite pendente nos metadados, já aplicado
-          try { await supabase.auth.updateUser({ data: { pending_invite_code: null } }); } catch (e) { /* noop */ }
+          // Limpa a flag pendente nos metadados, já aplicado
+          try { await supabase.auth.updateUser({ data: { pending_company_id: null } }); } catch (e) { /* noop */ }
         }
       } catch (e) { if (import.meta.env.DEV) console.warn('Falha ao finalizar patch de profile/convite', e); }
 
@@ -155,39 +143,77 @@ export default function Auth() {
           </div>
         )}
 
-        <div className="space-y-4 w-full">
-          <form onSubmit={handleSignIn} className="space-y-4">
-            <div>
-              <Label htmlFor="signin-email">Email</Label>
-              <Input
-                id="signin-email"
-                type="email"
-                value={signInEmail}
-                onChange={(e) => setSignInEmail(e.target.value)}
-                placeholder="seu@email.com"
-                required
-              />
+        {!showSignUp && (
+          <>
+            <div className="space-y-4 w-full">
+              <form onSubmit={handleSignIn} className="space-y-4">
+                <div>
+                  <Label htmlFor="signin-email">Email</Label>
+                  <Input
+                    id="signin-email"
+                    type="email"
+                    value={signInEmail}
+                    onChange={(e) => setSignInEmail(e.target.value)}
+                    placeholder="seu@email.com"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="signin-password">Senha</Label>
+                  <Input
+                    id="signin-password"
+                    type="password"
+                    value={signInPassword}
+                    onChange={(e) => setSignInPassword(e.target.value)}
+                    placeholder="Sua senha"
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? 'Entrando...' : 'Entrar'}
+                </Button>
+              </form>
             </div>
-            <div>
-              <Label htmlFor="signin-password">Senha</Label>
-              <Input
-                id="signin-password"
-                type="password"
-                value={signInPassword}
-                onChange={(e) => setSignInPassword(e.target.value)}
-                placeholder="Sua senha"
-                required
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Entrando...' : 'Entrar'}
-            </Button>
-          </form>
-        </div>
 
-        <div className="text-center mt-4 text-sm text-muted-foreground">
-          <button className="underline" onClick={() => setResetOpen(true)}>Redefinir senha</button>
-        </div>
+            <div className="text-center mt-4 text-sm text-muted-foreground flex items-center justify-between">
+              <button className="underline" onClick={() => setResetOpen(true)}>Redefinir senha</button>
+              <button className="underline" onClick={() => setShowSignUp(true)}>Criar conta</button>
+            </div>
+          </>
+        )}
+
+        {showSignUp && (
+          <>
+            <form onSubmit={handleSignUp} className="space-y-4">
+              <div>
+                <Label htmlFor="signup-name">Nome</Label>
+                <Input id="signup-name" value={firstName} onChange={(e)=>setFirstName(e.target.value)} placeholder="Seu nome" required />
+              </div>
+              <div>
+                <Label htmlFor="signup-phone">Telefone</Label>
+                <Input id="signup-phone" value={signUpPhone} onChange={(e)=>setSignUpPhone(e.target.value)} placeholder="(DDD) 90000-0000" required />
+              </div>
+              <div>
+                <Label htmlFor="signup-email">Email</Label>
+                <Input id="signup-email" type="email" value={signUpEmail} onChange={(e)=>setSignUpEmail(e.target.value)} placeholder="seu@email.com" required />
+              </div>
+              <div>
+                <Label htmlFor="signup-password">Senha</Label>
+                <Input id="signup-password" type="password" value={signUpPassword} onChange={(e)=>setSignUpPassword(e.target.value)} placeholder="Crie uma senha" required />
+              </div>
+              <div>
+                <Label htmlFor="signup-company">ID da empresa</Label>
+                <Input id="signup-company" value={companyIdInput} onChange={(e)=>setCompanyIdInput(e.target.value)} placeholder="Informe o ID (UUID) da empresa" required />
+              </div>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? 'Criando...' : 'Criar conta'}
+              </Button>
+            </form>
+            <div className="text-center mt-4 text-sm text-muted-foreground">
+              <button className="underline" onClick={() => setShowSignUp(false)}>Já tem conta? Entrar</button>
+            </div>
+          </>
+        )}
 
         <Dialog open={resetOpen} onOpenChange={setResetOpen}>
           <DialogContent>

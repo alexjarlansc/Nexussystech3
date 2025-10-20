@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import invokeFunction from '@/lib/functions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,9 +8,11 @@ import { toast } from '@/components/ui/sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { isMasterRole } from '@/lib/permissions';
 // removed Select import as company picking now uses a separate modal with search
 
-type Row = { id: string; user_id: string; first_name?: string | null; email?: string | null; role?: 'user'|'admin'|'pdv'|'master'; permissions?: string[] | null };
+type Row = { id: string; user_id: string; company_id?: string | null; first_name?: string | null; email?: string | null; role?: 'user'|'admin'|'pdv'|'master'; permissions?: string[] | null };
 
 type Company = { id: string; name: string };
 
@@ -31,6 +34,11 @@ export default function UserAdminPanel() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [edgeHealth, setEdgeHealth] = useState<'checking'|'ok'|'unreachable'>('checking');
   const [edgeMsg, setEdgeMsg] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selected, setSelected] = useState<Row | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [roleEdit, setRoleEdit] = useState<'user'|'admin'|'pdv'>('user');
+  const [savingRole, setSavingRole] = useState(false);
 
   useEffect(()=>{
     const t = setTimeout(()=>setDebouncedSearch(companySearch), 300);
@@ -63,25 +71,11 @@ export default function UserAdminPanel() {
   // Edge Function health check (reutilizável)
   const checkEdge = useCallback(async () => {
     try {
-      const { error } = await supabase.functions.invoke('admin-create-user', { body: {} });
-      if (error) {
-        const msg = (error.message || '').toLowerCase();
-        if (msg.includes('failed to send a request') || msg.includes('failed to fetch') || msg.includes('network')) {
-          setEdgeHealth('unreachable'); setEdgeMsg('Função Edge indisponível. Verifique deploy e SUPABASE_SERVICE_ROLE_KEY.');
-        } else {
-          setEdgeHealth('ok'); setEdgeMsg(null);
-        }
-      } else {
-        setEdgeHealth('ok'); setEdgeMsg(null);
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Erro ao verificar função Edge';
-      const low = msg.toLowerCase();
-      if (low.includes('failed to send a request') || low.includes('failed to fetch') || low.includes('network')) {
-        setEdgeHealth('unreachable'); setEdgeMsg('Função Edge indisponível. Verifique deploy e SUPABASE_SERVICE_ROLE_KEY.');
-      } else {
-        setEdgeHealth('ok'); setEdgeMsg(null);
-      }
+      const res = await invokeFunction<{ ok?: boolean }>('admin-create-user', { body: { health: true } });
+      if (!res.ok) { setEdgeHealth('unreachable'); setEdgeMsg('Função Edge indisponível. Verifique deploy e SUPABASE_SERVICE_ROLE_KEY.'); }
+      else { setEdgeHealth(res.data?.ok ? 'ok' : 'unreachable'); setEdgeMsg(res.data?.ok ? null : 'Função Edge indisponível. Verifique deploy e SUPABASE_SERVICE_ROLE_KEY.'); }
+    } catch {
+      setEdgeHealth('unreachable'); setEdgeMsg('Função Edge indisponível. Verifique deploy e SUPABASE_SERVICE_ROLE_KEY.');
     }
   }, []);
 
@@ -94,7 +88,7 @@ export default function UserAdminPanel() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('profiles')
-        .select('id,user_id,first_name,email,role,permissions')
+        .select('id,user_id,company_id,first_name,email,role,permissions')
         .order('first_name', { ascending: true });
       if (error) throw error;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,6 +102,44 @@ export default function UserAdminPanel() {
   };
 
   useEffect(() => { void load(); }, []);
+
+  const openDetails = async (r: Row) => {
+    try {
+      setSelected(r);
+      setRoleEdit((r.role === 'admin' || r.role === 'pdv') ? r.role : 'user');
+      setSelectedCompany(null);
+      setDetailOpen(true);
+      const cid = r.company_id;
+      if (cid) {
+        const { data: comp, error: cerr } = await supabase.from('companies').select('id,name').eq('id', cid).maybeSingle();
+        if (!cerr && comp) setSelectedCompany(comp as Company);
+      }
+    } catch (e) {
+      console.warn('Falha ao carregar detalhes do usuário', e);
+    }
+  };
+
+  const saveRole = async () => {
+    if (!selected) return;
+    if (selected.role === 'master') { toast.error('Não é permitido alterar o perfil do Administrador Mestre.'); return; }
+    // Apenas Mestre pode alterar perfil de usuários
+    const canEdit = isMasterRole(profile?.role || null);
+    if (!canEdit) { toast.error('Apenas o Administrador Mestre pode alterar perfis.'); return; }
+    try {
+      setSavingRole(true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any).from('profiles').update({ role: roleEdit }).eq('id', selected.id);
+      if (error) throw error;
+      toast.success('Perfil atualizado');
+      setSelected({ ...selected, role: roleEdit });
+      void load();
+    } catch (e) {
+      console.error(e);
+      toast.error('Falha ao atualizar perfil (RLS/Permissões)');
+    } finally {
+      setSavingRole(false);
+    }
+  };
 
   
 
@@ -134,8 +166,9 @@ export default function UserAdminPanel() {
     try {
       // Tenta exclusão definitiva via Edge Function (auth + profile)
       try {
-        const { error: fxErr } = await supabase.functions.invoke('admin-delete-user', { body: { user_id: r.user_id } });
-        if (fxErr) throw fxErr;
+  const fx = await invokeFunction('admin-delete-user', { body: { user_id: r.user_id } });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (!fx.ok) throw new Error(String((fx as any).error || 'Falha na função admin-delete-user'));
         toast.success('Usuário excluído definitivamente');
       } catch (fxE) {
         // Fallback: remove apenas o perfil (mantém auth)
@@ -180,9 +213,13 @@ export default function UserAdminPanel() {
         </div>
         <Button variant="outline" onClick={()=>void load()} disabled={loading}>{loading ? 'Atualizando...' : 'Atualizar'}</Button>
         {(profile?.role === 'master') && (
-          <Button onClick={()=>{
-            setCreateOpen(true); void loadCompanies();
-          }}>Criar Usuário</Button>
+          <Button
+            disabled={edgeHealth !== 'ok'}
+            onClick={()=>{
+              if (edgeHealth !== 'ok') { toast.error(edgeMsg || 'Função Edge indisponível. Faça o deploy e configure SUPABASE_SERVICE_ROLE_KEY.'); return; }
+              setCreateOpen(true); void loadCompanies();
+            }}
+          >Criar Usuário</Button>
         )}
       </div>
       <div className="overflow-auto rounded border">
@@ -204,7 +241,11 @@ export default function UserAdminPanel() {
           const suspended = r.role === 'master' ? false : (Array.isArray(r.permissions) && r.permissions.includes('suspended'));
               return (
                 <tr key={r.id} className="border-t">
-                  <td className="p-2">{r.first_name || '-'}</td>
+                  <td className="p-2">
+                    <button type="button" className="underline decoration-dotted hover:decoration-solid" onClick={()=>void openDetails(r)} title="Ver detalhes">
+                      {r.first_name || '-'}
+                    </button>
+                  </td>
                   <td className="p-2">{r.email || '-'}</td>
                   <td className="p-2">{r.role}</td>
                   <td className="p-2">{suspended ? 'Suspenso' : 'Ativo'}</td>
@@ -239,6 +280,71 @@ export default function UserAdminPanel() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* User Details Modal */}
+      <Dialog open={detailOpen} onOpenChange={(o)=>{ setDetailOpen(o); if (!o) { setSelected(null); setSelectedCompany(null); } }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Detalhes do usuário</DialogTitle>
+          </DialogHeader>
+          {selected ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <Label>Nome</Label>
+                  <div className="mt-1">{selected.first_name || '-'}</div>
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <div className="mt-1">{selected.email || '-'}</div>
+                </div>
+                <div className="col-span-2">
+                  <Label>User ID</Label>
+                  <div className="mt-1 font-mono text-xs text-muted-foreground break-all">{selected.user_id}</div>
+                </div>
+              </div>
+
+              <div className="text-sm">
+                <Label>Empresa</Label>
+                <div className="mt-1">
+                  {selected.company_id ? (
+                    <>
+                      <div className="font-medium">{selectedCompany?.name || '(carregando...)'}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{selected.company_id}</div>
+                    </>
+                  ) : (
+                    <div className="text-muted-foreground">Sem empresa vinculada</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-sm">
+                <Label>Perfil</Label>
+                <div className="mt-1 flex items-center gap-2">
+                  <Select value={roleEdit} onValueChange={(v)=> setRoleEdit((v as 'user'|'admin'|'pdv'))} disabled={selected.role === 'master' || savingRole || !isMasterRole(profile?.role || null)}>
+                    <SelectTrigger className="w-44"><SelectValue placeholder="Selecionar" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="user">Usuário</SelectItem>
+                      <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="pdv">PDV</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" onClick={()=>void saveRole()} disabled={selected.role === 'master' || savingRole || !isMasterRole(profile?.role || null)}>
+                    {savingRole ? 'Salvando...' : 'Salvar'}</Button>
+                </div>
+                {selected.role === 'master' && (
+                  <div className="text-xs text-muted-foreground mt-1">O perfil do Administrador Mestre não pode ser alterado.</div>
+                )}
+                {!isMasterRole(profile?.role || null) && (
+                  <div className="text-xs text-muted-foreground mt-1">Apenas o Administrador Mestre pode alterar perfis.</div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">Selecione um usuário.</div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Create User Modal */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
@@ -270,8 +376,9 @@ export default function UserAdminPanel() {
               <Button variant="outline" onClick={()=>setCreateOpen(false)}>Cancelar</Button>
               {(profile?.role === 'master') && (
                 <Button
-                  disabled={!cName.trim() || !cEmail.trim() || cPass.length < 6 || !cCompanyId}
+                  disabled={edgeHealth !== 'ok' || !cName.trim() || !cEmail.trim() || cPass.length < 6 || !cCompanyId}
                   onClick={async ()=>{
+                  if (edgeHealth !== 'ok') { toast.error(edgeMsg || 'Função Edge indisponível. Faça o deploy e configure SUPABASE_SERVICE_ROLE_KEY.'); return; }
                   if (!cName.trim() || !cEmail.trim() || !cPass) { toast.error('Preencha nome, email e senha'); return; }
                   if (!cCompanyId) { toast.error('Selecione uma empresa'); return; }
                   try {
@@ -281,9 +388,10 @@ export default function UserAdminPanel() {
                     if (!hasSession) { toast.error('Sessão expirada. Faça login novamente.'); return; }
                     type FxOk = { ok: true; user_id: string };
                     type FxErr = { error: string };
-                    const { data, error } = await supabase.functions.invoke('admin-create-user', { body: { email: cEmail.trim(), password: cPass, first_name: cName.trim(), company_id: cCompanyId } });
-                    if (error) throw error;
-                    const resp = data as FxOk | FxErr | null;
+                    const r = await invokeFunction<FxOk>('admin-create-user', { body: { email: cEmail.trim(), password: cPass, first_name: cName.trim(), company_id: cCompanyId }, verbose: true });
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    if (!r.ok) throw new Error(String((r as any).error || 'Falha ao criar usuário'));
+                    const resp = r.data as FxOk | FxErr | null;
                     if (!resp || (resp as FxErr).error) throw new Error((resp as FxErr)?.error || 'Falha ao criar usuário');
                     toast.success('Usuário criado com sucesso');
                     setCreateOpen(false);
@@ -291,7 +399,29 @@ export default function UserAdminPanel() {
                     void load();
                   } catch (e) {
                     console.error(e);
-                    const baseMsg = e instanceof Error ? e.message : 'Falha ao criar usuário';
+                    const extractEdgeError = (err: unknown): string | null => {
+                      try {
+                        if (err && typeof err === 'object') {
+                          const any = err as Record<string, unknown> & { context?: unknown; message?: string };
+                          const ctx = any.context as unknown;
+                          if (ctx) {
+                            if (typeof ctx === 'string' && ctx.trim()) return ctx as string;
+                            if (typeof ctx === 'object') {
+                              const c = ctx as Record<string, unknown>;
+                              if (typeof c.error === 'string' && c.error) return c.error;
+                              if (typeof c.body === 'string' && c.body) {
+                                try { const parsed = JSON.parse(c.body); if (parsed && typeof parsed.error === 'string') return parsed.error; }
+                                catch { /* ignore parse errors */ }
+                              }
+                              if (typeof c.message === 'string' && c.message) return c.message;
+                            }
+                          }
+                          if (typeof any.message === 'string' && any.message) return any.message;
+                        }
+                      } catch { /* ignore extraction errors */ }
+                      return null;
+                    };
+                    const baseMsg = extractEdgeError(e) || (e instanceof Error ? e.message : 'Falha ao criar usuário');
                     const lower = (baseMsg || '').toLowerCase();
                     const finalMsg = (lower.includes('failed to send a request') || lower.includes('failed to fetch') || lower.includes('network'))
                       ? 'Falha ao chamar a função Edge (admin-create-user). Verifique se a função está deployada e com SUPABASE_SERVICE_ROLE_KEY configurada.'

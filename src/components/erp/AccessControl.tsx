@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import invokeFunction from '@/lib/functions';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -42,7 +43,7 @@ const PERMISSIONS_TREE: PermNode[] = [
     label: 'PRODUTOS',
     children: [
       { id: 'produtos.manage', label: 'Gerenciar Produtos', perm: 'products.manage' },
-  { id: 'produtos.pricing', label: 'Custo e Imposto', perm: 'products.pricing' },
+      { id: 'produtos.pricing', label: 'Custo e Imposto', perm: 'products.pricing' },
       { id: 'produtos.groups', label: 'Grupos de Produtos', perm: 'products.groups' },
       { id: 'produtos.units', label: 'Unidades', perm: 'products.units' },
       { id: 'produtos.variations', label: 'Grades / Variações', perm: 'products.variations' },
@@ -73,7 +74,7 @@ const PERMISSIONS_TREE: PermNode[] = [
     label: 'ORÇAMENTOS',
     children: [
       { id: 'orcamentos.listar', label: 'Listar Orçamentos', perm: 'quotes.view' },
-  { id: 'orcamentos.os', label: 'Listar Ordens de Serviço', perm: 'service_orders.view' },
+      { id: 'orcamentos.os', label: 'Listar Ordens de Serviço', perm: 'service_orders.view' },
     ],
   },
   {
@@ -132,6 +133,7 @@ const PERMISSIONS_TREE: PermNode[] = [
 
 export default function AccessControl() {
   const { profile } = useAuth();
+  const isMaster = profile?.role === 'master';
   const [users, setUsers] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -143,6 +145,86 @@ export default function AccessControl() {
   const [applyingFix, setApplyingFix] = useState<boolean>(false);
   const [permissionsColumnMissing, setPermissionsColumnMissing] = useState<boolean>(false);
   const [presetMode, setPresetMode] = useState<'add' | 'replace'>('add');
+  const [edgeFallbackUsed, setEdgeFallbackUsed] = useState(false);
+  // Health da função Edge admin-list-profiles
+  const [edgeHealthProfiles, setEdgeHealthProfiles] = useState<'checking'|'ok'|'unreachable'>('checking');
+  const [edgeHealthMsgProfiles, setEdgeHealthMsgProfiles] = useState<string | null>(null);
+
+  // Extrai mensagens detalhadas de erros de Edge Function (supabase-js FunctionsError)
+  function extractEdgeError(err: unknown): string | null {
+    try {
+      if (err && typeof err === 'object') {
+        const any = err as Record<string, unknown> & { context?: unknown; message?: string };
+        const ctx = any.context as unknown;
+        if (ctx) {
+          if (typeof ctx === 'string' && ctx.trim()) return ctx as string;
+          if (typeof ctx === 'object') {
+            const c = ctx as Record<string, unknown>;
+            if (typeof c.error === 'string' && c.error) return c.error;
+            if (typeof c.body === 'string' && c.body) {
+              try { const parsed = JSON.parse(c.body); if (parsed && typeof parsed.error === 'string') return parsed.error; }
+              catch { /* ignore parse errors */ }
+            }
+            if (typeof c.message === 'string' && c.message) return c.message;
+          }
+        }
+        if (typeof any.message === 'string' && any.message) return any.message;
+      }
+    } catch { /* ignore extraction errors */ }
+    return null;
+  }
+
+  // Checa saúde da função de listagem administrativa
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setEdgeHealthProfiles('checking'); setEdgeHealthMsgProfiles(null);
+        try {
+          const res = await invokeFunction<{ ok?: boolean }>('admin-list-profiles', { body: { health: true } });
+          if (cancelled) return;
+          if (!res.ok) { setEdgeHealthProfiles('unreachable'); setEdgeHealthMsgProfiles('Função admin-list-profiles indisponível.'); }
+          else { setEdgeHealthProfiles(res.data?.ok ? 'ok' : 'unreachable'); setEdgeHealthMsgProfiles(res.data?.ok ? null : 'Função admin-list-profiles indisponível.'); }
+        } catch {
+          if (cancelled) return;
+          setEdgeHealthProfiles('unreachable'); setEdgeHealthMsgProfiles('Função admin-list-profiles indisponível.');
+        }
+      } catch {
+        if (cancelled) return;
+        setEdgeHealthProfiles('unreachable'); setEdgeHealthMsgProfiles('Função admin-list-profiles indisponível.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Utilitário: normaliza qualquer valor para array de strings único e limpo
+  function normalizePermissions(val: unknown): string[] {
+    try {
+      if (Array.isArray(val)) {
+        return Array.from(new Set(val
+          .filter((p): p is string => typeof p === 'string')
+          .map(p => p.trim())
+          .filter(p => p.length > 0)
+        ));
+      }
+      if (typeof val === 'string') {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) {
+            return Array.from(new Set(parsed
+              .filter((p): p is string => typeof p === 'string')
+              .map(p => p.trim())
+              .filter(p => p.length > 0)
+            ));
+          }
+        } catch {/* ignore */}
+        // Se veio string simples, trate como uma permissão única
+        const s = val.trim();
+        return s ? [s] : [];
+      }
+    } catch {/* ignore */}
+    return [];
+  }
 
   // Presets rápidos por área
   const PRESETS: Record<string, string[]> = {
@@ -169,6 +251,130 @@ export default function AccessControl() {
     setUsers(prev => prev.map(p => p.id === u.id ? { ...p, permissions: next } : p));
     setSelectedUser(prev => (prev && prev.id === u.id ? { ...prev, permissions: next } : prev));
   }
+
+  // Carrega usuários (prioriza função Edge para contornar RLS)
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      // 1) Tente via função Edge (prioritário, evita RLS)
+      try {
+  const fx = await invokeFunction<{ ok?: boolean; data?: ProfileRow[] }>('admin-list-profiles', { body: { q: query || undefined, limit: 500 } });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (!fx.ok) throw new Error(String((fx as any).error || 'Falha na função admin-list-profiles'));
+  const payload = fx.data as { ok?: boolean; data?: ProfileRow[] } | null;
+  if (!payload || !payload.data || !Array.isArray(payload.data)) throw new Error('Falha no fallback');
+  let rows = payload.data.map(d => ({ ...d, permissions: normalizePermissions((d as unknown as { permissions?: unknown }).permissions) }));
+  // Fallback extra: se Master e resultado veio vazio (função antiga pode estar excluindo admins),
+  // tenta carregar admins diretamente (sujeito a RLS). Não quebra se falhar.
+  if (isMaster && rows.length === 0) {
+    try {
+      const probe = await supabase
+        .from('profiles')
+        .select('id,user_id,first_name,email,role,permissions')
+        .in('role', ['admin','master'])
+        .order('first_name', { ascending: true })
+        .limit(200);
+      if (!probe.error && Array.isArray(probe.data) && probe.data.length > 0) {
+        rows = probe.data.map(d => ({ ...d, permissions: normalizePermissions((d as unknown as { permissions?: unknown }).permissions) }));
+      }
+    } catch {/* noop */}
+  }
+  setUsers(rows);
+  setPermissionsColumnMissing(false);
+  setEdgeFallbackUsed(true);
+  return;
+      } catch (firstTry) {
+        const msg = extractEdgeError(firstTry) || String((firstTry as { message?: string } | null)?.message || firstTry);
+        console.warn('admin-list-profiles indisponível, tentando leitura direta com RLS', msg);
+        const low = (msg || '').toLowerCase();
+        if (low.includes('token inválido') || low.includes('não autenticado') || low.includes('401')) {
+          toast.error('Sessão inválida/expirada. Faça login novamente.');
+        } else if (low.includes('apenas administradores') || low.includes('403')) {
+          toast.error('Apenas administradores podem listar perfis.');
+        } else if (low.includes('service role not configured')) {
+          toast.error('Função administrativa sem Service Role. Configure SERVICE_ROLE_KEY no projeto.');
+        }
+      }
+
+      // 2) Tente leitura direta (sujeito a RLS)
+      // Se o usuário atual for Master, não excluímos admins na query
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q: any = supabase
+        .from('profiles')
+        .select('id,user_id,first_name,email,role,permissions')
+        .order('first_name', { ascending: true })
+        .limit(500);
+  // Não aplicar filtro por role no servidor; usamos o filtro client-side para decidir visibilidade.
+      const { data: resData, error } = await q;
+      if (error) throw error;
+      const data = ((resData as unknown as ProfileRow[]) || []).filter(u => {
+        if (isMaster) return true;
+        const r = (u.role || '').toLowerCase();
+        return r !== 'admin' && r !== 'master';
+      });
+      setUsers(data.map(d => ({ ...d, permissions: normalizePermissions((d as unknown as { permissions?: unknown }).permissions) })));
+      setPermissionsColumnMissing(false);
+    } catch (err) {
+      const e = err as Error | { message?: string } | null;
+      console.error('Erro ao carregar usuários:', e);
+      const msg = String((e as { message?: string } | null)?.message || '');
+      // If the permissions column is missing, re-run without it and show users without permissions
+      if (msg.includes('permissions') || msg.includes('column "permissions"')) {
+        try {
+          // Fallback select when `permissions` column missing; respect master visibility
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let q2: any = supabase
+            .from('profiles')
+            .select('id,user_id,first_name,email,role')
+            .order('first_name', { ascending: true })
+            .limit(500);
+          // Não aplicar filtro por role no servidor; usamos o filtro client-side para decidir visibilidade.
+          const { data: fbData, error: fbError } = await q2;
+          if (fbError) throw fbError;
+          const data = ((fbData as unknown as ProfileRow[]) || []).filter(u => {
+            if (isMaster) return true;
+            const r = (u.role || '').toLowerCase();
+            return r !== 'admin' && r !== 'master';
+          });
+          setUsers(data.map(d => ({ ...d, permissions: [] })));
+          toast.error('Coluna `permissions` não encontrada. Exibindo usuários sem permissões. Rode a migração SQL sugerida.');
+          setPermissionsColumnMissing(true);
+        } catch (ferr) {
+          console.error('Erro fallback ao carregar usuarios:', ferr);
+          toast.error('Falha ao carregar usuários. Verifique a conexão com o banco.');
+        }
+      } else if (msg.toLowerCase().includes('permission denied') || msg.toLowerCase().includes('rls')) {
+        // Tentar fallback via Edge Function com service role
+          try {
+          const fx = await invokeFunction<{ ok?: boolean; data?: ProfileRow[] }>('admin-list-profiles', { body: { q: query || undefined, limit: 500 } });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (!fx.ok) throw new Error(String((fx as any).error || 'Falha na função admin-list-profiles'));
+          const payload = fx.data as { ok?: boolean; data?: ProfileRow[] } | null;
+          if (!payload || !payload.data || !Array.isArray(payload.data)) throw new Error('Falha no fallback');
+          setUsers(payload.data.map(d => ({ ...d, permissions: normalizePermissions((d as unknown as { permissions?: unknown }).permissions) })));
+          setEdgeFallbackUsed(true);
+          toast.success('Usuários carregados via função administrativa (fallback)');
+        } catch (fx) {
+          const detail = extractEdgeError(fx) || String((fx as { message?: string } | null)?.message || fx);
+          console.error('Fallback admin-list-profiles failed', detail);
+          const low = (detail || '').toLowerCase();
+          if (low.includes('token inválido') || low.includes('não autenticado') || low.includes('401')) {
+            toast.error('Sessão inválida/expirada. Faça login novamente.');
+          } else if (low.includes('apenas administradores') || low.includes('403')) {
+            toast.error('Apenas administradores podem listar perfis.');
+          } else if (low.includes('service role not configured')) {
+            toast.error('Função administrativa sem Service Role. Configure SERVICE_ROLE_KEY no projeto.');
+          } else {
+            toast.error('Falha ao carregar usuários. Política RLS pode estar bloqueando o acesso.');
+          }
+        }
+      } else {
+        toast.error('Falha ao carregar usuários. Verifique a conexão com o banco.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [query]);
 
   async function applyBackendFixes() {
     if (!window.confirm('Aplicar correções no banco? Isso criará a função RPC e a política para admins atualizarem permissões.')) return;
@@ -250,59 +456,7 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
     // Carrega usuários para perfis admin ou master (master é dono do sistema)
     if (!profile || (profile.role !== 'admin' && profile.role !== 'master')) return;
     (async () => { try { await loadUsers(); } catch (_) { /* ignore */ } })();
-  }, [profile]);
-
-  async function loadUsers() {
-    setLoading(true);
-    try {
-      const res = await supabase
-        .from('profiles')
-        .select('id,user_id,first_name,email,role,permissions')
-        .neq('role', 'admin')
-        .order('first_name', { ascending: true })
-        .limit(500);
-      if ((res as any).error) throw (res as any).error;
-      const data = ((res.data as unknown as ProfileRow[]) || []).filter(u => {
-        const r = (u.role || '').toLowerCase();
-        return r !== 'admin' && r !== 'master';
-      });
-      // Normalize permissions to array when present
-      setUsers(data.map(d => ({ ...d, permissions: Array.isArray(d.permissions) ? d.permissions : [] })));
-      setPermissionsColumnMissing(false);
-    } catch (err) {
-      const e = err as Error | { message?: string } | null;
-      console.error('Erro ao carregar usuários:', e);
-      const msg = String((e as { message?: string } | null)?.message || '');
-      // If the permissions column is missing, re-run without it and show users without permissions
-      if (msg.includes('permissions') || msg.includes('column "permissions"')) {
-        try {
-          const fallback = await supabase
-            .from('profiles')
-            .select('id,user_id,first_name,email,role')
-            .neq('role', 'admin')
-            .order('first_name', { ascending: true })
-            .limit(500);
-          if ((fallback as any).error) throw (fallback as any).error;
-          const data = ((fallback.data as unknown as ProfileRow[]) || []).filter(u => {
-            const r = (u.role || '').toLowerCase();
-            return r !== 'admin' && r !== 'master';
-          });
-          setUsers(data.map(d => ({ ...d, permissions: [] })));
-          toast.error('Coluna `permissions` não encontrada. Exibindo usuários sem permissões. Rode a migração SQL sugerida.');
-          setPermissionsColumnMissing(true);
-        } catch (ferr) {
-          console.error('Erro fallback ao carregar usuarios:', ferr);
-          toast.error('Falha ao carregar usuários. Verifique a conexão com o banco.');
-        }
-      } else if (msg.toLowerCase().includes('permission denied') || msg.toLowerCase().includes('rls')) {
-        toast.error('Falha ao carregar usuários. Política RLS pode estar bloqueando o acesso.');
-      } else {
-        toast.error('Falha ao carregar usuários. Verifique a conexão com o banco.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
+  }, [profile, loadUsers]);
 
   const savePermissions = async (row: ProfileRow) => {
     try {
@@ -310,9 +464,13 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
         toast.error('Nenhum usuário selecionado para salvar.');
         return;
       }
+      // Permitir que somente o Administrador Master altere permissões de administradores
       if (row.role === 'admin' || row.role === 'master') {
-        toast.info('Usuário é administrador — permissões globais não serão alteradas via este painel (inclui Administrador Mestre).');
-        return;
+        if (!isMaster) {
+          toast.info('Usuário é administrador — permissões globais não serão alteradas via este painel (somente Administrador Mestre pode alterar).');
+          return;
+        }
+        // Se é master, permitimos prosseguir
       }
 
       // Sempre capturar o estado MAIS ATUAL das permissões a partir da lista (evita staleness da modal)
@@ -501,7 +659,7 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
   };
 
   const togglePermission = (u: ProfileRow, perm: string) => {
-    const current = Array.isArray(u.permissions) ? [...u.permissions] : [];
+    const current = normalizePermissions(u.permissions);
     const idx = current.indexOf(perm);
     if (idx === -1) {
       current.push(perm);
@@ -526,40 +684,172 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
   const toggleNode = (userId: string, nodeId: string) => setExpandedNodes(prev => ({ ...prev, [userId]: { ...(prev[userId] || {}), [nodeId]: !((prev[userId] || {})[nodeId]) } }));
 
   function renderPermNode(node: PermNode, u: ProfileRow) {
-    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-    const isExpanded = !!(expandedNodes[u.id] && expandedNodes[u.id][node.id]);
-    return (
-      <div key={node.id} className="ml-0">
-        <div className="flex items-center gap-2">
-          {hasChildren && (
-            <button className="text-xs text-slate-500" onClick={() => toggleNode(u.id, node.id)} aria-label="toggle">
-              {isExpanded ? '▾' : '▸'}
-            </button>
-          )}
-          {node.perm ? (
-            <label className="inline-flex items-center gap-2">
-              <input type="checkbox" checked={Array.isArray(u.permissions) ? u.permissions.includes(node.perm!) : false} onChange={() => togglePermission(u, node.perm!)} />
-              <span className="text-xs">{node.label}</span>
-            </label>
-          ) : (
-            <span className="text-xs font-semibold">{node.label}</span>
+    try {
+      const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+      const isExpanded = !!(expandedNodes[u.id] && expandedNodes[u.id][node.id]);
+      return (
+        <div key={node.id} className="ml-0">
+          <div className="flex items-center gap-2">
+            {hasChildren && (
+              <button className="text-xs text-slate-500" onClick={() => toggleNode(u.id, node.id)} aria-label="toggle">
+                {isExpanded ? '▾' : '▸'}
+              </button>
+            )}
+            {node.perm ? (
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" checked={Array.isArray(u.permissions) ? u.permissions.includes(node.perm!) : false} onChange={() => togglePermission(u, node.perm!)} />
+                <span className="text-xs">{node.label}</span>
+              </label>
+            ) : (
+              <span className="text-xs font-semibold">{node.label}</span>
+            )}
+          </div>
+          {hasChildren && isExpanded && (
+            <div className="ml-4 mt-1">
+              {node.children!.map(child => renderPermNode(child, u))}
+            </div>
           )}
         </div>
-        {hasChildren && isExpanded && (
-          <div className="ml-4 mt-1">
-            {node.children!.map(child => renderPermNode(child, u))}
-          </div>
-        )}
-      </div>
-    );
+      );
+    } catch (e) {
+      console.error('Erro ao renderizar nó de permissão', { nodeId: node.id, userId: u.id, error: e });
+      return (
+        <div key={node.id} className="ml-0">
+          <div className="text-xs text-destructive">Erro ao renderizar item</div>
+        </div>
+      );
+    }
   }
 
   if (!profile || (profile.role !== 'admin' && profile.role !== 'master')) {
     return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Acesso negado</h2><p className="text-sm text-muted-foreground">Apenas administradores podem acessar o Controle de Acesso.</p></Card>;
   }
 
+  const renderRowsSafe = () => {
+    try {
+      const list = (Array.isArray(users) ? users : [])
+        .filter(u => {
+          const r = (u.role || '').toLowerCase();
+          // Nunca exibir perfis Master na lista
+          if (r === 'master') return false;
+          // Se não for Master, ocultar também administradores
+          if (!isMaster && r === 'admin') return false;
+          return true;
+        })
+        .filter(u => {
+          if (!query) return true;
+          const q = query.toLowerCase();
+          return (u.first_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
+        });
+      return list.map(u => (
+        <tr key={u.id} className="border-t align-top">
+          <td className="p-2 align-top">
+            {u.first_name || u.user_id}
+            {(() => {
+              try {
+                const total = Array.isArray(u.permissions)
+                  ? u.permissions.filter((x) => typeof x === 'string').length
+                  : 0;
+                if (total <= 0) {
+                  return (
+                    <span className="ml-2 inline-flex items-center rounded bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px]">
+                      Sem permissões
+                    </span>
+                  );
+                }
+                return (
+                  <span className="ml-2 inline-flex items-center rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px]">
+                    Total {total}
+                  </span>
+                );
+              } catch (e) {
+                console.warn('Resumo permissões falhou para usuário', u, e);
+                return null;
+              }
+            })()}
+          </td>
+          <td className="p-2 align-top">{u.email || '-'}</td>
+          <td className="p-2 align-top">{u.role || '-'}</td>
+          <td className="p-2 align-top">
+            <div className="text-sm flex flex-wrap gap-1">
+              {(() => {
+                try {
+                  const summary = summarizePermissions(u.permissions);
+                  const hasErpAccess = u.role === 'master' || (Array.isArray(u.permissions) && u.permissions.includes('erp.access'));
+                  const hasAnyModule = u.role === 'master' || (Array.isArray(u.permissions) && u.permissions.some(p => p !== 'erp.access'));
+                  if (!summary.length) {
+                    return (
+                      <span className="inline-flex items-center rounded bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px]">
+                        Sem permissões
+                      </span>
+                    );
+                  }
+                  const total = Array.isArray(u.permissions) ? u.permissions.filter(x => typeof x === 'string').length : 0;
+                  return (
+                    <>
+                      {summary.map(s => (
+                        <span key={s.label} className="inline-flex items-center rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px]">
+                          {s.label} ({s.count})
+                        </span>
+                      ))}
+                      {hasAnyModule && !hasErpAccess && (
+                        <span className="inline-flex items-center rounded bg-amber-100 text-amber-800 px-2 py-0.5 text-[11px]">
+                          Falta Acesso ERP
+                        </span>
+                      )}
+                      <span key="__total" className="inline-flex items-center rounded bg-slate-200 text-slate-800 px-2 py-0.5 text-[11px]">
+                        Total ({total})
+                      </span>
+                    </>
+                  );
+                } catch (e) {
+                  console.error('Resumo/Detalhe de permissões falhou', e, u);
+                  return (
+                    <span className="inline-flex items-center rounded bg-red-100 text-red-800 px-2 py-0.5 text-[11px]">
+                      Erro ao calcular resumo
+                    </span>
+                  );
+                }
+              })()}
+            </div>
+          </td>
+          <td className="p-2 align-top">
+            <div className="flex gap-2">
+              {((u.role === 'admin' || u.role === 'master') && !isMaster) ? (
+                <div className="text-xs text-amber-600">Apenas Administrador Mestre pode editar</div>
+              ) : (
+                <Button size="sm" onClick={() => { setSelectedUser(u); setModalOpen(true); }}>Editar</Button>
+              )}
+            </div>
+          </td>
+        </tr>
+      ));
+    } catch (e) {
+      console.error('AccessControl renderRowsSafe error', e, { users, query });
+      return (
+        <tr>
+          <td className="p-2 text-destructive text-sm" colSpan={5}>Erro ao renderizar lista de usuários. Veja console para detalhes.</td>
+        </tr>
+      );
+    }
+  };
   return (
     <div className="space-y-4">
+      {edgeHealthProfiles === 'unreachable' && (
+        <Card className="p-4 border-amber-200 bg-amber-50">
+          <div className="text-sm font-medium text-amber-800 mb-1">admin-list-profiles indisponível</div>
+          <div className="text-xs text-amber-800">{edgeHealthMsgProfiles || 'Verifique o deploy da função e a SECRET SERVICE_ROLE_KEY no projeto (Functions).'}
+            <button className="ml-2 underline" onClick={async ()=>{
+              try {
+                setEdgeHealthProfiles('checking'); setEdgeHealthMsgProfiles(null);
+                const res = await invokeFunction<{ ok?: boolean }>('admin-list-profiles', { body: { health: true } });
+                if (!res.ok) { setEdgeHealthProfiles('unreachable'); setEdgeHealthMsgProfiles('Função admin-list-profiles indisponível.'); }
+                else { setEdgeHealthProfiles(res.data?.ok ? 'ok' : 'unreachable'); setEdgeHealthMsgProfiles(res.data?.ok ? null : 'Função admin-list-profiles indisponível.'); }
+              } catch { setEdgeHealthProfiles('unreachable'); setEdgeHealthMsgProfiles('Função admin-list-profiles indisponível.'); }
+            }}>Re-testar</button>
+          </div>
+        </Card>
+      )}
       {rpcMissing && (
         <Card className="p-4 border-amber-200 bg-amber-50">
           <div className="text-sm font-medium text-amber-800 mb-2">Função de salvamento ausente no banco</div>
@@ -593,85 +883,7 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
                 <th className="p-2">Ações</th>
               </tr>
             </thead>
-            <tbody>
-              {users
-                // Garantia extra: nunca listar administradores ou master
-                .filter(u => {
-                  const r = (u.role || '').toLowerCase();
-                  return r !== 'admin' && r !== 'master';
-                })
-                .filter(u=>{
-                  if(!query) return true;
-                  const q = query.toLowerCase();
-                  return (u.first_name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q);
-                })
-                .map(u => (
-                <tr key={u.id} className="border-t align-top">
-                  <td className="p-2 align-top">
-                    {u.first_name || u.user_id}
-                    {(() => {
-                      const total = Array.isArray(u.permissions)
-                        ? u.permissions.filter((x) => typeof x === 'string').length
-                        : 0;
-                      if (total <= 0) {
-                        return (
-                          <span className="ml-2 inline-flex items-center rounded bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px]">
-                            Sem permissões
-                          </span>
-                        );
-                      }
-                      return (
-                        <span className="ml-2 inline-flex items-center rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px]">
-                          Total {total}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                  <td className="p-2 align-top">{u.email || '-'}</td>
-                  <td className="p-2 align-top">{u.role || '-'}</td>
-                  <td className="p-2 align-top">
-                    <div className="text-sm flex flex-wrap gap-1">
-                      {(() => {
-                        const summary = summarizePermissions(u.permissions);
-                        // master sempre conta como com acesso total
-                        const hasErpAccess = u.role === 'master' || (Array.isArray(u.permissions) && u.permissions.includes('erp.access'));
-                        const hasAnyModule = u.role === 'master' || (Array.isArray(u.permissions) && u.permissions.some(p => p !== 'erp.access'));
-                        if (!summary.length) {
-                          return (
-                            <span className="inline-flex items-center rounded bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px]">
-                              Sem permissões
-                            </span>
-                          );
-                        }
-                        const total = Array.isArray(u.permissions) ? u.permissions.filter(x => typeof x === 'string').length : 0;
-                        return (
-                          <>
-                            {summary.map(s => (
-                              <span key={s.label} className="inline-flex items-center rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px]">
-                                {s.label} ({s.count})
-                              </span>
-                            ))}
-                            {hasAnyModule && !hasErpAccess && (
-                              <span className="inline-flex items-center rounded bg-amber-100 text-amber-800 px-2 py-0.5 text-[11px]">
-                                Falta Acesso ERP
-                              </span>
-                            )}
-                            <span key="__total" className="inline-flex items-center rounded bg-slate-200 text-slate-800 px-2 py-0.5 text-[11px]">
-                              Total ({total})
-                            </span>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </td>
-                  <td className="p-2 align-top">
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={()=>{ setSelectedUser(u); setModalOpen(true); }}>Editar</Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+            <tbody>{renderRowsSafe()}</tbody>
           </table>
         </div>
       </Card>

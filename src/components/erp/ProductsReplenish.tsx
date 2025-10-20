@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/sonner';
 import { useAuth } from '@/hooks/useAuth';
+import { isAdminOrMasterRole } from '@/lib/permissions';
 import type { Product } from '@/types';
 
 type Row = Product & { stock?: number; reserved?: number; available?: number; };
@@ -206,7 +207,7 @@ export default function ProductsReplenish(){
                     window.removeEventListener('system:confirm:reply', replyHandler as EventListener);
                     if(d.ok){
                       // Only persist and show system message for users with permission (admin)
-                      if(auth?.profile?.role === 'admin'){
+                      if(isAdminOrMasterRole(auth?.profile?.role)){
                         try{ localStorage.setItem('erp:purchase_requests_initial', JSON.stringify(ids)); }catch(_){/* noop */}
                         // close the report overlay and clear selection so UI returns to Grades / Variações
                         try{ setShowReport(false); }catch(_){/* noop */}

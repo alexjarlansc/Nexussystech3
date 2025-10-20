@@ -1,7 +1,8 @@
 import { NexusProtectedHeader } from '@/components/NexusProtectedHeader';
 import { useAuth } from '@/hooks/useAuth';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
+import { hasPermission, isAdminOrMasterRole, isMasterRole } from '@/lib/permissions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Package, Users, Truck, Boxes, Settings2, Tags, Plus, RefreshCcw, FolderTree, Percent, Layers, Ruler, Wrench, FileText, ShoppingCart, BarChart2, ChevronRight, ChevronDown, Building2 } from 'lucide-react';
 import CompanyAdminPanel from '@/components/erp/CompanyAdminPanel';
@@ -15,6 +16,7 @@ import { ErpCarriers } from '@/components/erp/ErpCarriers';
 import { ErpClients } from '@/components/erp/ErpClients';
 import { ErpProductGroups } from '@/components/erp/ErpProductGroups';
 import ProductsReplenish from '@/components/erp/ProductsReplenish';
+const AdminCompanyUsers = lazy(() => import('@/components/erp/AdminCompanyUsers'));
 import ErpMargins from '../components/erp/ErpMargins';
 import ErpServiceOrders from '@/components/erp/ErpServiceOrders';
 import ErpStockMovements from '@/components/erp/ErpStockMovements';
@@ -94,7 +96,9 @@ export default function Erp() {
   const canAccessErp = (() => {
     try {
       if (!auth?.profile) return false;
-      if (auth.profile.role === 'admin' || auth.profile.role === 'master') return true;
+  // avoid referencing imported helper at module-init; do a tolerant inline role check
+  const _r = String((auth.profile as any)?.role ?? '').toLowerCase();
+  if (_r && (_r === 'admin' || _r.includes('admin') || _r === 'master' || _r.includes('mestre') || _r.includes('administrador'))) return true;
       if (Array.isArray(profilePerms) && profilePerms.includes('erp.access')) return true;
       return false;
     } catch (_) { return false; }
@@ -102,7 +106,7 @@ export default function Erp() {
   const hasPerm = useCallback((perm: string) => {
     try {
       if (!auth?.profile) return false;
-      if (auth.profile.role === 'admin' || auth.profile.role === 'master') return true;
+      if (isAdminOrMasterRole(auth.profile.role)) return true;
       // permissions stored as jsonb array in profiles.permissions
       const perms = (auth.profile as any)?.permissions as string[] | undefined;
       return Array.isArray(perms) && perms.includes(perm);
@@ -133,7 +137,8 @@ export default function Erp() {
     sales_orders: 'sales.orders',
     service_sales_orders: 'sales.list',
     purchases_list: 'purchases.manage',
-    purchases_xml: 'purchases.xml',
+  // Ocultar por padrão: mapeie perm inválida para sempre false
+  purchases_xml: '__disabled__',
     purchases_returns: 'purchases.returns',
     purchases_history: 'purchases.history',
     purchases_requests: 'purchases.requests',
@@ -149,7 +154,7 @@ export default function Erp() {
   }), []);
   const canSeeSection = useCallback((s: SectionKey) => {
     if (!auth?.profile) return false;
-    if (auth.profile.role === 'admin' || auth.profile.role === 'master') return true;
+  if (isAdminOrMasterRole(auth.profile.role)) return true;
     const need = SECTION_REQUIRED_PERM[s];
     if (!need) return true; // se não mapeado, não restringe
     return hasPerm(need);
@@ -516,7 +521,7 @@ export default function Erp() {
               );
             })()}
             {(() => {
-              const anyCompras = canSeeSection('purchases_list') || canSeeSection('purchases_requests') || canSeeSection('purchases_xml') || canSeeSection('purchases_returns') || canSeeSection('purchases_history');
+              const anyCompras = canSeeSection('purchases_list') || canSeeSection('purchases_requests') || /* purchases_xml hidden */ false || canSeeSection('purchases_returns') || canSeeSection('purchases_history');
               if (!anyCompras) return null;
               return (
                 <>
@@ -525,7 +530,7 @@ export default function Erp() {
                     <div className="space-y-1 pl-1 border-l border-slate-200 dark:border-slate-700 ml-2">
                       {canSeeSection('purchases_list') && <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Lançamento de Compra" active={section==='purchases_list'} onClick={()=>setSection('purchases_list')} />}
                       {canSeeSection('purchases_requests') && <ErpNavItem icon={<ShoppingCart className='h-4 w-4' />} label="Solicitações de compras" active={section==='purchases_requests'} onClick={()=>setSection('purchases_requests')} badge={purchaseRequestsCount} />}
-                      {canSeeSection('purchases_xml') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Gerar via XML" active={section==='purchases_xml'} onClick={()=>setSection('purchases_xml')} />}
+                      {/* purchases_xml oculto */}
                       {canSeeSection('purchases_returns') && <ErpNavItem icon={<RotateIcon /> as any} label="Troca / Devolução" active={section==='purchases_returns'} onClick={()=>setSection('purchases_returns')} />}
                       {canSeeSection('purchases_history') && <ErpNavItem icon={<FileText className='h-4 w-4' />} label="Histórico de Compras" active={section==='purchases_history'} onClick={()=>setSection('purchases_history')} />}
                     </div>
@@ -580,7 +585,7 @@ export default function Erp() {
                 </>
               );
             })()}
-            {(auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
+            {isAdminOrMasterRole(auth?.profile?.role) && (
               <>
                 <GroupTitle icon={<Users className="h-3.5 w-3.5" />} label="Marketing" onToggle={()=>toggleGroup('marketing')} isExpanded={!!expandedGroups['marketing']} />
                 {!!expandedGroups['marketing'] && (
@@ -670,12 +675,13 @@ export default function Erp() {
               {section === 'sales_orders' && <SalesOrdersList />}
               {section === 'service_sales_orders' && <ServiceSalesOrdersList />}
               {section === 'purchases_list' && <ErpPurchasesList />}
-              {section === 'configurations' && (auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
+              {section === 'configurations' && isAdminOrMasterRole(auth?.profile?.role) && (
                 <div className="space-y-4">
                   <h2 className="text-xl font-semibold">Configurações</h2>
                   <p className="text-sm text-muted-foreground">Área de configurações do ERP.</p>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-4">
+                    {isMasterRole(auth?.profile?.role) && (
                     <button type="button" onClick={()=>{ window.dispatchEvent(new CustomEvent('erp:open-company-modal', { detail: { mode: 'create' } })); }} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
                       <div className="h-10 w-10 rounded-md bg-primary/10 text-primary flex items-center justify-center">
                         <Building2 className="h-5 w-5" />
@@ -683,61 +689,78 @@ export default function Erp() {
                       <div className="text-sm font-medium">Cadastro de Empresa</div>
                       <div className="text-xs text-muted-foreground">Gerencie dados da empresa, endereço, contatos e logo.</div>
                     </button>
+                    )}
 
-                    <button type="button" onClick={()=>setSection('access_control')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
-                      <div className="h-10 w-10 rounded-md bg-sky-100 text-sky-700 flex items-center justify-center">
-                        <Users className="h-5 w-5" />
-                      </div>
-                      <div className="text-sm font-medium">Controle de Acesso</div>
-                      <div className="text-xs text-muted-foreground">Gerencie permissões de acesso por usuário.</div>
-                    </button>
+                    {hasPermission(auth?.profile, 'access.manage') && (
+                      <button type="button" onClick={()=>setSection('access_control')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                        <div className="h-10 w-10 rounded-md bg-sky-100 text-sky-700 flex items-center justify-center">
+                          <Users className="h-5 w-5" />
+                        </div>
+                        <div className="text-sm font-medium">Controle de Acesso</div>
+                        <div className="text-xs text-muted-foreground">Gerencie permissões de acesso por usuário.</div>
+                      </button>
+                    )}
 
-                    <button type="button" onClick={()=>setSection('user_admin')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
-                      <div className="h-10 w-10 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center">
-                        <Users className="h-5 w-5" />
-                      </div>
-                      <div className="text-sm font-medium">Usuários: Suspender/Excluir</div>
-                      <div className="text-xs text-muted-foreground">Suspender temporariamente ou excluir usuários.</div>
-                    </button>
+                    {hasPermission(auth?.profile, 'access.manage') && (
+                      <button type="button" onClick={()=>setSection('user_admin')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                        <div className="h-10 w-10 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center">
+                          <Users className="h-5 w-5" />
+                        </div>
+                        <div className="text-sm font-medium">Usuários: Suspender/Excluir</div>
+                        <div className="text-xs text-muted-foreground">Suspender temporariamente ou excluir usuários.</div>
+                      </button>
+                    )}
 
-                    <button type="button" onClick={()=>setSection('company_admin')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
-                      <div className="h-10 w-10 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center">
-                        <Building2 className="h-5 w-5" />
-                      </div>
-                      <div className="text-sm font-medium">Empresas: Suspender/Excluir</div>
-                      <div className="text-xs text-muted-foreground">Suspender temporariamente ou excluir empresas.</div>
-                    </button>
+                    {hasPermission(auth?.profile, 'access.manage') && (
+                      <button type="button" onClick={()=>setSection('company_admin')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                        <div className="h-10 w-10 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center">
+                          <Building2 className="h-5 w-5" />
+                        </div>
+                        <div className="text-sm font-medium">Empresas: Suspender/Excluir</div>
+                        <div className="text-xs text-muted-foreground">Suspender temporariamente ou excluir empresas.</div>
+                      </button>
+                    )}
 
-                    <button type="button" onClick={()=>setSection('purchases_xml')} className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
-                      <div className="h-10 w-10 rounded-md bg-rose-100 text-rose-700 flex items-center justify-center">
-                        <FileText className="h-5 w-5" />
+                    {/* Admins (non-master) can manage up to their quota of users for their own company */}
+                    {isAdminOrMasterRole(auth?.profile?.role) && !isMasterRole(auth?.profile?.role) && (
+                      <div className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition">
+                        <div className="h-10 w-10 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                          <Users className="h-5 w-5" />
+                        </div>
+                        <div className="text-sm font-medium">Usuários da minha empresa</div>
+                        <div className="text-xs text-muted-foreground">Admins podem criar até 3 usuários vinculados à sua empresa.</div>
+                        <div className="mt-2">
+                          <Suspense fallback={<div className="text-xs text-muted-foreground">Carregando…</div>}>
+                            <AdminCompanyUsers />
+                          </Suspense>
+                        </div>
                       </div>
-                      <div className="text-sm font-medium">Importação XML</div>
-                      <div className="text-xs text-muted-foreground">Configurações de importação de notas fiscais.</div>
-                    </button>
+                    )}
+
+                    {/* Removido: Importação XML não deve aparecer em Configurações */}
                   </div>
                 </div>
               )}
-              {section === 'company_admin' && (auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
+              {section === 'company_admin' && hasPermission(auth?.profile, 'access.manage') && (
                 <Card className="p-6">
                   <h2 className="text-xl font-semibold mb-1">Administração de Empresas</h2>
                   <p className="text-sm text-muted-foreground mb-4">Suspender temporariamente ou excluir empresas.</p>
                   <CompanyAdminPanel />
                 </Card>
               )}
-              {section === 'user_admin' && (auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
+              {section === 'user_admin' && hasPermission(auth?.profile, 'access.manage') && (
                 <Card className="p-6">
                   <h2 className="text-xl font-semibold mb-1">Administração de Usuários</h2>
                   <p className="text-sm text-muted-foreground mb-4">Suspender temporariamente ou excluir usuários da empresa.</p>
                   <UserAdminPanel />
                 </Card>
               )}
-              {section === 'access_control' && (auth?.profile?.role === 'admin' || auth?.profile?.role === 'master') && (
+              {section === 'access_control' && hasPermission(auth?.profile, 'access.manage') && (
                 <AccessControl />
               )}
               {section === 'purchases_requests' && <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Solicitações de Compras</h2><p className="text-sm text-muted-foreground">Lista de solicitações pendentes. Implementar CRUD quando especificado.</p></Card>}
               {section === 'purchases_requests' && <PurchasesRequestsEditor initialIds={purchasesRequestsDraft || []} clearDraft={()=>setPurchasesRequestsDraft(null)} />}
-              {section === 'purchases_xml' && <ErpPurchaseXmlImport />}
+              {/* purchases_xml oculto */}
               {section === 'purchases_returns' && <ErpPurchaseReturns />}
               {section === 'purchases_history' && <ErpPurchasesList />}
               {section === 'fin_payables' && <FinancePayables />}
