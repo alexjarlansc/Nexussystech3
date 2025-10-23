@@ -74,22 +74,20 @@ export function ErpSuppliers() {
 
   async function save() {
     if (!name) { toast.error('Nome obrigatório'); return; }
-    const payload:any = {
+    // insert mínimo para evitar erro de coluna ausente em bancos desatualizados
+    const baseInsert:any = {
       name,
       taxid: taxid || null,
       phone: phone || null,
-      email: email || null,
-      address: address || null,
-      notes: notes || null,
     };
     // If user has a company_id and is not admin, ensure supplier is linked to that company.
     if (profile?.company_id && profile.role !== 'admin') {
-      payload.company_id = profile.company_id;
+      baseInsert.company_id = profile.company_id;
     }
-    const firstTry = sanitizeSupplierPayload(payload);
-    console.log('[Suppliers][InsertAttempt]', firstTry);
+    const firstTry = sanitizeSupplierPayload(baseInsert);
+    console.log('[Suppliers][InsertAttemptMinimal]', firstTry);
     let { data, error } = await (supabase as any).from('suppliers').insert(firstTry).select('*').single();
-    if (error) {
+  if (error) {
       const msg = String(error.message || '');
       // fallback: se coluna address (ou outra) estiver ausente no schema, remove e tenta novamente
       const missing = parseMissingColumn(msg);
@@ -111,6 +109,26 @@ export function ErpSuppliers() {
       return;
     }
     setSuppliers(prev=> [...prev, data as Supplier].sort((a,b)=> a.name.localeCompare(b.name)));
+    // tentar aplicar campos opcionais (email/address/notes) após inserção
+    const optional:any = { email: email || null, address: address || null, notes: notes || null };
+    // remove chaves nulas para evitar updates desnecessários
+    Object.keys(optional).forEach(k=> { if (optional[k] == null || optional[k] === '') delete optional[k]; });
+    if (Object.keys(optional).length > 0) {
+      try {
+        const upd = { ...optional } as any;
+        const r1 = await (supabase as any).from('suppliers').update(upd).eq('id', (data as any).id).select('*').single();
+        if (r1.error) {
+          const missing = parseMissingColumn(String(r1.error.message||''));
+          if (missing) {
+            delete upd[missing];
+            if (Object.keys(upd).length>0) {
+              const r2 = await (supabase as any).from('suppliers').update(upd).eq('id', (data as any).id).select('*').single();
+              if (!r2.error) toast.warning(`Campo "${missing}" ausente no banco. Salvo sem esse campo. aplique as migrations.`);
+            }
+          }
+        }
+      } catch { /* noop */ }
+    }
     if (debugEnabled) setDebugInfo({ inserted: data });
     toast.success('Fornecedor cadastrado');
     setOpen(false); setName(''); setTaxid(''); setPhone(''); setEmail(''); setAddress(''); setNotes('');

@@ -46,7 +46,8 @@ export default function FinancePayables(){
   },[]);
 
   function sanitizeSupplierPayloadBasic(p:any){
-    const allowed = new Set(['name','taxid','phone','email']);
+    // Inserção básica usa somente colunas mais comuns e seguras
+    const allowed = new Set(['name','taxid','phone']);
     const out:any = {};
     for (const k of Object.keys(p||{})) if (allowed.has(k)) out[k] = (p as any)[k];
     return out;
