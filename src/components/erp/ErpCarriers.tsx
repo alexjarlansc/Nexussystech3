@@ -92,18 +92,63 @@ export function ErpCarriers() {
   async function save() {
     if (!name) { toast.error('Nome obrigatório'); return; }
     try {
+      // util: extrai coluna ausente da mensagem do PostgREST/Postgres
+      const parseMissingColumn = (msg:string): string | null => {
+        const m1 = msg.match(/'([^']+)'\s+column\s+of\s+'carriers'/i); if (m1?.[1]) return m1[1];
+        const m2 = msg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i); if (m2?.[1]) return m2[1];
+        return null;
+      };
+      const sanitize = (obj:any) => {
+        const allowed = new Set(['name','taxid','rntrc','phone','email','address','vehicle_types','notes','company_id']);
+        const out:any = {}; Object.keys(obj||{}).forEach(k=>{ if(allowed.has(k)) out[k] = (obj as any)[k]; }); return out;
+      };
+
       if(editing) {
-        const { error } = await (supabase as any).from('carriers').update({ name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null }).eq('id', editing.id);
+        const payload:any = sanitize({ name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null });
+        let { error } = await (supabase as any).from('carriers').update(payload).eq('id', editing.id);
+        if (error) {
+          const missing = parseMissingColumn(String(error.message||''));
+          if (missing && missing in payload) {
+            delete payload[missing];
+            const r2 = await (supabase as any).from('carriers').update(payload).eq('id', editing.id);
+            error = r2.error;
+            if (!error) toast.warning(`Campo "${missing}" ausente. Atualizado sem esse campo. aplique as migrations.`);
+          }
+        }
         if(error) throw error;
         toast.success('Transportadora atualizada');
       } else {
-        const { error } = await (supabase as any).from('carriers').insert({ name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null, company_id: companyId||null });
-        if(error) throw error;
+        // insert mínimo para evitar erro de schema desatualizado
+        const base:any = sanitize({ name, company_id: companyId||null });
+        const ins = await (supabase as any).from('carriers').insert(base).select('id').single();
+        if (ins.error) throw ins.error;
+        // tenta aplicar campos opcionais posteriormente
+  const optional:any = sanitize({ taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null });
+        Object.keys(optional).forEach(k=> { if (optional[k]==null || optional[k]==='') delete optional[k]; });
+        if (Object.keys(optional).length>0) {
+          let { error } = await (supabase as any).from('carriers').update(optional).eq('id', ins.data.id);
+          if (error) {
+            const missing = parseMissingColumn(String(error.message||''));
+            if (missing && missing in optional) {
+              delete optional[missing];
+              if (Object.keys(optional).length>0) {
+                const r2 = await (supabase as any).from('carriers').update(optional).eq('id', ins.data.id);
+                error = r2.error;
+                if (!error) toast.warning(`Campo "${missing}" ausente. Registro salvo sem esse campo. aplique as migrations.`);
+              }
+            }
+          }
+          if (error) throw error;
+        }
         toast.success('Transportadora cadastrada');
       }
   setOpen(false); resetForm(); load();
     } catch(e:unknown){
-      const msg = e instanceof Error? e.message : String(e);
+      let msg = 'Falha ao salvar';
+      const any = e as any;
+      if (any && typeof any === 'object') {
+        msg = any.message || any.error || JSON.stringify(any);
+      } else { msg = String(e); }
       toast.error('Erro ao salvar: '+msg);
     }
   }
