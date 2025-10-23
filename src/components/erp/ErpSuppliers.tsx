@@ -75,11 +75,7 @@ export function ErpSuppliers() {
   async function save() {
     if (!name) { toast.error('Nome obrigatório'); return; }
     // insert mínimo para evitar erro de coluna ausente em bancos desatualizados
-    const baseInsert:any = {
-      name,
-      taxid: taxid || null,
-      phone: phone || null,
-    };
+    const baseInsert:any = { name };
     // If user has a company_id and is not admin, ensure supplier is linked to that company.
     if (profile?.company_id && profile.role !== 'admin') {
       baseInsert.company_id = profile.company_id;
@@ -110,7 +106,7 @@ export function ErpSuppliers() {
     }
     setSuppliers(prev=> [...prev, data as Supplier].sort((a,b)=> a.name.localeCompare(b.name)));
     // tentar aplicar campos opcionais (email/address/notes) após inserção
-    const optional:any = { email: email || null, address: address || null, notes: notes || null };
+  const optional:any = { taxid: taxid || null, phone: phone || null, email: email || null, address: address || null, notes: notes || null };
     // remove chaves nulas para evitar updates desnecessários
     Object.keys(optional).forEach(k=> { if (optional[k] == null || optional[k] === '') delete optional[k]; });
     if (Object.keys(optional).length > 0) {
