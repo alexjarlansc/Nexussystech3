@@ -137,11 +137,7 @@ export function ErpSuppliers() {
         <Input placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} className="h-8 w-56" />
         <Button size="sm" onClick={()=>setOpen(true)}>Novo Fornecedor</Button>
         <Button size="sm" variant="outline" onClick={()=>load()}>Recarregar</Button>
-        {import.meta.env.DEV && (
-          <Button size="sm" variant={debugEnabled ? 'secondary':'outline'} onClick={()=> { setDebugEnabled(v=>!v); if(!debugEnabled) { /* ativando */ } else { setDebugInfo(null);} }}>
-            {debugEnabled ? 'Debug ON':'Debug'}
-          </Button>
-        )}
+        {/* Botão de debug removido em produção */}
         <div className="text-xs text-muted-foreground ml-auto">{loading ? 'Carregando...' : suppliers.length + ' registros'}</div>
       </div>
 
