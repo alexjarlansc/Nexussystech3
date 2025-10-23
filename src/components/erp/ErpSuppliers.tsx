@@ -52,6 +52,26 @@ export function ErpSuppliers() {
 
   useEffect(()=> { load(); }, [load]);
 
+  function parseMissingColumn(msg:string): string | null {
+    // Extrai o nome da coluna a partir de mensagens comuns do PostgREST/Postgres
+    // ex: Could not find the 'address' column of 'suppliers' in the schema cache
+    // ex: column "address" does not exist
+    const m1 = msg.match(/'([^']+)'\s+column\s+of\s+'suppliers'/i);
+    if (m1 && m1[1]) return m1[1];
+    const m2 = msg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i);
+    if (m2 && m2[1]) return m2[1];
+    return null;
+  }
+
+  function sanitizeSupplierPayload(payload:any){
+    const allowed = new Set(['name','taxid','phone','email','address','city','state','zip','contact_name','notes','company_id','is_active']);
+    const out:any = {};
+    for (const k of Object.keys(payload||{})) {
+      if (allowed.has(k)) out[k] = (payload as any)[k];
+    }
+    return out;
+  }
+
   async function save() {
     if (!name) { toast.error('Nome obrigatório'); return; }
     const payload:any = {
@@ -66,8 +86,24 @@ export function ErpSuppliers() {
     if (profile?.company_id && profile.role !== 'admin') {
       payload.company_id = profile.company_id;
     }
-    console.log('[Suppliers][InsertAttempt]', payload);
-    const { data, error } = await (supabase as any).from('suppliers').insert(payload).select('*').single();
+    const firstTry = sanitizeSupplierPayload(payload);
+    console.log('[Suppliers][InsertAttempt]', firstTry);
+    let { data, error } = await (supabase as any).from('suppliers').insert(firstTry).select('*').single();
+    if (error) {
+      const msg = String(error.message || '');
+      // fallback: se coluna address (ou outra) estiver ausente no schema, remove e tenta novamente
+      const missing = parseMissingColumn(msg);
+      if (missing) {
+        const retry = { ...firstTry };
+        delete (retry as any)[missing];
+        console.warn('[Suppliers][InsertRetryRemovingMissingColumn]', missing, retry);
+        const r2 = await (supabase as any).from('suppliers').insert(retry).select('*').single();
+        data = r2.data; error = r2.error;
+        if (!error) {
+          toast.warning(`Campo "${missing}" ausente no banco. Foi salvo sem esse campo. aplique as migrations para suporte completo.`);
+        }
+      }
+    }
     if (error) {
       if (error.message.toLowerCase().includes('rls')) toast.error('Permissão negada (RLS)');
       else toast.error('Erro ao salvar: '+error.message);
@@ -245,9 +281,19 @@ export function ErpSuppliers() {
                 <Button onClick={async ()=> {
                   if (!selected) return;
                   if (!selected.name) { toast.error('Nome obrigatório'); return; }
-                  const updatePayload = { ...selected } as any;
+                  // mantém somente colunas seguras e evita enviar id/created_at
+                  const updatePayload = sanitizeSupplierPayload(selected);
                   delete updatePayload.id; delete updatePayload.created_at;
-                  const { error } = await (supabase as any).from('suppliers').update(updatePayload).eq('id', selected.id).select('*').single();
+                  let { error } = await (supabase as any).from('suppliers').update(updatePayload).eq('id', selected.id).select('*').single();
+                  if (error) {
+                    const missing = parseMissingColumn(String(error.message||''));
+                    if (missing) {
+                      delete (updatePayload as any)[missing];
+                      const r2 = await (supabase as any).from('suppliers').update(updatePayload).eq('id', selected.id).select('*').single();
+                      error = r2.error;
+                      if (!error) toast.warning(`Campo "${missing}" ausente no banco. Atualizado sem esse campo. aplique as migrations.`);
+                    }
+                  }
                   if (error) { toast.error('Erro ao salvar: '+error.message); return; }
                   toast.success('Atualizado');
                   setSuppliers(prev=> prev.map(s=> s.id===selected.id ? { ...s, ...updatePayload } : s));

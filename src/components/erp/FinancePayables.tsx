@@ -45,11 +45,19 @@ export default function FinancePayables(){
     })();
   },[]);
 
+  function sanitizeSupplierPayloadBasic(p:any){
+    const allowed = new Set(['name','taxid','phone','email']);
+    const out:any = {};
+    for (const k of Object.keys(p||{})) if (allowed.has(k)) out[k] = (p as any)[k];
+    return out;
+  }
+
   async function saveSupplier(){
     if (!supplierForm.name) { toast.error('Nome obrigatório'); return; }
     setLoading(true);
     try {
-      const { error } = await (supabase as any).from('suppliers').insert([supplierForm]);
+      const safe = sanitizeSupplierPayloadBasic(supplierForm);
+      const { error } = await (supabase as any).from('suppliers').insert([safe]);
       if (error) throw error;
       toast.success('Fornecedor salvo');
       setSupplierForm({ name:'', taxid:'', phone:'', email:'', bank:'', account:'', conditions:'' });
