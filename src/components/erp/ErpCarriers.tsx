@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
 import { supabase } from '@/integrations/supabase/client';
+import invokeFunction from '@/lib/functions';
 import { Carrier } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -108,6 +109,13 @@ export function ErpCarriers() {
       };
 
       if(editing) {
+        // Tenta via função Edge (service-role) primeiro
+        try {
+          const fx = await invokeFunction<{ ok?: boolean }>('admin-upsert-carrier', { body: { mode: 'update', id: editing.id, name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null } });
+          if (!fx.ok) throw new Error((fx as any).error || 'Falha via função');
+          toast.success('Transportadora atualizada');
+          setOpen(false); resetForm(); load(); return;
+        } catch { /* fallback abaixo */ }
         const payload:any = sanitize({ name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null });
         let { error } = await (supabase as any).from('carriers').update(payload).eq('id', editing.id);
         if (error) {
@@ -122,6 +130,13 @@ export function ErpCarriers() {
         if(error) throw error;
         toast.success('Transportadora atualizada');
       } else {
+        // Tenta via função Edge (service-role) primeiro
+        try {
+          const fx = await invokeFunction<{ ok?: boolean }>('admin-upsert-carrier', { body: { mode: 'insert', company_id: companyId, name, taxid: taxid||null, rntrc: rntrc||null, phone: phone||null, email: email||null, address: address||null, vehicle_types: vehicleTypes||null, notes: notes||null } });
+          if (!fx.ok) throw new Error((fx as any).error || 'Falha via função');
+          toast.success('Transportadora cadastrada');
+          setOpen(false); resetForm(); load(); return;
+        } catch { /* fallback abaixo */ }
         // insert mínimo para evitar erro de schema desatualizado
         const base:any = sanitize({ name, company_id: companyId });
         const ins = await (supabase as any).from('carriers').insert(base).select('id').single();
