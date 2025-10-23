@@ -52,6 +52,14 @@ export default function FinancePayables(){
     return out;
   }
 
+  function parseMissingColumn(msg:string): string | null {
+    const m1 = msg.match(/'([^']+)'\s+column\s+of\s+'suppliers'/i);
+    if (m1 && m1[1]) return m1[1];
+    const m2 = msg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i);
+    if (m2 && m2[1]) return m2[1];
+    return null;
+  }
+
   async function saveSupplier(){
     if (!supplierForm.name) { toast.error('Nome obrigatório'); return; }
     setLoading(true);
@@ -78,8 +86,20 @@ export default function FinancePayables(){
   async function bulkUpdateInvoices(status:string){
     if (selectedInvoices.length===0) return toast.error('Nenhuma fatura selecionada');
     setLoading(true);
-    try{
-      const { error } = await (supabase as any).from('payables').update({ status }).in('id', selectedInvoices);
+    try {
+      let { error } = await (supabase as any).from('suppliers').insert([safe]);
+      if (error) {
+        const missing = parseMissingColumn(String(error.message||''));
+        if (missing) {
+          const retry = { ...safe } as any;
+          delete retry[missing];
+          const r2 = await (supabase as any).from('suppliers').insert([retry]);
+          error = r2.error;
+          if (!error) {
+            toast.warning(`Campo "${missing}" ausente na tabela suppliers. Registro salvo sem esse campo. Aplique as migrations.`);
+          }
+        }
+      }
       if (error) throw error;
       // history
   try { await (supabase as any).from('payables_history').insert(selectedInvoices.map(id=>({ payable_id: id, action: status, created_at: new Date().toISOString() }))); } catch(_){ /* optional */ }
