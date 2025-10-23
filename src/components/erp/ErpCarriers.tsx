@@ -91,6 +91,10 @@ export function ErpCarriers() {
 
   async function save() {
     if (!name) { toast.error('Nome obrigatório'); return; }
+    if (!companyId) {
+      toast.error('Conta sem empresa vinculada. Peça ao administrador para associar seu usuário a uma empresa para cadastrar transportadoras.');
+      return;
+    }
     try {
       // util: extrai coluna ausente da mensagem do PostgREST/Postgres
       const parseMissingColumn = (msg:string): string | null => {
@@ -119,7 +123,7 @@ export function ErpCarriers() {
         toast.success('Transportadora atualizada');
       } else {
         // insert mínimo para evitar erro de schema desatualizado
-        const base:any = sanitize({ name, company_id: companyId||null });
+        const base:any = sanitize({ name, company_id: companyId });
         const ins = await (supabase as any).from('carriers').insert(base).select('id').single();
         if (ins.error) throw ins.error;
         // tenta aplicar campos opcionais posteriormente
@@ -149,6 +153,10 @@ export function ErpCarriers() {
       if (any && typeof any === 'object') {
         msg = any.message || any.error || JSON.stringify(any);
       } else { msg = String(e); }
+      const low = (msg||'').toLowerCase();
+      if (low.includes('row-level security') || low.includes('rls')) {
+        msg = 'Permissão negada (RLS). Aplique as migrations de RLS para carriers ou realize a operação com um usuário Admin/Mestre vinculado à mesma empresa.';
+      }
       toast.error('Erro ao salvar: '+msg);
     }
   }
