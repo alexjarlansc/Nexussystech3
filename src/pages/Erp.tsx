@@ -239,17 +239,31 @@ export default function Erp() {
   useEffect(() => {
     let active = true;
     async function loadCount() {
-      const { count } = await (supabase as any)
-        .from('quotes')
-        .select('id', { count: 'exact', head: true })
-        .eq('type','ORCAMENTO');
-      if (active) setQuotesCount(count || 0);
+      try {
+        let q: any = (supabase as any)
+          .from('quotes')
+          .select('id', { count: 'exact', head: true })
+          .eq('type','ORCAMENTO');
+        const role = auth?.profile?.role;
+        const companyId = (auth?.profile as any)?.company_id as string | undefined;
+        const userId = auth?.user?.id;
+        if (role !== 'admin') {
+          if (companyId) q = q.eq('company_id', companyId);
+          else if (userId) q = q.eq('created_by', userId);
+        } else if (role === 'admin' && companyId) {
+          q = q.eq('company_id', companyId);
+        }
+        const { count } = await q;
+        if (active) setQuotesCount(count || 0);
+      } catch (_) {
+        if (active) setQuotesCount(0);
+      }
     }
     loadCount();
     // Assinatura realtime para inserts/deletes
     const channel = (supabase as any)
       .channel('quotes-count')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotes' }, (payload:any) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotes' }, (_payload:any) => {
         // Atualiza só se mudança relevante (tipo ORCAMENTO envolvido)
         loadCount();
       })
@@ -737,8 +751,41 @@ export default function Erp() {
                       </div>
                     )}
 
+                    {/* (outros cards...) */}
+
                     {/* Removido: Importação XML não deve aparecer em Configurações */}
                   </div>
+
+                  {/* Subgrupo separado: Catálogos ERP */}
+                  {isAdminOrMasterRole(auth?.profile?.role) && (
+                    <div className="mt-6 pt-4 border-t space-y-3">
+                      <h3 className="text-sm font-medium text-muted-foreground">ERP · Catálogos</h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => { try { window.dispatchEvent(new CustomEvent('open-coststatus-settings', { detail: { tab: 'cc' } })); } catch {/* noop */} }}
+                          className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition"
+                        >
+                          <div className="h-10 w-10 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center">
+                            <Settings2 className="h-5 w-5" />
+                          </div>
+                          <div className="text-sm font-medium">Centro de custos</div>
+                          <div className="text-xs text-muted-foreground">Cadastre e gerencie centros de custos.</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { try { window.dispatchEvent(new CustomEvent('open-coststatus-settings', { detail: { tab: 'status' } })); } catch {/* noop */} }}
+                          className="group flex flex-col items-start gap-3 p-3 rounded-lg border bg-white hover:shadow transition"
+                        >
+                          <div className="h-10 w-10 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center">
+                            <Settings2 className="h-5 w-5" />
+                          </div>
+                          <div className="text-sm font-medium">Status</div>
+                          <div className="text-xs text-muted-foreground">Personalize os status de Orçamentos/Pedidos.</div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {section === 'company_admin' && hasPermission(auth?.profile, 'access.manage') && (
@@ -831,7 +878,6 @@ export default function Erp() {
           <DialogHeader>
             <DialogTitle>Detalhes do Inventário</DialogTitle>
           </DialogHeader>
-          <div>
             {selectedInventory ? (
               <div className="space-y-3">
                 <p className="text-sm">Data: {new Date(selectedInventory.created_at).toLocaleString()}</p>
@@ -870,7 +916,6 @@ export default function Erp() {
                 </div>
               </div>
             ) : null}
-          </div>
           <DialogFooter>
             <Button variant="outline" onClick={()=> setSelectedInventory(null)}>Fechar</Button>
           </DialogFooter>
@@ -1801,6 +1846,7 @@ function ProductVariationsPlaceholder(){return <Card className="p-6"><h2 classNa
 function ProductLabelsPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Etiquetas / Códigos</h2><p className="text-sm text-muted-foreground mb-4">Geração de códigos de barras e QR.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Gerar Etiqueta')}>Gerar</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Gerar em Lote')}>Lote</Button></div><div className="text-xs text-muted-foreground">Lista de etiquetas geradas...</div></Card>;}
 function ServicesPlaceholder(){return <Card className="p-6"><h2 className="text-xl font-semibold mb-2">Serviços</h2><p className="text-sm text-muted-foreground mb-4">Cadastro e gestão de serviços para ordens, contratos e faturamento.</p><div className="flex gap-2 mb-4"><Button size="sm" onClick={()=>toast.message('Novo Serviço')}>Novo</Button><Button size="sm" variant="outline" onClick={()=>toast.message('Importar Serviços')}>Importar</Button></div><div className="text-xs text-muted-foreground">Tabela (código | descrição | unidade | custo | preço | tributos).</div></Card>;}
 function BudgetsPlaceholder(){
+  const auth = useAuth();
   const [data,setData]=useState<any[]>([]);
   const [loading,setLoading]=useState(false);
   const [openPreview,setOpenPreview]=useState(false);
@@ -1809,17 +1855,17 @@ function BudgetsPlaceholder(){
   const [search,setSearch]=useState('');
   async function load(){
     setLoading(true);
-  let q = (supabase as any).from('quotes').select('*').eq('type','ORCAMENTO').order('created_at',{ascending:false}).limit(200);
-    // Se o usuário não for admin, filtrar por company_id do profile
+    let q = (supabase as any).from('quotes').select('*').eq('type','ORCAMENTO').order('created_at',{ascending:false}).limit(200);
+    // Escopo multi-tenant: não-admin -> restringe à empresa; admin com empresa vinculada -> restringe também
     try {
-      const { data } = await supabase.auth.getSession();
-      const session = data?.session ?? null;
-      const uid = session?.user?.id;
-      if (uid) {
-        const { data: prof } = await supabase.from('profiles').select('company_id,role').eq('user_id', uid).single();
-        if (prof && prof.role !== 'admin' && prof.company_id) {
-          q = q.eq('company_id', prof.company_id);
-        }
+      const role = auth?.profile?.role;
+      const companyId = (auth?.profile as any)?.company_id as string | undefined;
+      const userId = auth?.user?.id;
+      if (role !== 'admin') {
+        if (companyId) q = q.eq('company_id', companyId);
+        else if (userId) q = q.eq('created_by', userId);
+      } else if (role === 'admin' && companyId) {
+        q = q.eq('company_id', companyId);
       }
     } catch (_) { /* ignore */ }
     if(period.from) q = q.gte('created_at', period.from+'T00:00:00');

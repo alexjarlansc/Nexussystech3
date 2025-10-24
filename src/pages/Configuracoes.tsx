@@ -1,7 +1,7 @@
 import { NexusProtectedHeader } from "@/components/NexusProtectedHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { User, Building2 } from "lucide-react";
+import { User, Building2, Settings2 } from "lucide-react";
 
 export default function Configuracoes() {
   const openProfile = () => {
@@ -20,13 +20,19 @@ export default function Configuracoes() {
       /* noop */
     }
   };
+  const openCostCenters = () => {
+    try { window.dispatchEvent(new CustomEvent('open-coststatus-settings', { detail: { tab: 'cc' } })); } catch { /* noop */ }
+  };
+  const openStatuses = () => {
+    try { window.dispatchEvent(new CustomEvent('open-coststatus-settings', { detail: { tab: 'status' } })); } catch { /* noop */ }
+  };
   return (
   <div className="min-h-svh gradient-hero" style={{ paddingTop: 'var(--header-height)' }}>
       <NexusProtectedHeader />
       <main className="mx-auto max-w-4xl p-4 sm:p-6">
   <h1 className="text-2xl sm:text-3xl font-semibold mb-4">Configuração</h1>
   <p className="text-sm text-muted-foreground mb-6">Gerencie suas informações de perfil e a configuração da empresa.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Card className="p-4">
             <div className="h-12 w-12 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center mb-3">
               <User className="h-6 w-6" />
@@ -47,6 +53,32 @@ export default function Configuracoes() {
               <Button size="sm" variant="outline" onClick={openCompany}>Configurar Empresa</Button>
             </div>
           </Card>
+        </div>
+        {/* Subgrupo separado: Catálogos ERP */}
+        <div className="mt-6 pt-4 border-t space-y-3">
+          <h3 className="text-sm font-medium text-muted-foreground">ERP · Catálogos</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Card className="p-4">
+              <div className="h-12 w-12 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center mb-3">
+                <Settings2 className="h-6 w-6" />
+              </div>
+              <div className="font-medium">Centro de custos</div>
+              <div className="text-sm text-muted-foreground">Cadastre e gerencie centros de custos.</div>
+              <div className="mt-3">
+                <Button size="sm" variant="secondary" onClick={openCostCenters}>Abrir</Button>
+              </div>
+            </Card>
+            <Card className="p-4">
+              <div className="h-12 w-12 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center mb-3">
+                <Settings2 className="h-6 w-6" />
+              </div>
+              <div className="font-medium">Status</div>
+              <div className="text-sm text-muted-foreground">Personalize os status de Orçamentos/Pedidos.</div>
+              <div className="mt-3">
+                <Button size="sm" variant="secondary" onClick={openStatuses}>Abrir</Button>
+              </div>
+            </Card>
+          </div>
         </div>
       </main>
     </div>

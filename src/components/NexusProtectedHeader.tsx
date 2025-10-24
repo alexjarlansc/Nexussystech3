@@ -21,6 +21,10 @@ export function NexusProtectedHeader() {
   const [openCompany, setOpenCompany] = useState(false);
   const [isCreatingCompany, setIsCreatingCompany] = useState(false);
   const [openInvites, setOpenInvites] = useState(false);
+  const [openCostStatus, setOpenCostStatus] = useState(false);
+  const [costStatusInitialTab, setCostStatusInitialTab] = useState<'cc'|'status'>('cc');
+  // Helper para tipar componente definido mais abaixo neste arquivo
+  const CostStatusManagerAny = CostStatusManager as unknown as (p: { initialTab?: 'cc'|'status' }) => JSX.Element;
   // Códigos de convite (tipo centralizado em authTypes com campos opcionais)
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
   // Mapa id->nome para resolver nomes de empresas dos convites
@@ -341,11 +345,23 @@ export function NexusProtectedHeader() {
         setOpenCompany(true);
       } catch {/* noop */}
     };
+    const onOpenCostStatus = (ev?: Event) => {
+      try {
+        setOpenProfile(false);
+        setOpenCompany(false);
+        const detail = ev && (ev as CustomEvent)?.detail as { tab?: 'cc'|'status' } | undefined;
+        const nextTab = detail?.tab === 'status' ? 'status' : 'cc';
+        setCostStatusInitialTab(nextTab);
+        setOpenCostStatus(true);
+      } catch {/* noop */}
+    };
     window.addEventListener('open-profile-settings', onOpenProfile as EventListener);
     window.addEventListener('open-company-settings', onOpenCompany as EventListener);
+    window.addEventListener('open-coststatus-settings', onOpenCostStatus as EventListener);
     return () => {
       window.removeEventListener('open-profile-settings', onOpenProfile as EventListener);
       window.removeEventListener('open-company-settings', onOpenCompany as EventListener);
+      window.removeEventListener('open-coststatus-settings', onOpenCostStatus as EventListener);
     };
   }, [profile?.first_name, profile?.phone, profile?.email, company?.name, company?.cnpj_cpf, company?.phone, company?.email, company?.address]);
 
@@ -452,6 +468,16 @@ export function NexusProtectedHeader() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cost Centers / Status Modal */}
+      <Dialog open={openCostStatus} onOpenChange={setOpenCostStatus}>
+        <DialogContent className="sm:max-w-3xl max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Centro de custos / Status</DialogTitle>
+          </DialogHeader>
+          <CostStatusManagerAny initialTab={costStatusInitialTab} />
         </DialogContent>
       </Dialog>
 
@@ -754,5 +780,227 @@ export function NexusProtectedHeader() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// Gerenciador embutido: centros de custos e status
+function CostStatusManager({ initialTab = 'cc' }: { initialTab?: 'cc'|'status' }) {
+  const { profile } = useAuth();
+  type SelectChain = {
+    order: (f: string, opts?: unknown) => SelectChain;
+    eq: (c: string, v: unknown) => Promise<{ data: unknown[] | null; error?: unknown }>;
+  };
+  type AnyFrom = {
+    from: (t: string) => {
+      select: (s: string) => SelectChain;
+      insert: (row: unknown) => Promise<{ data?: unknown; error?: unknown }>;
+      update: (row: unknown) => { eq: (c: string, v: unknown) => Promise<{ data?: unknown; error?: unknown }> };
+      delete: () => { eq: (c: string, v: unknown) => Promise<{ data?: unknown; error?: unknown }> };
+    }
+  };
+  const [tab, setTab] = useState<'cc'|'status'>(initialTab);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
+  const [loadingCC, setLoadingCC] = useState(false);
+  const [loadingSt, setLoadingSt] = useState(false);
+  const [cc, setCc] = useState<Array<{id:string; code:string; name:string; is_active:boolean}>>([]);
+  const [st, setSt] = useState<Array<{id:string; name:string; domain:'ORCAMENTO'|'PEDIDO'; sort_order:number; is_active:boolean}>>([]);
+  const [newCcCode, setNewCcCode] = useState('');
+  const [newCcName, setNewCcName] = useState('');
+  const [newStName, setNewStName] = useState('');
+  const [newStDomain, setNewStDomain] = useState<'ORCAMENTO'|'PEDIDO'>('ORCAMENTO');
+  const [newStSort, setNewStSort] = useState<number>(0);
+
+  const canEdit = profile?.role === 'admin' || profile?.role === 'master';
+
+  const loadCostCenters = useCallback(async () => {
+    if (!profile?.company_id) return;
+    setLoadingCC(true);
+    try {
+  // typed-unknown cast porque a tabela não está no tipo gerado
+  const from = supabase as unknown as AnyFrom;
+  const q = from.from('cost_centers').select('id,code,name,is_active').order('code');
+  const res = await q.eq('company_id', profile.company_id);
+  const data = res?.data as Array<{id:string; code:string; name:string; is_active:boolean}>|null;
+  const error = res?.error;
+      if (error) throw error;
+      setCc((data||[]) as Array<{id:string; code:string; name:string; is_active:boolean}>);
+    } catch (e) {
+      toast.error('Erro ao carregar centros de custos');
+    } finally { setLoadingCC(false); }
+  }, [profile?.company_id]);
+
+  const loadStatuses = useCallback(async () => {
+    if (!profile?.company_id) return;
+    setLoadingSt(true);
+    try {
+  const from = supabase as unknown as AnyFrom;
+  const q = from.from('status_catalog').select('id,name,domain,sort_order,is_active').order('sort_order').order('name');
+  const res = await q.eq('company_id', profile.company_id);
+  const data = res?.data as Array<{id:string; name:string; domain:'ORCAMENTO'|'PEDIDO'; sort_order:number; is_active:boolean}>|null;
+  const error = res?.error;
+      if (error) throw error;
+      setSt((data||[]) as Array<{id:string; name:string; domain:'ORCAMENTO'|'PEDIDO'; sort_order:number; is_active:boolean}>);
+    } catch (e) { toast.error('Erro ao carregar status'); } finally { setLoadingSt(false); }
+  }, [profile?.company_id]);
+
+  useEffect(()=>{ loadCostCenters(); loadStatuses(); }, [loadCostCenters, loadStatuses]);
+
+  async function addCC(){
+    if (!canEdit) { toast.error('Sem permissão'); return; }
+    if (!newCcCode.trim() || !newCcName.trim()) { toast.error('Código e nome são obrigatórios'); return; }
+    try {
+      const from = supabase as unknown as AnyFrom;
+      const ins = await from.from('cost_centers').insert({ code:newCcCode.trim(), name:newCcName.trim(), is_active:true, company_id: profile?.company_id });
+      if (ins?.error) throw ins.error;
+      setNewCcCode(''); setNewCcName('');
+      toast.success('Centro de custos adicionado');
+      loadCostCenters();
+    } catch(e){ toast.error('Falha ao adicionar centro de custos'); }
+  }
+
+  async function toggleCC(id:string, active:boolean){
+    try {
+      const from = supabase as unknown as AnyFrom;
+      await from.from('cost_centers').update({ is_active: !active }).eq('id', id);
+      loadCostCenters();
+    } catch(e){ toast.error('Falha ao atualizar'); }
+  }
+  async function deleteCC(id:string){
+    if (!canEdit) { toast.error('Sem permissão'); return; }
+    try {
+      const from = supabase as unknown as AnyFrom;
+      await from.from('cost_centers').delete().eq('id', id);
+      loadCostCenters();
+    } catch(e){ toast.error('Falha ao excluir'); }
+  }
+
+  async function addStatus(){
+    if (!canEdit) { toast.error('Sem permissão'); return; }
+    if (!newStName.trim()) { toast.error('Nome é obrigatório'); return; }
+    try {
+      const from = supabase as unknown as AnyFrom;
+      const ins = await from.from('status_catalog').insert({ name:newStName.trim(), domain:newStDomain, sort_order:newStSort||0, is_active:true, company_id: profile?.company_id });
+      if (ins?.error) throw ins.error;
+      setNewStName(''); setNewStSort(0);
+      toast.success('Status adicionado');
+      loadStatuses();
+    } catch(e){ toast.error('Falha ao adicionar status'); }
+  }
+  async function toggleStatus(id:string, active:boolean){
+    try {
+      const from = supabase as unknown as AnyFrom;
+      await from.from('status_catalog').update({ is_active: !active }).eq('id', id);
+      loadStatuses();
+    } catch(e){ toast.error('Falha ao atualizar'); }
+  }
+  async function deleteStatus(id:string){
+    if (!canEdit) { toast.error('Sem permissão'); return; }
+    try {
+      const from = supabase as unknown as AnyFrom;
+      await from.from('status_catalog').delete().eq('id', id);
+      loadStatuses();
+    } catch(e){ toast.error('Falha ao excluir'); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="inline-flex rounded-md border overflow-hidden">
+        <button className={`px-3 py-1.5 text-sm ${tab==='cc'?'bg-primary text-primary-foreground':''}`} onClick={()=>setTab('cc')}>Centro de custos</button>
+        <button className={`px-3 py-1.5 text-sm ${tab==='status'?'bg-primary text-primary-foreground':''}`} onClick={()=>setTab('status')}>Status</button>
+      </div>
+
+      {tab==='cc' && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-12 gap-2 items-end">
+            <div className="col-span-3">
+              <Label className="text-xs">Código</Label>
+              <Input value={newCcCode} onChange={(e)=>setNewCcCode(e.target.value)} placeholder="Ex: 01" />
+            </div>
+            <div className="col-span-7">
+              <Label className="text-xs">Nome</Label>
+              <Input value={newCcName} onChange={(e)=>setNewCcName(e.target.value)} placeholder="Ex: Administrativo" />
+            </div>
+            <div className="col-span-2">
+              <Button className="w-full" onClick={addCC} disabled={!canEdit}>Adicionar</Button>
+            </div>
+          </div>
+          <div className="border rounded overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/60 text-xs">
+                <tr><th className="text-left px-2 py-1">Código</th><th className="text-left px-2 py-1">Nome</th><th className="text-center px-2 py-1">Ativo</th><th className="text-center px-2 py-1">Ações</th></tr>
+              </thead>
+              <tbody>
+                {cc.map(row=> (
+                  <tr key={row.id} className="border-t">
+                    <td className="px-2 py-1">{row.code}</td>
+                    <td className="px-2 py-1">{row.name}</td>
+                    <td className="px-2 py-1 text-center">{row.is_active ? 'Sim':'Não'}</td>
+                    <td className="px-2 py-1 text-center">
+                      <Button size="sm" variant="outline" className="mr-2" onClick={()=>toggleCC(row.id, row.is_active)}>Ativar/Desativar</Button>
+                      <Button size="sm" variant="destructive" onClick={()=>deleteCC(row.id)} disabled={!canEdit}>Excluir</Button>
+                    </td>
+                  </tr>
+                ))}
+                {(!cc || cc.length===0) && (
+                  <tr><td colSpan={4} className="text-center text-xs text-muted-foreground py-4">Nenhum centro de custos</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab==='status' && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-12 gap-2 items-end">
+            <div className="col-span-6">
+              <Label className="text-xs">Nome do status</Label>
+              <Input value={newStName} onChange={(e)=>setNewStName(e.target.value)} placeholder="Ex: Rascunho" />
+            </div>
+            <div className="col-span-3">
+              <Label className="text-xs">Tipo</Label>
+              <Select value={newStDomain} onValueChange={(v)=>setNewStDomain(v as 'ORCAMENTO'|'PEDIDO')}>
+                <SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ORCAMENTO">Orçamento</SelectItem>
+                  <SelectItem value="PEDIDO">Pedido</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-1">
+              <Label className="text-xs">Ordem</Label>
+              <Input type="number" value={newStSort} onChange={(e)=>setNewStSort(Number(e.target.value||0))} />
+            </div>
+            <div className="col-span-2">
+              <Button className="w-full" onClick={addStatus} disabled={!canEdit}>Adicionar</Button>
+            </div>
+          </div>
+          <div className="border rounded overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/60 text-xs">
+                <tr><th className="text-left px-2 py-1">Nome</th><th className="text-left px-2 py-1">Tipo</th><th className="text-center px-2 py-1">Ordem</th><th className="text-center px-2 py-1">Ativo</th><th className="text-center px-2 py-1">Ações</th></tr>
+              </thead>
+              <tbody>
+                {st.map(row=> (
+                  <tr key={row.id} className="border-t">
+                    <td className="px-2 py-1">{row.name}</td>
+                    <td className="px-2 py-1">{row.domain==='ORCAMENTO'?'Orçamento':'Pedido'}</td>
+                    <td className="px-2 py-1 text-center">{row.sort_order}</td>
+                    <td className="px-2 py-1 text-center">{row.is_active ? 'Sim':'Não'}</td>
+                    <td className="px-2 py-1 text-center">
+                      <Button size="sm" variant="outline" className="mr-2" onClick={()=>toggleStatus(row.id, row.is_active)}>Ativar/Desativar</Button>
+                      <Button size="sm" variant="destructive" onClick={()=>deleteStatus(row.id)} disabled={!canEdit}>Excluir</Button>
+                    </td>
+                  </tr>
+                ))}
+                {(!st || st.length===0) && (
+                  <tr><td colSpan={5} className="text-center text-xs text-muted-foreground py-4">Nenhum status</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

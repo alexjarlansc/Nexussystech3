@@ -122,18 +122,23 @@ export default function QuoteBuilder() {
   const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean> | null>(null);
   // Buscar clientes do banco de dados Supabase ao carregar
   // Função para buscar clientes do banco
-  async function fetchClients() {
-    // Buscar clientes da tabela correta
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .order('name');
+  const fetchClients = useCallback(async () => {
+    // Buscar clientes com escopo por empresa (multi-tenant)
+    let q = supabase.from('clients').select('*').order('name');
+    if (profile?.role !== 'admin') {
+      if (profile?.company_id) q = q.eq('company_id', profile.company_id);
+      else if (user?.id) q = q.eq('created_by', user.id);
+    } else {
+      // Admin: se houver company vinculada, restringe ainda assim
+      if (profile?.company_id) q = q.eq('company_id', profile.company_id);
+    }
+    const { data, error } = await q;
     if (error) {
       toast.error('Erro ao buscar clientes do banco');
       return;
     }
     setClients(data || []);
-  }
+  }, [profile?.role, profile?.company_id, user?.id]);
 
   useEffect(() => {
     fetchClients();
@@ -154,7 +159,7 @@ export default function QuoteBuilder() {
     };
     window.addEventListener('erp:client-created', onCreated as EventListener);
     return () => window.removeEventListener('erp:client-created', onCreated as EventListener);
-  }, []);
+  }, [fetchClients]);
   // carregar margens visíveis para o usuário/empresa
   useEffect(() => {
     let mounted = true;
@@ -176,6 +181,16 @@ export default function QuoteBuilder() {
   // (types declared at module scope)
   const [products, setProducts] = useState<ProductWithStock[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
+  // Filtros Avançados (Registros)
+  const [qSearch, setQSearch] = useState('');
+  const [qType, setQType] = useState<'ALL' | 'ORCAMENTO' | 'PEDIDO'>('ALL');
+  const [qStatus, setQStatus] = useState<string>('');
+  const [qFrom, setQFrom] = useState(''); // YYYY-MM-DD
+  const [qTo, setQTo] = useState('');   // YYYY-MM-DD
+  const [qMinTotal, setQMinTotal] = useState('');
+  const [qMaxTotal, setQMaxTotal] = useState('');
+  const [qOnlyMine, setQOnlyMine] = useState(false);
   const [margins, setMargins] = useState<{ id: string; name: string; percent: number }[]>([]);
 
   const [clientId, setClientId] = useState<string>('');
@@ -202,11 +217,14 @@ export default function QuoteBuilder() {
   }, [paymentSchedule]);
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState<QuoteStatus>('Rascunho');
+  type UIStatus = { name: string; domain: 'ORCAMENTO'|'PEDIDO'; color?: string };
+  const [availableStatuses, setAvailableStatuses] = useState<UIStatus[]>([]);
 
   const [openClient, setOpenClient] = useState(false);
   const [openProduct, setOpenProduct] = useState(false);
   const [openManageProducts, setOpenManageProducts] = useState(false);
   const [openSearchProduct, setOpenSearchProduct] = useState(false);
+  const [openAdvanced, setOpenAdvanced] = useState(false);
   const [openEditProduct, setOpenEditProduct] = useState<Product | null>(null);
   const [openReceipt, setOpenReceipt] = useState<string | null>(null);
 
@@ -229,28 +247,160 @@ export default function QuoteBuilder() {
     if (!freight) return 0;
     const raw = freight.trim();
     if (raw.endsWith('%')) {
-      const num = parseFloat(raw.slice(0, -1).replace(',', '.'));
-      if (isNaN(num) || num <= 0) return 0;
-      return subtotalWithDiscount * (num / 100);
+      const pctStr = raw.slice(0, -1).trim();
+      // aceita "12,5" ou "12.5"
+      const numPct = (() => {
+        if (pctStr.includes(',') && !pctStr.includes('.')) return parseFloat(pctStr.replace(',', '.'));
+        return parseFloat(pctStr);
+      })();
+      if (isNaN(numPct) || numPct <= 0) return 0;
+      return subtotalWithDiscount * (numPct / 100);
     }
-    const num = parseFloat(raw.replace(/\./g,'').replace(',', '.'));
+    // Parser robusto para valores com ponto e/ou vírgula
+    const parseFlexible = (s: string): number => {
+      const t = s.trim();
+      if (!t) return NaN;
+      const hasComma = t.includes(',');
+      const hasDot = t.includes('.');
+      // Formato BR comum: 1.234,56
+      if (hasComma && hasDot) {
+        const noThousands = t.replace(/\./g, '');
+        return parseFloat(noThousands.replace(',', '.'));
+      }
+      // Apenas vírgula: 123,45
+      if (hasComma && !hasDot) return parseFloat(t.replace(',', '.'));
+      // Apenas ponto: 123.45 (ponto decimal) ou 1.234 (milhar). Se múltiplos pontos e nenhum dígito após o último com 3 casas, tratar como milhar
+      if (!hasComma && hasDot) {
+        // Se padrão de milhar (todos os pontos seguidos de blocos de 3) e nenhum separador decimal, remove pontos
+        const parts = t.split('.');
+        const last = parts[parts.length - 1];
+        const isThousands = parts.length > 1 && last.length === 3 && parts.slice(0, -1).every(p => p.length <= 3);
+        if (isThousands) return parseFloat(t.replace(/\./g, ''));
+        return parseFloat(t);
+      }
+      // Apenas dígitos
+      return parseFloat(t);
+    };
+    const num = parseFlexible(raw);
     if (isNaN(num) || num < 0) return 0;
     return num;
   }, [freight, subtotalWithDiscount]);
   const total = useMemo(() => subtotalWithDiscount + freightValue, [subtotalWithDiscount, freightValue]);
 
+  async function updateQuoteStatus(id: string, newStatus: string) {
+    try {
+      const { error } = await supabase.from('quotes').update({ status: newStatus }).eq('id', id);
+      if (error) { toast.error('Falha ao atualizar status'); return; }
+      setQuotes(prev => prev.map(q => q.id === id ? { ...q, status: newStatus as QuoteStatus } : q));
+      toast.success('Status atualizado');
+    } catch(e) {
+      toast.error('Erro inesperado ao atualizar status');
+    }
+  }
+
 
   // Removido: não persiste mais clientes localmente
+
+  // Carregar Status configuráveis (fallback para defaults se vazio)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        if (!profile?.company_id) {
+          setAvailableStatuses([
+            { name: 'Rascunho', domain: 'ORCAMENTO' },
+            { name: 'Enviado', domain: 'ORCAMENTO' },
+            { name: 'Aprovado', domain: 'ORCAMENTO' },
+            { name: 'Reprovado', domain: 'ORCAMENTO' },
+            { name: 'Faturado', domain: 'PEDIDO' },
+            { name: 'Cancelado', domain: 'ORCAMENTO' },
+            { name: 'Pago', domain: 'PEDIDO' },
+          ]);
+          return;
+        }
+        const from = supabase as unknown as { from:(t:string)=>{ select:(s:string)=>{ eq:(c:string,v:unknown)=>Promise<{ data: Array<{ name:string; domain:'ORCAMENTO'|'PEDIDO'; color?: string; is_active?: boolean }> | null, error?: unknown }> } } };
+        const res = await from.from('status_catalog').select('name,domain,color,is_active').eq('company_id', profile.company_id);
+        const rows = (res?.data || []).filter(r=> r && (r.is_active ?? true)).map(r=> ({ name: r.name, domain: r.domain, color: r.color }));
+        if (mounted) setAvailableStatuses(rows.length ? rows : [
+          { name: 'Rascunho', domain: 'ORCAMENTO' },
+          { name: 'Enviado', domain: 'ORCAMENTO' },
+          { name: 'Aprovado', domain: 'ORCAMENTO' },
+          { name: 'Reprovado', domain: 'ORCAMENTO' },
+          { name: 'Faturado', domain: 'PEDIDO' },
+          { name: 'Cancelado', domain: 'ORCAMENTO' },
+          { name: 'Pago', domain: 'PEDIDO' },
+        ]);
+      } catch(e) {
+        if (mounted) setAvailableStatuses([
+          { name: 'Rascunho', domain: 'ORCAMENTO' },
+          { name: 'Enviado', domain: 'ORCAMENTO' },
+          { name: 'Aprovado', domain: 'ORCAMENTO' },
+          { name: 'Reprovado', domain: 'ORCAMENTO' },
+          { name: 'Faturado', domain: 'PEDIDO' },
+          { name: 'Cancelado', domain: 'ORCAMENTO' },
+          { name: 'Pago', domain: 'PEDIDO' },
+        ]);
+      }
+    })();
+    return ()=>{ mounted = false; };
+  }, [profile?.company_id]);
+
+  const statusColor = useCallback((name: string, domain?: 'ORCAMENTO'|'PEDIDO') => {
+    const found = availableStatuses.find(s => s.name === name && (!domain || s.domain === domain)) || availableStatuses.find(s => s.name === name);
+    return found?.color;
+  }, [availableStatuses]);
+
+  // Contraste simples de texto para fundo colorido do status
+  const statusTextColor = useCallback((hex?: string) => {
+    if (!hex) return undefined;
+    const h = hex.replace('#','');
+    if (h.length !== 6) return undefined;
+    const r = parseInt(h.slice(0,2), 16);
+    const g = parseInt(h.slice(2,4), 16);
+    const b = parseInt(h.slice(4,6), 16);
+    const luminance = 0.299*r + 0.587*g + 0.114*b;
+    return luminance > 186 ? '#000' : '#fff';
+  }, []);
+
+  const statusListForType = useCallback((domain: 'ORCAMENTO'|'PEDIDO'|null) => {
+    const rows = domain ? availableStatuses.filter(s=>s.domain===domain) : availableStatuses;
+    return rows.map(s=>s.name);
+  }, [availableStatuses]);
 
   // Buscar orçamentos do Supabase conforme permissão
   async function fetchQuotes() {
     if (!user) return;
-  let query = supabase.from('quotes').select('*').order('created_at', { ascending: false });
+  let query = supabase.from('quotes').select('*', { count: 'exact' }).order('created_at', { ascending: false });
     // Aplicar filtro por company quando usuário não for admin
     if (profile?.role !== 'admin') {
       if (profile?.company_id) query = query.eq('company_id', profile.company_id);
       else query = query.eq('created_by', user.id);
     }
+    // Admin com empresa vinculada: ainda restringe
+    if (profile?.role === 'admin' && profile.company_id) {
+      query = query.eq('company_id', profile.company_id);
+    }
+    // Tipo
+    if (qType !== 'ALL') query = query.eq('type', qType);
+    // Status
+    if (qStatus) query = query.eq('status', qStatus);
+    // Período
+    if (qFrom) query = query.gte('created_at', `${qFrom}T00:00:00`);
+    if (qTo) query = query.lte('created_at', `${qTo}T23:59:59`);
+    // Total
+    const minT = parseFloat(qMinTotal.replace(',', '.'));
+    const maxT = parseFloat(qMaxTotal.replace(',', '.'));
+    if (!isNaN(minT)) query = query.gte('total', minT);
+    if (!isNaN(maxT)) query = query.lte('total', maxT);
+    // Busca avançada (number OR client name OR vendor name)
+    const s = qSearch.trim();
+    if (s) {
+      const needle = s.replace(/%/g, '').replace(/,/g, '');
+      const orExpr = `number.ilike.%${needle}%,client_snapshot->>name.ilike.%${needle}%,vendor->>name.ilike.%${needle}%`;
+      query = query.or(orExpr);
+    }
+    // Somente meus
+    if (qOnlyMine && user?.id) query = query.eq('created_by', user.id);
     const { data, error } = await query;
     if (error) {
       toast.error('Erro ao buscar orçamentos');
@@ -274,11 +424,33 @@ export default function QuoteBuilder() {
     setQuotes(mapped);
   }
 
+  // Carregar um orçamento para edição no formulário principal
+  function loadQuoteForEdit(q: Quote){
+    try{
+      setType(q.type);
+      setValidityDays(q.validityDays);
+      setVendor(q.vendor);
+      setClientId(q.clientId);
+      // itens: QuoteItemSnapshot já é compatível
+      setItems(Array.isArray(q.items) ? q.items : []);
+      // frete: estado local é string; converte valor para string simples
+      setFreight(String(q.freight ?? ''));
+      setPaymentMethod(q.paymentMethod);
+      if (q.paymentTerms) setPaymentTerms(q.paymentTerms); else setPaymentTerms('');
+      setNotes(q.notes || '');
+      setStatus(q.status);
+      setDiscountType('percentage');
+      setDiscountAmount('');
+      setEditingQuoteId(q.id);
+      toast.message('Orçamento carregado para edição');
+    } catch(e){ /* noop */ }
+  }
+
   useEffect(() => {
       fetchQuotes();
       // fetchQuotes depende de user/profile internamente; se for estável pode ser ignorado via eslint-disable
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, profile]);
+    }, [user, profile, qSearch, qType, qStatus, qFrom, qTo, qMinTotal, qMaxTotal, qOnlyMine]);
 
 
   // Atualizar dados do vendedor quando o perfil mudar
@@ -583,28 +755,35 @@ export default function QuoteBuilder() {
       created_by: user?.id,
       company_id: profile?.company_id,
     };
+    // Se estamos editando, atualizar em vez de inserir
+    if (editingQuoteId) {
+  const updatePayload = { ...quote } as Record<string, unknown>;
+  // Não alterar number/created_at ao atualizar; usar valores existentes
+  delete (updatePayload as { [k:string]: unknown })['created_at'];
+  (updatePayload as { [k:string]: unknown })['number'] = quotes.find(x=>x.id===editingQuoteId)?.number || undefined;
+      const { error } = await supabase.from('quotes').update(updatePayload).eq('id', editingQuoteId);
+      if (error) { toast.error('Erro ao atualizar orçamento: ' + (error.message || 'desconhecido')); return; }
+      toast.success('Orçamento atualizado');
+      setEditingQuoteId(null);
+      fetchQuotes();
+      return;
+    }
+
     // Inserção com retry em caso de conflito unique (se constraint existir)
-  type QuoteRow = { id: string; number: string };
-  let saveError: { message?: string; code?: string } | null = null;
-  let saved: QuoteRow | null = null;
+    type QuoteRow = { id: string; number: string };
+    let saveError: { message?: string; code?: string } | null = null;
+    let saved: QuoteRow | null = null;
     for (let i = 0; i < 5; i++) {
-  const { data, error } = await supabase.from('quotes').insert(quote).select().single();
+      const { data, error } = await supabase.from('quotes').insert(quote).select().single();
       if (!error) { saved = data; saveError = null; break; }
-      // Se conflito (unique violation) tenta novo número
-  if (error && typeof error === 'object' && 'code' in error && (error as {code?: string}).code === '23505') {
+      if (error && typeof error === 'object' && 'code' in error && (error as {code?: string}).code === '23505') {
         quote.number = await generateNextNumber(type); // novo número
         continue;
       }
       saveError = error; break;
     }
-    if (saveError) {
-      toast.error('Erro ao salvar orçamento: ' + (saveError.message || 'desconhecido'));
-      return;
-    }
-    if (!saved) {
-      toast.error('Não foi possível salvar orçamento (tentativas excedidas)');
-      return;
-    }
+    if (saveError) { toast.error('Erro ao salvar orçamento: ' + (saveError.message || 'desconhecido')); return; }
+    if (!saved) { toast.error('Não foi possível salvar orçamento (tentativas excedidas)'); return; }
     setItems([]);
     toast.success(`${type === 'ORCAMENTO' ? 'Orçamento' : 'Pedido'} ${number} salvo`);
     fetchQuotes();
@@ -1178,11 +1357,11 @@ export default function QuoteBuilder() {
               <div className="grid grid-cols-1 gap-2 md:gap-3">
                 {/* Cabeçalho somente desktop */}
                 <div className="hidden md:grid grid-cols-12 gap-1 md:gap-2 text-[11px] md:text-xs text-muted-foreground font-medium items-center">
-                  <div className="col-span-5">Produto</div>
+                  <div className="col-span-4">Produto</div>
                   <div className="col-span-1 text-right">Qtd</div>
                   <div className="col-span-2 text-right">Preço</div>
                   <div className="col-span-1 text-right">Custo</div>
-                  <div className="col-span-1 text-right">Margem</div>
+                  <div className="col-span-2 text-right">Margem</div>
                   <div className="col-span-2 text-right">Subtotal</div>
                 </div>
                 {items.map((it, idx) => (
@@ -1243,7 +1422,7 @@ export default function QuoteBuilder() {
                     </div>
                     {/* Layout desktop (hidden em mobile) */}
                     <div className="hidden md:grid md:grid-cols-12 md:gap-2 items-center">
-                      <div className="col-span-5 flex items-center gap-3">
+                      <div className="col-span-4 flex items-center gap-3">
                         {it.imageDataUrl ? (
                           <img src={it.imageDataUrl} alt={it.name} className="h-12 w-12 rounded object-cover border" loading="lazy" />
                         ) : (
@@ -1264,13 +1443,14 @@ export default function QuoteBuilder() {
                           min={1}
                           value={it.quantity}
                           onChange={(e) => updateItemQty(idx, Math.max(1, Number(e.target.value)))}
+                          className="h-8 w-20 text-right ml-auto"
                         />
                       </div>
                       <div className="col-span-2 text-right whitespace-nowrap text-[11px] md:text-sm pr-1">{currencyBRL(it.unitPrice)}</div>
                       <div className="col-span-1 text-right whitespace-nowrap text-[10px] md:text-[11px] pr-1">{it.costPrice != null ? currencyBRL(it.costPrice) : '—'}</div>
-                      <div className="col-span-1 text-right pr-1">
+                      <div className="col-span-2 text-right pr-1">
                         <Select value={it.margin?.id ?? 'none'} onValueChange={(v)=> updateItemMargin(idx, v === 'none' ? null : v)}>
-                          <SelectTrigger className="w-32 h-8 text-sm"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
+                          <SelectTrigger className="h-8 text-sm w-full max-w-[180px] md:max-w-full"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">Nenhuma</SelectItem>
                             {margins.map(m => (
@@ -1389,9 +1569,13 @@ export default function QuoteBuilder() {
                 <Textarea rows={7} value={notes} onChange={(e) => setNotes(e.target.value)} />
                 <Label>Status</Label>
                 <Select value={status} onValueChange={(v) => setStatus(v as QuoteStatus)}>
-                  <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectTrigger
+                    style={{ borderLeftWidth: 4, borderLeftColor: statusColor(status, type) || undefined }}
+                  >
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {(['Rascunho','Enviado','Aprovado','Cancelado','Pago'] as QuoteStatus[]).map((s) => (
+                    {statusListForType(type).map((s) => (
                       <SelectItem key={s} value={s}>{s}</SelectItem>
                     ))}
                   </SelectContent>
@@ -1532,6 +1716,14 @@ export default function QuoteBuilder() {
         <aside className="space-y-4">
           <Card className="card-elevated p-4">
             <h3 className="font-semibold mb-3">Registros</h3>
+            {/* Barra simples: Nome + ícone de buscas avançadas */}
+            <div className="mb-3 flex items-center gap-2">
+              <Input placeholder="Nome do cliente" value={qSearch} onChange={e=>setQSearch(e.target.value)} className="h-8" />
+              <Button size="sm" variant="outline" onClick={()=> setOpenAdvanced(true)} title="Buscas avançadas">
+                {/* ícone de lupa simples */}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </Button>
+            </div>
             <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
               {quotes.length === 0 && (
                 <div className="text-sm text-muted-foreground">Nenhum registro salvo ainda.</div>
@@ -1560,7 +1752,22 @@ export default function QuoteBuilder() {
                       </div>
                       <div className="text-xs">Cliente: {q.clientSnapshot.name}</div>
                       <div className="text-xs">Total: {currencyBRL(q.total)}</div>
-                      <div className="text-xs">Status: {q.status}</div>
+                      <div className="text-xs flex items-center gap-1">
+                        <span>Status:</span>
+                        {(() => {
+                          const bg = statusColor(q.status, q.type);
+                          const fg = statusTextColor(bg);
+                          if (!bg) return <span className="px-1.5 py-0.5 rounded bg-muted/40">{q.status}</span>;
+                          return (
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 rounded"
+                              style={{ backgroundColor: bg, color: fg }}
+                            >
+                              {q.status}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </div>
                     <div className="flex flex-col gap-2">
                       <Button size="sm" onClick={() => setOpenReceipt(q.id)}>Recibo</Button>
@@ -1681,6 +1888,120 @@ export default function QuoteBuilder() {
           </Card>
         </aside>
       </section>
+
+      {/* Client Modal */}
+      {/* Modal de Buscas Avançadas */}
+      <Dialog open={openAdvanced} onOpenChange={setOpenAdvanced}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-4 pb-2"><DialogTitle>Buscas avançadas</DialogTitle></DialogHeader>
+          <div className="px-4 pb-4 space-y-3 overflow-y-auto flex-1">
+            {/* Filtros completos */}
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
+              <div className="md:col-span-2">
+                <label className="block text-[11px] text-muted-foreground mb-1">Buscar</label>
+                <Input placeholder="Número, Cliente, Vendedor" value={qSearch} onChange={e=>setQSearch(e.target.value)} className="h-8" />
+              </div>
+              <div>
+                <label className="block text-[11px] text-muted-foreground mb-1">Tipo</label>
+                <select value={qType} onChange={e=>setQType((e.target.value as 'ALL'|'ORCAMENTO'|'PEDIDO')||'ALL')} className="h-8 border rounded px-2 w-full">
+                  <option value="ALL">Todos</option>
+                  <option value="ORCAMENTO">Orçamento</option>
+                  <option value="PEDIDO">Pedido</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] text-muted-foreground mb-1">Status</label>
+                <select value={qStatus} onChange={e=>setQStatus(e.target.value)} className="h-8 border rounded px-2 w-full">
+                  <option value="">Todos</option>
+                  {statusListForType(qType==='ALL'?null:qType).map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] text-muted-foreground mb-1">De</label>
+                <Input type="date" value={qFrom} onChange={e=>setQFrom(e.target.value)} className="h-8" />
+              </div>
+              <div>
+                <label className="block text-[11px] text-muted-foreground mb-1">Até</label>
+                <Input type="date" value={qTo} onChange={e=>setQTo(e.target.value)} className="h-8" />
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-[11px] text-muted-foreground mb-1">Total mín</label>
+                  <Input placeholder="0,00" value={qMinTotal} onChange={e=>setQMinTotal(e.target.value)} className="h-8" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[11px] text-muted-foreground mb-1">Total máx</label>
+                  <Input placeholder="9999,99" value={qMaxTotal} onChange={e=>setQMaxTotal(e.target.value)} className="h-8" />
+                </div>
+              </div>
+              <div className="md:col-span-6 flex items-center gap-2 text-[12px]">
+                {profile?.role !== 'admin' && (
+                  <label className="inline-flex items-center gap-2">
+                    <input type="checkbox" checked={qOnlyMine} onChange={e=>setQOnlyMine(e.target.checked)} /> Somente meus
+                  </label>
+                )}
+                <Button size="sm" variant="outline" onClick={()=>{ setQSearch(''); setQType('ALL'); setQStatus(''); setQFrom(''); setQTo(''); setQMinTotal(''); setQMaxTotal(''); setQOnlyMine(false); }}>Limpar</Button>
+              </div>
+            </div>
+
+            {/* Lista completa */}
+            <div className="border rounded overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/60 text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="text-left px-2 py-1 font-medium">Nº Orçamento</th>
+                    <th className="text-left px-2 py-1 font-medium">Cliente</th>
+                    <th className="text-left px-2 py-1 font-medium">Status</th>
+                    <th className="text-right px-2 py-1 font-medium">Custo</th>
+                    <th className="text-right px-2 py-1 font-medium">Valor</th>
+                    <th className="text-center px-2 py-1 font-medium">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quotes.map(q => {
+                    const cost = Array.isArray(q.items) ? q.items.reduce((s,it)=> s + (Number(it.costPrice||0) * Number(it.quantity||0)), 0) : 0;
+                    return (
+                      <tr key={q.id} className="border-t hover:bg-accent/30">
+                        <td className="px-2 py-1">{q.type === 'PEDIDO' ? collapseDoublePed(q.number) : q.number}</td>
+                        <td className="px-2 py-1">{q.clientSnapshot?.name || '-'}</td>
+                        <td className="px-2 py-1">
+                          <Select value={q.status} onValueChange={(v)=> updateQuoteStatus(q.id, v)}>
+                            <SelectTrigger
+                              className="h-7 w-[160px] text-xs"
+                              style={{ borderLeftWidth: 4, borderLeftColor: statusColor(q.status, q.type) || undefined }}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {statusListForType(q.type).map(s => (
+                                <SelectItem key={s} value={s}>{s}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-2 py-1 text-right">{currencyBRL(cost)}</td>
+                        <td className="px-2 py-1 text-right">{currencyBRL(q.total)}</td>
+                        <td className="px-2 py-1 text-center whitespace-nowrap">
+                          <Button size="sm" variant="outline" className="mr-2" onClick={()=>{ loadQuoteForEdit(q); setOpenAdvanced(false); }}>Editar</Button>
+                          <Button size="sm" variant="destructive" onClick={()=> setPendingDeleteId(q.id)}>Excluir</Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {quotes.length===0 && (
+                    <tr><td colSpan={6} className="text-center text-xs text-muted-foreground py-6">Nenhum registro</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <DialogFooter className="p-4 pt-2 border-t bg-background sticky bottom-0">
+            <Button variant="outline" onClick={()=> setOpenAdvanced(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Client Modal */}
       <Dialog open={openClient} onOpenChange={setOpenClient}>
@@ -2074,14 +2395,20 @@ function SearchProductModal({
                   <Button
                     size="sm"
                     className="h-8 w-full"
-                    disabled={!selectedMarginId || lowStock}
-                    title={!selectedMarginId ? 'Selecione um frete antes de adicionar' : (lowStock ? 'Sem disponibilidade' : 'Adicionar produto')}
+                    disabled={!selectedMarginId}
+                    title={!selectedMarginId ? 'Selecione um frete antes de adicionar' : 'Adicionar produto'}
                     onClick={() => {
                       if(!selectedMarginId) return; // safety
                       const margin = margins.find(m => m.id === selectedMarginId) || undefined;
                       onSelectProduct(p, qty, margin);
                     }}
                   >Adicionar</Button>
+                  {/* Aviso: permitir orçamento com produto sem estoque */}
+                  {lowStock && (
+                    <div className="text-[10px] text-red-600/90 w-full text-right">
+                      Sem estoque — permitido no Orçamento
+                    </div>
+                  )}
                   {onRegisterMovement && (
                     <button
                       type="button"
