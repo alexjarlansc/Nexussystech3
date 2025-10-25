@@ -241,7 +241,12 @@ export function ErpProducts(){
     // carregar fornecedores visíveis para o usuário
     // Strategy: try with is_active/company_id (newer schemas); on failure retry with simpler selects
     async function trySelect(cols: string){
-      return await (supabase as unknown as { from: any }).from('suppliers').select(cols).limit(200);
+      // aplica filtro por empresa quando disponível para evitar vazamento entre empresas
+      let q = (supabase as unknown as { from: any }).from('suppliers').select(cols).limit(200) as any;
+      if (profile?.company_id && cols.includes('company_id')) {
+        q = q.eq('company_id', profile.company_id);
+      }
+      return await q;
     }
 
     try{
@@ -250,8 +255,8 @@ export function ErpProducts(){
       res = await trySelect('id,name,is_active,company_id');
       if(res && res.error){
         if(import.meta.env.DEV) console.warn('[ErpProducts] suppliers select with is_active returned error, will retry without is_active', res.error);
-        // tentativa 2: sem is_active
-        res = await trySelect('id,name,company_id');
+          // tentativa 2: sem is_active
+          res = await trySelect('id,name,company_id');
         if(res && res.error){
           if(import.meta.env.DEV) console.warn('[ErpProducts] suppliers select without is_active returned error, will retry minimal', res.error);
           // tentativa 3: minimal
@@ -310,6 +315,8 @@ export function ErpProducts(){
           if(!name) return false;
           if(/^\s*fornecedor padr\xE3o\s*$/i.test(name)) return false;
           if(/^\s*selecione fornecedor\s*$/i.test(name)) return false;
+            // filtro defensivo por empresa (caso a query não tenha aplicado por faltar coluna)
+            if (profile?.company_id && 'company_id' in s && s.company_id && s.company_id !== profile.company_id) return false;
           return true;
         } catch (e){ if(import.meta.env.DEV) console.warn('loadSuppliers filter err', e); return !!s.name; }
       });
@@ -319,7 +326,7 @@ export function ErpProducts(){
       toast.error('Erro inesperado ao carregar fornecedores');
       setSuppliers([]);
     }
-  }, []);
+  }, [profile?.company_id]);
 
   // Recarregar fornecedores quando a company do profile mudar (ex: após criação de fornecedor)
   useEffect(()=>{

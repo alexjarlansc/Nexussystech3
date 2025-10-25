@@ -61,6 +61,7 @@ export function NexusProtectedHeader() {
   const [address, setAddress] = useState(company?.address || '');
   // Logo (apenas local / dataURL)
   const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>(undefined); // preview local
+  const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null); // file selected while creating a new company
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
   // Carregar logo persistida no localStorage ao abrir modal (ou inicialização)
@@ -89,63 +90,77 @@ export function NexusProtectedHeader() {
 
   const openCompanyFromEventRef = useRef<(ev?: Event)=>void>();
   useEffect(() => {
+    // Stable ref callback used by global event handlers to open the company modal
     openCompanyFromEventRef.current = (ev?: Event) => {
       try {
-        const detail = ev && (ev as CustomEvent)?.detail as Record<string, unknown> | undefined;
-        const mode = detail?.mode as string | undefined;
+        const detail = ev && (ev as CustomEvent)?.detail as { mode?: string } | undefined;
+        const mode = detail?.mode;
         if (mode === 'create') {
+          // preparar formulário para criação
           setCompanyName('');
           setCnpjCpf('');
           setCompanyPhone('');
           setCompanyEmail('');
           setAddress('');
           setLogoDataUrl(undefined);
+          setPendingLogoFile(null);
           setIsCreatingCompany(true);
         } else {
+          // popular com dados da empresa atual
           const current = companyRef.current;
           setCompanyName(current?.name || '');
           setCnpjCpf(current?.cnpj_cpf || '');
           setCompanyPhone(current?.phone || '');
           setCompanyEmail(current?.email || '');
           setAddress(current?.address || '');
+          setLogoDataUrl(undefined);
+          setPendingLogoFile(null);
           setIsCreatingCompany(false);
         }
-        // fechar perfil se estiver aberto e abrir empresa
-        setOpenProfile(false);
         setOpenCompany(true);
+        setOpenProfile(false);
       } catch (e) {
         console.error('Failed to open company modal via event', e);
       }
     };
   }, []);
+
+  // Register a global event listener that calls the stable ref above when triggered
   useEffect(() => {
-    const bound = (ev: Event) => openCompanyFromEventRef.current?.(ev);
-    window.addEventListener('erp:open-company-modal', bound as EventListener);
-    return () => window.removeEventListener('erp:open-company-modal', bound as EventListener);
+    const handler = (ev: Event) => {
+      try {
+        openCompanyFromEventRef.current?.(ev);
+      } catch (e) {
+        console.error('Failed to handle erp:open-company-modal event', e);
+      }
+    };
+    window.addEventListener('erp:open-company-modal', handler as EventListener);
+    return () => window.removeEventListener('erp:open-company-modal', handler as EventListener);
   }, []);
 
-  // Listen to event to open invite codes modal from ERP
-  // NOTE: moved lower in the file so it can reference memoized helpers (see below)
-
+  // Atualiza dados do perfil
   const handleUpdateProfile = async () => {
     const { error } = await updateProfile({
       first_name: firstName,
       phone,
       email,
     });
-
     if (error) {
       toast.error('Erro ao atualizar perfil');
-    } else {
-      toast.success('Perfil atualizado com sucesso');
-      setOpenProfile(false);
+      return;
     }
+    toast.success('Perfil atualizado com sucesso');
+    setOpenProfile(false);
   };
 
+  // Cria ou atualiza empresa
   const handleUpdateCompany = async () => {
     if (isCreatingCompany) {
       try {
-        const { data: newCompany, error } = await supabase
+        // Tenta criar diretamente
+        let newCompany: any = null;
+        let insertError: any = null;
+        const res = await supabase
           .from('companies')
           .insert({
             name: companyName,
@@ -157,14 +172,89 @@ export function NexusProtectedHeader() {
           })
           .select()
           .single();
-        if (error) {
-          console.error('Erro ao criar empresa:', error);
-          toast.error('Erro ao criar empresa: ' + (error.message || 'erro desconhecido'));
+        newCompany = res.data;
+        insertError = (res as any).error || null;
+
+        // Fallback: se RLS bloquear, usa Edge Function (requer role adequada no servidor)
+        if (insertError) {
+          const msg = String(insertError.message || '');
+          if (msg.toLowerCase().includes('row-level security')) {
+            try {
+              const { invokeFunction } = await import('@/lib/functions');
+              const fx = await invokeFunction<{ ok: true; company: any }>('admin-create-company', {
+                body: {
+                  name: companyName,
+                  cnpj_cpf: cnpjCpf,
+                  phone: companyPhone,
+                  email: companyEmail,
+                  address,
+                  logo_url: logoDataUrl || null,
+                },
+              });
+              if ((fx as any).ok && (fx as any).data?.company) {
+                newCompany = (fx as any).data.company;
+                insertError = null;
+              }
+            } catch (e) {
+              // mantém insertError
+            }
+          }
+        }
+
+        if (insertError) {
+          console.error('Erro ao criar empresa:', insertError);
+          toast.error('Erro ao criar empresa: ' + (insertError.message || 'erro desconhecido'));
           return;
         }
+
+        // Vincula o usuário atual à nova empresa
+        try {
+          const { data: u } = await supabase.auth.getUser();
+          const uid = u?.user?.id;
+          if (uid && newCompany?.id) {
+            await supabase.from('profiles').update({ company_id: newCompany.id }).eq('user_id', uid);
+          }
+        } catch (e) {
+          if (import.meta.env.DEV) console.warn('Falha ao vincular perfil à nova empresa', e);
+        }
+
+        // Se havia um arquivo de logo selecionado, subir agora para o caminho da nova empresa
+        try {
+          if (pendingLogoFile && newCompany?.id) {
+            const file = pendingLogoFile;
+            const ext = file.name.split('.').pop() || 'png';
+            const path = `${newCompany.id}/${Date.now()}.${ext}`;
+            const { error: upErr } = await supabase.storage.from('logos').upload(path, file, { upsert: true, cacheControl: '3600' });
+            if (!upErr) {
+              const pub = supabase.storage.from('logos').getPublicUrl(path);
+              const publicUrl = (pub?.data as any)?.publicUrl as string | undefined;
+              if (publicUrl) {
+                try { await supabase.from('companies').update({ logo_url: publicUrl }).eq('id', newCompany.id); } catch {/* noop */}
+                setLogoDataUrl(publicUrl);
+              }
+            } else {
+              console.warn('Erro ao subir logo após criação:', upErr);
+            }
+            setPendingLogoFile(null);
+          }
+        } catch (e) {
+          if (import.meta.env.DEV) console.warn('Erro no upload pós-criação:', e);
+        }
+
+        // Persistir localmente para pré-visualização e PDFs
+        try {
+          setJSON(StorageKeys.company, {
+            id: newCompany.id,
+            name: newCompany.name,
+            address: newCompany.address,
+            cnpj_cpf: newCompany.cnpj_cpf,
+            phone: newCompany.phone,
+            email: newCompany.email,
+            logoDataUrl: logoDataUrl,
+          });
+        } catch {/* ignore */}
+
         toast.success('Empresa criada com sucesso');
-        // Optionally persist locally
-        try { setJSON(StorageKeys.company, { id: newCompany.id, name: newCompany.name, address: newCompany.address, cnpj_cpf: newCompany.cnpj_cpf, phone: newCompany.phone, email: newCompany.email, logoDataUrl: logoDataUrl }); } catch (e) { /* ignore */ }
         setOpenCompany(false);
         setIsCreatingCompany(false);
       } catch (err) {
@@ -172,6 +262,7 @@ export function NexusProtectedHeader() {
         toast.error('Erro inesperado ao criar empresa');
       }
     } else {
+      // Atualização de empresa existente
       const { error } = await updateCompany({
         name: companyName,
         cnpj_cpf: cnpjCpf,
@@ -179,16 +270,14 @@ export function NexusProtectedHeader() {
         email: companyEmail,
         address,
       });
-
       if (error) {
         toast.error('Erro ao atualizar empresa');
       } else {
-        // Persistir também localmente inclusive logo para PDF / pré-visualização
         try {
           const raw = localStorage.getItem(StorageKeys.company);
-          const existing = raw ? JSON.parse(raw) as Record<string, unknown> : {};
-          const prevLogo = typeof existing === 'object' && existing && 'logoDataUrl' in (existing as Record<string, unknown>)
-            ? (existing as Record<string, unknown>).logoDataUrl as string | undefined
+          const existing = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+          const prevLogo = (existing && typeof existing === 'object' && 'logoDataUrl' in existing)
+            ? (existing as any).logoDataUrl as string | undefined
             : undefined;
           setJSON(StorageKeys.company, {
             ...existing,
@@ -197,8 +286,8 @@ export function NexusProtectedHeader() {
             taxid: cnpjCpf,
             phone: companyPhone,
             email: companyEmail,
-            cnpj_cpf: cnpjCpf, // compatibilidade
-            logoDataUrl: logoDataUrl || prevLogo
+            cnpj_cpf: cnpjCpf,
+            logoDataUrl: logoDataUrl || prevLogo,
           });
         } catch {/* ignore */}
         toast.success('Empresa atualizada com sucesso');

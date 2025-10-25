@@ -35,10 +35,8 @@ export function ErpSuppliers() {
   const load = useCallback(async () => {
     setLoading(true);
     let query:any = (supabase as any).from('suppliers').select('*').order('name');
-    if (profile?.company_id) {
-      const orFilter = `company_id.eq.${profile.company_id},company_id.is.null`;
-      query = (supabase as any).from('suppliers').select('*').or(orFilter).order('name');
-    }
+    // Escopo estrito por empresa
+    if (profile?.company_id) query = query.eq('company_id', profile.company_id);
     const { data, error } = await query;
     if (error) {
       toast.error('Erro fornecedores: '+error.message);

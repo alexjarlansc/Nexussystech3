@@ -9,11 +9,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { Client } from '@/types';
 import { validateTaxId, formatTaxId, validateCEP, formatCEP } from '@/lib/validators';
 import { toast } from '@/components/ui/sonner';
+import { useAuth } from '@/hooks/useAuth';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 interface ErpClientsProps { modalOnly?: boolean }
 export function ErpClients({ modalOnly }: ErpClientsProps) {
+  const { profile } = useAuth();
   const pageSize = 20;
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -35,6 +37,10 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
     try {
       // pesquisa: busca por nome, documento (taxid), telefone e e-mail no servidor usando ilike
       let query: any = supabase.from('clients').select('*', { count: 'exact' }).order('name').range(from, to);
+      // escopo por empresa (multi-tenant)
+      if (profile?.company_id) {
+        query = query.eq('company_id', profile.company_id);
+      }
       const q = search.trim();
       let orExpr = '';
       // prepare esc e like fora do bloco para permitir retry sem referência ausente
@@ -44,7 +50,15 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
         // monta expressão OR para ilike em múltiplas colunas
         // supabase JS não aceita objetos complexos para OR com ilike diretamente, usamos .or()
         orExpr = `name.ilike.${like},taxid.ilike.${like},phone.ilike.${like},phone_mobile.ilike.${like},email.ilike.${like}`;
-        query = supabase.from('clients').select('*', { count: 'exact' }).or(orExpr).order('name').range(from, to);
+        query = supabase
+          .from('clients')
+          .select('*', { count: 'exact' })
+          .or(orExpr)
+          .order('name')
+          .range(from, to);
+        if (profile?.company_id) {
+          query = query.eq('company_id', profile.company_id);
+        }
       }
       // executa a query; se falhar por coluna inexistente (ex: phone_mobile), tenta novamente sem essa coluna
       const exec = await query;
@@ -55,15 +69,22 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
         // retry sem phone_mobile
         try {
           const orExpr2 = `name.ilike.${like},taxid.ilike.${like},phone.ilike.${like},email.ilike.${like}`;
-          const retry = await (supabase as any).from('clients').select('*', { count: 'exact' }).or(orExpr2).order('name').range(from, to);
-          if (retry.error) {
-            console.error('Erro ao carregar clientes (retry):', retry.error, { search, orExpr2 });
-            toast.error('Erro ao carregar clientes: ' + (retry.error.message || 'Erro desconhecido'));
+          let retry = (supabase as any)
+            .from('clients')
+            .select('*', { count: 'exact' })
+            .or(orExpr2)
+            .order('name')
+            .range(from, to);
+          if (profile?.company_id) retry = retry.eq('company_id', profile.company_id);
+          const retryRes = await retry;
+          if (retryRes.error) {
+            console.error('Erro ao carregar clientes (retry):', retryRes.error, { search, orExpr2 });
+            toast.error('Erro ao carregar clientes: ' + (retryRes.error.message || 'Erro desconhecido'));
             setLoading(false);
             return;
           }
-          data = retry.data as any[];
-          count = retry.count as number | null;
+          data = retryRes.data as any[];
+          count = retryRes.count as number | null;
         } catch (e2) {
           console.error('Exceção no retry sem phone_mobile', e2, { search });
           toast.error('Erro ao carregar clientes: ' + (e2 instanceof Error ? e2.message : String(e2)));
@@ -84,7 +105,7 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search]);
+  }, [page, pageSize, search, profile?.company_id]);
   useEffect(()=>{ if(!modalOnly) load(); }, [load, modalOnly]);
   useEffect(()=>{ const t = setTimeout(()=>{ setPage(0); }, 400); return ()=>clearTimeout(t); }, [search]);
 
@@ -115,7 +136,9 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
   function exportCsv() {
     // exporta até 1000 rapidamente
     (async () => {
-      const { data, error } = await (supabase as any).from('clients').select('*').order('name').limit(1000);
+      let q: any = (supabase as any).from('clients').select('*').order('name').limit(1000);
+      if (profile?.company_id) q = q.eq('company_id', profile.company_id);
+      const { data, error } = await q;
       if (error) { toast.error('Falha ao exportar'); return; }
       const rows = data as Client[];
       const header = ['id','name','taxid','phone','email','address'];
@@ -177,6 +200,7 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
       purchase_frequency: novo.purchase_frequency || null,
       preferred_channel: novo.preferred_channel || null,
       custom_notes: novo.custom_notes || null,
+      company_id: profile?.company_id || null,
     };
   const { error } = await (supabase as any).from('clients').insert(payload).single();
     if (error) {

@@ -5,8 +5,10 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/sonner';
 import type { Client, Receivable, ProductItem } from '@/types/receivables';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function FinanceReceivables(){
+  const { profile } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [suppliers, setSuppliers] = useState<Client[]>([]);
   const [payerType, setPayerType] = useState<'client'|'supplier'>('client');
@@ -18,26 +20,46 @@ export default function FinanceReceivables(){
   useEffect(()=>{
     (async ()=>{
       try {
-        const clientsResp = await supabase.from('clients').select('*').limit(200) as unknown as { data: Client[] | null };
+        const sbClients = supabase as unknown as { from: (t:string)=> { select: (s:string)=> { limit: (n:number)=> unknown } } };
+        let cq = sbClients.from('clients').select('*').limit(200) as unknown;
+        if (profile?.company_id) {
+          cq = (cq as { eq: (col:string, v:string)=> unknown }).eq('company_id', profile.company_id);
+        }
+        const clientsResp = await (cq as Promise<unknown>) as unknown as { data: Client[] | null };
         if (clientsResp?.data) setClients(clientsResp.data);
-        const recvResp = await supabase.from('receivables').select('*').limit(200) as unknown as { data: Receivable[] | null };
+        const sbRecv = supabase as unknown as { from: (t:string)=> { select: (s:string)=> { limit: (n:number)=> unknown } } };
+        let rq = sbRecv.from('receivables').select('*').limit(200) as unknown;
+        if (profile?.company_id) {
+          rq = (rq as { eq: (col:string, v:string)=> unknown }).eq('company_id', profile.company_id);
+        }
+        const recvResp = await (rq as Promise<unknown>) as unknown as { data: Receivable[] | null };
         if (recvResp?.data) setReceivables(recvResp.data);
         // carregar fornecedores opcionais
         try {
-          const s = await supabase.from('suppliers').select('*').limit(200) as unknown as { data: Client[] | null };
+          const sbSup = supabase as unknown as { from: (t:string)=> { select: (s:string)=> { limit: (n:number)=> unknown } } };
+          let sq = sbSup.from('suppliers').select('*').limit(200) as unknown;
+          if (profile?.company_id) {
+            sq = (sq as { eq: (col:string, v:string)=> unknown }).eq('company_id', profile.company_id);
+          }
+          const s = await (sq as Promise<unknown>) as unknown as { data: Client[] | null };
           if (s?.data) setSuppliers(s.data);
         } catch (_){/* optional */}
       } catch (e){ console.error('[FinanceReceivables] load error', e); }
     })();
-  },[]);
+  },[profile?.company_id]);
 
   async function saveClient(){
     if (!clientForm.name) { toast.error('Nome é obrigatório'); return; }
     try {
-  const res = await supabase.from('clients').insert([clientForm]);
+  const res = await supabase.from('clients').insert([{ ...clientForm, company_id: profile?.company_id || null }]);
   // success assumed; errors serão capturados no catch
       toast.success('Cliente salvo');
-      const list = await supabase.from('clients').select('*').limit(200) as unknown as { data: Client[] | null };
+      const sbListC = supabase as unknown as { from: (t:string)=> { select: (s:string)=> { limit: (n:number)=> unknown } } };
+      let lq = sbListC.from('clients').select('*').limit(200) as unknown;
+      if (profile?.company_id) {
+        lq = (lq as { eq: (col:string, v:string)=> unknown }).eq('company_id', profile.company_id);
+      }
+      const list = await (lq as Promise<unknown>) as unknown as { data: Client[] | null };
       if (list?.data) setClients(list.data);
       setClientForm({ name:'', taxid:'', email:'', phone:'', address:'', payment_terms:'', credit_limit:0 });
     } catch(e){ console.error(e); toast.error('Falha ao salvar cliente'); }
@@ -66,6 +88,7 @@ export default function FinanceReceivables(){
         due_date: receivableForm.due_at || null,
         amount: receivableForm.total_amount,
         status: receivableForm.status || 'pendente',
+        company_id: profile?.company_id || null,
       };
 
   const res = await supabase.from('receivables').insert([payload]).select('*').single() as unknown as InsertSingle<{ id?: string }>;
@@ -73,7 +96,12 @@ export default function FinanceReceivables(){
   if (!created?.id) throw new Error('Falha ao criar recebível');
 
       toast.success('Recebível lançado');
-      const list = await supabase.from('receivables').select('*').limit(200) as unknown as { data: Receivable[] | null };
+      const sbListR = supabase as unknown as { from: (t:string)=> { select: (s:string)=> { limit: (n:number)=> unknown } } };
+      let l2 = sbListR.from('receivables').select('*').limit(200) as unknown;
+      if (profile?.company_id) {
+        l2 = (l2 as { eq: (col:string, v:string)=> unknown }).eq('company_id', profile.company_id);
+      }
+      const list = await (l2 as Promise<unknown>) as unknown as { data: Receivable[] | null };
       if (list?.data) setReceivables(list.data);
 
       // registrar histórico de criação (opcional, não bloqueante)

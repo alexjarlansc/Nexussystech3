@@ -133,10 +133,12 @@ export default function Auth() {
 
   return (
   <div className="min-h-svh gradient-hero flex items-center justify-center p-4">
-      <div className="flex flex-col items-center mb-6">
-          <img src="/NEXUS_SYSTECH.svg" alt="Nexus Systech" className="h-40 mb-1" style={{maxWidth:'90%'}} />
-      </div>
-      <Card className="w-full max-w-md p-6 card-elevated">
+      <div className="flex flex-col md:flex-row items-center justify-center gap-6">
+        <div className="flex items-center justify-center md:justify-end mb-6 md:mb-0">
+          <img src="/NEXUS_SYSTECH.svg" alt="Nexus Systech" className="h-32 md:h-40" style={{maxWidth:'90%'}} />
+        </div>
+        <div className="flex flex-col items-center">
+        <Card className="w-full max-w-md p-6 card-elevated">
         {error && (
           <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm">
             {error}
@@ -232,7 +234,12 @@ export default function Auth() {
             </form>
           </DialogContent>
         </Dialog>
-      </Card>
+        </Card>
+        <div className="mt-3 text-[11px] text-muted-foreground select-none text-center w-full max-w-md">
+          Desenvolvido por: <span className="font-medium">Alex Jarlan</span> - <span className="font-medium">Nexusystech®</span>
+        </div>
+        </div>
+      </div>
     </div>
   );
 }

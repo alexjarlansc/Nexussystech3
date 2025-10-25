@@ -2020,8 +2020,23 @@ function FiscalDocsPlaceholder(){
   const [openNew,setOpenNew]=useState(false); const [creating,setCreating]=useState(false);
   const [saleSearch,setSaleSearch]=useState(''); const [sales,setSales]=useState<any[]>([]);
   const [selectedSale,setSelectedSale]=useState<any|null>(null);
+  const auth = useAuth();
   useEffect(()=>{(async()=>{ setLoading(true); try { const { data, error } = await (supabase as any).from('nfe_invoices').select('*').order('created_at',{ascending:false}).limit(100); if (error) throw error; setRows(data||[]);} catch(e:any){ setError(e.message);} finally { setLoading(false);} })();},[]);
-  async function searchSales(){ const { data, error } = await (supabase as any).from('sales').select('*').ilike('sale_number','%'+saleSearch+'%').limit(20); if(!error) setSales(data||[]); }
+  async function searchSales(){
+    let q:any = (supabase as any).from('sales').select('*').ilike('sale_number','%'+saleSearch+'%').limit(20);
+    try {
+      const role = auth?.profile?.role;
+      const companyId = (auth?.profile as any)?.company_id as string | undefined;
+      const userId = auth?.user?.id;
+      if (role !== 'admin') {
+        if (companyId) q = q.eq('company_id', companyId);
+        else if (userId) q = q.eq('created_by', userId);
+      } else if (role === 'admin' && companyId) {
+        q = q.eq('company_id', companyId);
+      }
+    } catch(_) { /* ignore */ }
+    const { data, error } = await q; if(!error) setSales(data||[]);
+  }
   async function createFromSale(){ if(!selectedSale) return; setCreating(true); try {
     const numResp = await (supabase as any).rpc('next_nfe_number'); const nfe_number = numResp.data;
     // montar itens simples a partir de sale.items
@@ -2350,6 +2365,7 @@ function BaseReportWrapper({ title, description, children, onExport, onExportXls
 }
 
 function ReportSalesFull(){
+  const auth = useAuth();
   const [rows,setRows]=useState<any[]>([]); const [loading,setLoading]=useState(false);
   const [from,setFrom]=useState(''); const [to,setTo]=useState('');
   const [status,setStatus]=useState(''); const [payStatus,setPayStatus]=useState('');
@@ -2357,6 +2373,17 @@ function ReportSalesFull(){
     setLoading(true);
     try {
       const applyFilters = (query:any)=>{
+        try {
+          const role = auth?.profile?.role;
+          const companyId = (auth?.profile as any)?.company_id as string | undefined;
+          const userId = auth?.user?.id;
+          if (role !== 'admin') {
+            if (companyId) query = query.eq('company_id', companyId);
+            else if (userId) query = query.eq('created_by', userId);
+          } else if (role === 'admin' && companyId) {
+            query = query.eq('company_id', companyId);
+          }
+        } catch(_) { /* ignore */ }
         if (from) query = query.gte('created_at', from+'T00:00:00');
         if (to) query = query.lte('created_at', to+'T23:59:59');
         if (status) query = query.eq('status', status);
@@ -2563,13 +2590,27 @@ function ReportDashboard(){
   const [kpi,setKpi]=useState<{vendas:number; pedidos:number; ticket:number; receber:number; pagar:number; saldo:number}>({vendas:0,pedidos:0,ticket:0,receber:0,pagar:0,saldo:0});
   const [topClientes,setTopClientes]=useState<any[]>([]);
   const [erro,setErro]=useState<string|null>(null);
+  const auth = useAuth();
   useEffect(()=>{(async()=>{
     setLoading(true); setErro(null);
     try {
       const from = range.from? range.from+'T00:00:00' : undefined;
       const to = range.to? range.to+'T23:59:59' : undefined;
       // vendas
-      const applySaleFilters = (q:any)=>{ if (from) q = q.gte('created_at', from); if (to) q = q.lte('created_at', to); return q; };
+      const applySaleFilters = (q:any)=>{
+        try {
+          const role = auth?.profile?.role;
+          const companyId = (auth?.profile as any)?.company_id as string | undefined;
+          const userId = auth?.user?.id;
+          if (role !== 'admin') {
+            if (companyId) q = q.eq('company_id', companyId);
+            else if (userId) q = q.eq('created_by', userId);
+          } else if (role === 'admin' && companyId) {
+            q = q.eq('company_id', companyId);
+          }
+        } catch(_) { /* ignore */ }
+        if (from) q = q.gte('created_at', from); if (to) q = q.lte('created_at', to); return q;
+      };
   const qSales = applySaleFilters((supabase as any).from('sales').select('total,created_at,client_snapshot').limit(5000));
   const { data: salesData, error: salesErr } = await qSales;
   let salesDataLocal:any[]|null = salesData || [];
@@ -2588,6 +2629,10 @@ function ReportDashboard(){
       const ticket = pedidos? totalVendas/pedidos:0;
       // contas a receber
       let qRec = (supabase as any).from('receivables').select('amount,received_amount,created_at').limit(5000);
+      try {
+        const companyId = (auth?.profile as any)?.company_id as string | undefined;
+        if (companyId) qRec = qRec.eq('company_id', companyId);
+      } catch(_) { /* ignore */ }
       if (from) qRec = qRec.gte('created_at', from); if (to) qRec = qRec.lte('created_at', to);
       const { data: recData } = await qRec;
       const receber = (recData||[]).reduce((s:any,r:any)=> s + (Number(r.amount||0) - Number(r.received_amount||0)),0);
@@ -2595,6 +2640,7 @@ function ReportDashboard(){
       let pagar = 0;
       try {
         let qPay = (supabase as any).from('payables').select('amount,paid_amount,created_at').limit(5000);
+        try { const companyId = (auth?.profile as any)?.company_id as string | undefined; if (companyId) qPay = qPay.eq('company_id', companyId); } catch(_) { /* ignore */ }
         if (from) qPay = qPay.gte('created_at', from); if (to) qPay = qPay.lte('created_at', to);
         const { data: payData, error: payErr } = await qPay;
         if (payErr) {
