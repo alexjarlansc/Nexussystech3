@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState, useRef } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, RefreshCw, Pencil, X, ChevronRight, ChevronDown, ChevronLeft } from 'lucide-react';
@@ -79,12 +80,13 @@ export function ErpProductGroups(){
   useEffect(()=>{ load(); },[]);
   // Recarregar produtos quando os grupos mudarem
   useEffect(()=>{ if(groups.length) loadProductsForGroups(groups); else setProductsByGroup({}); },[groups]);
-  useEffect(()=>{(async()=>{
-    try { const { data: u } = await (supabase as any).auth.getUser(); const user=u?.user; if(!user) return;
-      const { data, error } = await (supabase as any).from('profiles').select('company_id').eq('user_id', user.id).single();
-      if(!error && data?.company_id) setCompanyId(data.company_id);
-    } catch(err) {/* noop */}
-  })();},[]);
+  const { profile } = useAuth();
+  useEffect(() => {
+    try {
+      if (profile?.company_id) setCompanyId(profile.company_id);
+      else setCompanyId(undefined);
+    } catch (e) { /* noop */ }
+  }, [profile?.company_id]);
 
   function openNew(level:1|2|3, parentId?: string){
     setEditing(null);
@@ -107,8 +109,12 @@ export function ErpProductGroups(){
     try {
       const level:1|2|3 = editing? editing.level : parent ? ((groups.find(g=>g.id===parent)?.level||0)+1 as 1|2|3) : 1;
       if(level<1 || level>3) { toast.error('Nível inválido'); return; }
-      const payload:any = { name: name.trim(), level, parent_id: parent||null };
-      if(companyId) payload.company_id = companyId;
+      // Ensure company_id is set: RLS requires company scoping
+      if (!companyId) {
+        toast.error('Associe seu perfil a uma empresa antes de criar um grupo (ou peça a um usuário master)');
+        return;
+      }
+      const payload:any = { name: name.trim(), level, parent_id: parent||null, company_id: companyId };
       if(editing){
         const { error } = await (supabase as any).from('product_groups').update(payload).eq('id', editing.id);
         if(error) throw error; toast.success('Atualizado');
