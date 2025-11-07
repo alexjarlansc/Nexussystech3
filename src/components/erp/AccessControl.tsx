@@ -296,10 +296,10 @@ export default function AccessControl() {
         }
       }
 
-      // 2) Tente leitura direta (sujeito a RLS)
+  // 2) Tente leitura direta (sujeito a RLS)
       // Se o usuário atual for Master, não excluímos admins na query
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let q: any = supabase
+      const q: any = supabase
         .from('profiles')
         .select('id,user_id,first_name,email,role,permissions')
         .order('first_name', { ascending: true })
@@ -323,7 +323,7 @@ export default function AccessControl() {
         try {
           // Fallback select when `permissions` column missing; respect master visibility
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          let q2: any = supabase
+          const q2: any = supabase
             .from('profiles')
             .select('id,user_id,first_name,email,role')
             .order('first_name', { ascending: true })
@@ -374,7 +374,7 @@ export default function AccessControl() {
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, isMaster]);
 
   async function applyBackendFixes() {
     if (!window.confirm('Aplicar correções no banco? Isso criará a função RPC e a política para admins atualizarem permissões.')) return;
@@ -409,6 +409,8 @@ create policy profiles_admin_update_permissions on public.profiles as permissive
       setApplyingFix(false);
     }
   }
+
+  // Backfill via SQL is recommended (see supabase/migrations/20251030120000_consolidated_backfill_and_audit.sql)
 
   // Conta permissões por categoria (prefixos)
   function summarizePermissions(perms: string[] | null | undefined) {

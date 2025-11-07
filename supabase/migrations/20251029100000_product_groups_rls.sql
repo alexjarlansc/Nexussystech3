@@ -32,13 +32,13 @@ BEGIN
   PERFORM 1 FROM pg_policies WHERE schemaname='public' AND tablename='product_groups' AND policyname='product_groups_select_company';
   IF NOT FOUND THEN
     BEGIN
-      EXECUTE $$CREATE POLICY product_groups_select_company ON public.product_groups FOR SELECT USING (
+      EXECUTE $policy$CREATE POLICY product_groups_select_company ON public.product_groups FOR SELECT USING (
         public.admin_is_master() OR EXISTS (
           SELECT 1 FROM public.profiles p
-          WHERE p.user_id = auth.uid()
+          WHERE p.user_id = auth.uid()::uuid
             AND p.company_id = product_groups.company_id
         )
-      )$$;
+      )$policy$;
     EXCEPTION WHEN undefined_table THEN NULL; END;
   END IF;
 
@@ -46,15 +46,15 @@ BEGIN
   PERFORM 1 FROM pg_policies WHERE schemaname='public' AND tablename='product_groups' AND policyname='product_groups_insert_company';
   IF NOT FOUND THEN
     BEGIN
-      EXECUTE $$CREATE POLICY product_groups_insert_company ON public.product_groups FOR INSERT WITH CHECK (
+      EXECUTE $policy$CREATE POLICY product_groups_insert_company ON public.product_groups FOR INSERT WITH CHECK (
         public.admin_is_master() OR (
-          NEW.company_id IS NOT NULL AND EXISTS (
+          company_id IS NOT NULL AND EXISTS (
             SELECT 1 FROM public.profiles p
-            WHERE p.user_id = auth.uid()
-              AND p.company_id = NEW.company_id
+            WHERE p.user_id = auth.uid()::uuid
+              AND p.company_id = company_id
           )
         )
-      )$$;
+      )$policy$;
     EXCEPTION WHEN undefined_table THEN NULL; END;
   END IF;
 
@@ -62,13 +62,13 @@ BEGIN
   PERFORM 1 FROM pg_policies WHERE schemaname='public' AND tablename='product_groups' AND policyname='product_groups_update_company';
   IF NOT FOUND THEN
     BEGIN
-      EXECUTE $$CREATE POLICY product_groups_update_company ON public.product_groups FOR UPDATE USING (
+      EXECUTE $policy$CREATE POLICY product_groups_update_company ON public.product_groups FOR UPDATE USING (
         public.admin_is_master() OR EXISTS (
           SELECT 1 FROM public.profiles p
-          WHERE p.user_id = auth.uid()
+          WHERE p.user_id = auth.uid()::uuid
             AND p.company_id = product_groups.company_id
         )
-      )$$;
+      )$policy$;
     EXCEPTION WHEN undefined_table THEN NULL; END;
   END IF;
 
@@ -76,13 +76,13 @@ BEGIN
   PERFORM 1 FROM pg_policies WHERE schemaname='public' AND tablename='product_groups' AND policyname='product_groups_delete_company';
   IF NOT FOUND THEN
     BEGIN
-      EXECUTE $$CREATE POLICY product_groups_delete_company ON public.product_groups FOR DELETE USING (
+      EXECUTE $policy$CREATE POLICY product_groups_delete_company ON public.product_groups FOR DELETE USING (
         public.admin_is_master() OR EXISTS (
           SELECT 1 FROM public.profiles p
-          WHERE p.user_id = auth.uid()
+          WHERE p.user_id = auth.uid()::uuid
             AND p.company_id = product_groups.company_id
         )
-      )$$;
+      )$policy$;
     EXCEPTION WHEN undefined_table THEN NULL; END;
   END IF;
 END $$;

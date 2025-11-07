@@ -158,8 +158,8 @@ export function NexusProtectedHeader() {
     if (isCreatingCompany) {
       try {
         // Tenta criar diretamente
-        let newCompany: any = null;
-        let insertError: any = null;
+        let newCompany: Record<string, unknown> | null = null;
+        let insertError: unknown = null;
         const res = await supabase
           .from('companies')
           .insert({
@@ -172,8 +172,8 @@ export function NexusProtectedHeader() {
           })
           .select()
           .single();
-        newCompany = res.data;
-        insertError = (res as any).error || null;
+  newCompany = res.data as Record<string, unknown> | null;
+  insertError = (res as { error?: unknown }).error || null;
 
         // Fallback: se RLS bloquear, usa Edge Function (requer role adequada no servidor)
         if (insertError) {
@@ -181,18 +181,18 @@ export function NexusProtectedHeader() {
           if (msg.toLowerCase().includes('row-level security')) {
             try {
               const { invokeFunction } = await import('@/lib/functions');
-              const fx = await invokeFunction<{ ok: true; company: any }>('admin-create-company', {
+                const fx = await invokeFunction<{ ok?: boolean; data?: { company?: Record<string, unknown> } }>('admin-create-company', {
                 body: {
                   name: companyName,
                   cnpj_cpf: cnpjCpf,
                   phone: companyPhone,
                   email: companyEmail,
                   address,
-                  logo_url: logoDataUrl || null,
+                    logo_url: logoDataUrl || null,
                 },
               });
-              if ((fx as any).ok && (fx as any).data?.company) {
-                newCompany = (fx as any).data.company;
+                if (fx.ok && fx.data?.company) {
+                  newCompany = fx.data.company || null;
                 insertError = null;
               }
             } catch (e) {
@@ -225,9 +225,9 @@ export function NexusProtectedHeader() {
             const ext = file.name.split('.').pop() || 'png';
             const path = `${newCompany.id}/${Date.now()}.${ext}`;
             const { error: upErr } = await supabase.storage.from('logos').upload(path, file, { upsert: true, cacheControl: '3600' });
-            if (!upErr) {
-              const pub = supabase.storage.from('logos').getPublicUrl(path);
-              const publicUrl = (pub?.data as any)?.publicUrl as string | undefined;
+        if (!upErr) {
+      const pub = supabase.storage.from('logos').getPublicUrl(path);
+      const publicUrl = (pub as { data?: { publicUrl?: string } } | null)?.data?.publicUrl;
               if (publicUrl) {
                 try { await supabase.from('companies').update({ logo_url: publicUrl }).eq('id', newCompany.id); } catch {/* noop */}
                 setLogoDataUrl(publicUrl);
@@ -277,7 +277,7 @@ export function NexusProtectedHeader() {
           const raw = localStorage.getItem(StorageKeys.company);
           const existing = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
           const prevLogo = (existing && typeof existing === 'object' && 'logoDataUrl' in existing)
-            ? (existing as any).logoDataUrl as string | undefined
+            ? (existing as Record<string, unknown>).logoDataUrl as string | undefined
             : undefined;
           setJSON(StorageKeys.company, {
             ...existing,
@@ -349,13 +349,13 @@ export function NexusProtectedHeader() {
     try {
       setCompaniesLoading(true);
       // Buscar todas as empresas (sem paginação) para listar no modal
-      /* eslint-disable @typescript-eslint/no-explicit-any */
-      let query: any = supabase.from('companies').select('id,name').order('name');
+   
+  let query = supabase.from('companies').select('id,name').order('name');
       if (debouncedSearch.trim() !== '') {
         const s = debouncedSearch.trim();
         query = supabase.from('companies').select('id,name').ilike('name', `%${s}%`).order('name');
       }
-      /* eslint-enable @typescript-eslint/no-explicit-any */
+       
       const { data, error } = await query;
       if (error) throw error;
       const list = ((data as unknown) as Array<{id:string;name:string}>) || [];

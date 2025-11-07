@@ -35,12 +35,51 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
     const from = page * pageSize;
     const to = from + pageSize - 1;
     try {
+      // If the user's profile isn't linked to a company, try a graceful fallback:
+      // 1) Prefer loading by company_id when available (multi-tenant).
+      // 2) If company_id is missing, attempt to load clients where created_by == profile.user_id
+      //    (helps users who created clients before profiles had company_id).
+      // If that also fails (likely due to RLS), we show a clear message to ask an admin to run the backfill migration.
+      if (!profile?.company_id) {
+        // attempt fallback: load clients created by this user (best-effort)
+        if (!profile?.user_id) {
+          setClients([]);
+          setTotal(0);
+          setLoading(false);
+          return;
+        }
+        try {
+          const fallbackQuery: any = (supabase as any)
+            .from('clients')
+            .select('*', { count: 'exact' })
+            .eq('created_by', profile.user_id)
+            .order('name')
+            .range(from, to);
+          const fallbackRes = await fallbackQuery;
+          if (fallbackRes.error) {
+            // likely blocked by RLS; show empty list and surface a helpful message below (UI)
+            console.warn('Fallback load by created_by blocked or errored', fallbackRes.error);
+            setClients([]);
+            setTotal(0);
+            setLoading(false);
+            return;
+          }
+          setClients((fallbackRes.data || []) as Client[]);
+          setTotal(fallbackRes.count || 0);
+          setLoading(false);
+          return;
+        } catch (fbEx) {
+          console.warn('Fallback by created_by threw', fbEx);
+          setClients([]);
+          setTotal(0);
+          setLoading(false);
+          return;
+        }
+      }
       // pesquisa: busca por nome, documento (taxid), telefone e e-mail no servidor usando ilike
       let query: any = supabase.from('clients').select('*', { count: 'exact' }).order('name').range(from, to);
       // escopo por empresa (multi-tenant)
-      if (profile?.company_id) {
-        query = query.eq('company_id', profile.company_id);
-      }
+      query = query.eq('company_id', profile.company_id);
       const q = search.trim();
       let orExpr = '';
       // prepare esc e like fora do bloco para permitir retry sem referência ausente
@@ -176,7 +215,9 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
     if(!novo.name){ toast.error('Nome é obrigatório'); return; }
     // Monta somente colunas existentes na tabela (evita camelCase divergente)
     const addressFull = [novo.street, novo.number, novo.complement, novo.neighborhood, novo.city, novo.state, novo.zip].filter(Boolean).join(', ');
-    const payload:any = {
+  if (!profile?.company_id) { toast.error('Seu perfil não está vinculado a uma empresa. Contate o administrador.'); return; }
+
+  const payload:any = {
       name: novo.name,
       taxid: novo.taxid || null,
       phone: novo.phone || novo.phone_mobile || null,
@@ -200,14 +241,16 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
       purchase_frequency: novo.purchase_frequency || null,
       preferred_channel: novo.preferred_channel || null,
       custom_notes: novo.custom_notes || null,
-      company_id: profile?.company_id || null,
+      company_id: profile.company_id,
+      created_by: profile.user_id,
     };
   const { error } = await (supabase as any).from('clients').insert(payload).single();
     if (error) {
       const msg = (error.message||'').toLowerCase();
       if (msg.includes('schema cache') || msg.includes('column')) {
         // reenvia apenas colunas básicas do schema original
-        const basic = { name: payload.name, taxid: payload.taxid, phone: payload.phone, email: payload.email, address: payload.address };
+        // Mantém company_id/created_by para garantir visibilidade mesmo em schemas mais antigos
+        const basic = { name: payload.name, taxid: payload.taxid, phone: payload.phone, email: payload.email, address: payload.address, company_id: payload.company_id, created_by: payload.created_by };
         const retry = await (supabase as any).from('clients').insert(basic).single();
         if (retry.error) { toast.error('Erro ao criar (fallback): '+retry.error.message); return; }
         toast.message('Criado com campos básicos (rode migrations para campos avançados)');
@@ -241,6 +284,24 @@ export function ErpClients({ modalOnly }: ErpClientsProps) {
     <div className="space-y-4">
       {!modalOnly && (
         <div>
+          {/* If user's profile has no company, surface an actionable hint */}
+          {(!profile?.company_id) && (
+            <Card className="p-3 mb-2 border-amber-200 bg-amber-50">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium text-amber-800">Perfil sem empresa vinculada</div>
+                  <div className="text-xs text-amber-800">Seu perfil não possui um company_id. Clientes criados podem ficar invisíveis até o administrador executar o backfill.</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => {
+                    const sql = `-- Backfill clients.company_id from profiles.company_id when missing\nUPDATE public.clients c\nSET company_id = p.company_id\nFROM public.profiles p\nWHERE c.company_id IS NULL\n  AND p.company_id IS NOT NULL\n  AND ((c.created_by IS NOT NULL AND c.created_by = p.user_id) OR (c.created_by IS NOT NULL AND c.created_by = p.id));`;
+                    try { navigator.clipboard.writeText(sql); toast.success('SQL copiado para área de transferência. Cole no SQL Editor do Supabase.'); }
+                    catch { toast.error('Falha ao copiar SQL.'); }
+                  }}>Copiar SQL de correção</Button>
+                </div>
+              </div>
+            </Card>
+          )}
           <Card className="overflow-hidden">
             <div className="p-2 border-b bg-muted/5 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 w-full">
