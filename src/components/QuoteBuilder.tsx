@@ -194,7 +194,10 @@ export default function QuoteBuilder() {
   const [margins, setMargins] = useState<{ id: string; name: string; percent: number }[]>([]);
 
   const [clientId, setClientId] = useState<string>('');
-  const [showCredit, setShowCredit] = useState<boolean>(false);
+  const [openOrcamentos, setOpenOrcamentos] = useState(false);
+  const [openPedidos, setOpenPedidos] = useState(false);
+  const [openCancelados, setOpenCancelados] = useState(false);
+  const [openCredito, setOpenCredito] = useState(false);
   const [items, setItems] = useState<QuoteItemSnapshot[]>([]);
   // Campo de entrada do frete (pode ser valor fixo ou percentual ex: "5%")
   const [freight, setFreight] = useState('');
@@ -1717,39 +1720,13 @@ export default function QuoteBuilder() {
         <aside className="space-y-4">
           <Card className="card-elevated p-4">
             <h3 className="font-semibold mb-3">Registros</h3>
-            {/* Filtros rápidos: Orçamentos | Pedidos | Cancelados | Crédito Cliente */}
+            {/* Botões para abrir modais dedicadas */}
             <div className="flex flex-wrap gap-2 mb-3">
-              <Button size="sm" variant={qType==='ALL' && !qStatus ? 'default':'outline'} onClick={()=>{ setQType('ALL'); setQStatus(''); }}>Todos</Button>
-              <Button size="sm" variant={qType==='ORCAMENTO' && !qStatus ? 'default':'outline'} onClick={()=>{ setQType('ORCAMENTO'); setQStatus(''); }}>Orçamentos</Button>
-              <Button size="sm" variant={qType==='PEDIDO' && !qStatus ? 'default':'outline'} onClick={()=>{ setQType('PEDIDO'); setQStatus(''); }}>Pedidos</Button>
-              <Button size="sm" variant={qStatus==='Cancelado' ? 'default':'outline'} onClick={()=>{ setQStatus('Cancelado'); setQType('ALL'); }}>Cancelados</Button>
-              <Button size="sm" variant="secondary" disabled={!clientId} onClick={()=> setShowCredit(prev=> !prev)} title="Ver limite e saldo de crédito do cliente selecionado">Crédito Cliente</Button>
+              <Button size="sm" variant="outline" onClick={()=> setOpenOrcamentos(true)}>Orçamentos</Button>
+              <Button size="sm" variant="outline" onClick={()=> setOpenPedidos(true)}>Pedidos</Button>
+              <Button size="sm" variant="outline" onClick={()=> setOpenCancelados(true)}>Cancelados</Button>
+              <Button size="sm" variant="outline" disabled={!clientId} onClick={()=> setOpenCredito(true)}>Crédito Cliente</Button>
             </div>
-            {showCredit && (
-              <div className="mb-3 border rounded-md p-2 bg-muted/30 text-xs flex flex-col gap-1">
-                {(() => {
-                  const cli = clients.find(c=> c.id === clientId);
-                  if(!cli){ return <span>Selecione um cliente para ver crédito.</span>; }
-                  const limit = typeof cli.credit_limit === 'number' ? cli.credit_limit : null;
-                  // Considerar uso apenas de pedidos (PEDIDO) e orçamentos aprovados
-                  const used = quotes
-                    .filter(q => q.clientSnapshot?.id === clientId && (
-                      q.type === 'PEDIDO' || ['Aprovado','Faturado','Pago'].includes(q.status)
-                    ))
-                    .reduce((s, q) => s + (Number(q.total)||0), 0);
-                  if(limit === null) return <span>Cliente sem limite configurado.</span>;
-                  const available = limit - used;
-                  return (
-                    <>
-                      <div><strong>Limite:</strong> {currencyBRL(limit)}</div>
-                      <div><strong>Utilizado:</strong> {currencyBRL(used)}</div>
-                      <div><strong>Disponível:</strong> {currencyBRL(available)}</div>
-                      {available < 0 && <div className="text-red-600">Excedido em {currencyBRL(Math.abs(available))}</div>}
-                    </>
-                  );
-                })()}
-              </div>
-            )}
             {/* Barra simples: Nome + ícone de buscas avançadas */}
             <div className="mb-3 flex items-center gap-2">
               <Input placeholder="Nome do cliente" value={qSearch} onChange={e=>setQSearch(e.target.value)} className="h-8" />
@@ -2386,6 +2363,140 @@ function SearchProductModal({
             >
               <div className="flex gap-3">
                 {/* Imagem */}
+
+        {/* Modal Orçamentos */}
+        <Dialog open={openOrcamentos} onOpenChange={setOpenOrcamentos}>
+          <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+            <DialogHeader className="p-4 pb-2"><DialogTitle>Orçamentos</DialogTitle></DialogHeader>
+            <div className="px-4 pb-4 space-y-2 overflow-y-auto flex-1">
+              <div className="text-xs text-muted-foreground">Total: {quotes.filter(q=> q.type==='ORCAMENTO').length}</div>
+              <div className="border rounded overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/60 text-xs uppercase tracking-wide">
+                    <tr>
+                      <th className="text-left px-2 py-1">Número</th>
+                      <th className="text-left px-2 py-1">Cliente</th>
+                      <th className="text-left px-2 py-1">Status</th>
+                      <th className="text-right px-2 py-1">Total</th>
+                      <th className="text-center px-2 py-1">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quotes.filter(q=> q.type==='ORCAMENTO').map(q => (
+                      <tr key={q.id} className="border-t hover:bg-accent/30">
+                        <td className="px-2 py-1">{q.number}</td>
+                        <td className="px-2 py-1">{q.clientSnapshot?.name || '-'}</td>
+                        <td className="px-2 py-1 text-xs">{q.status}</td>
+                        <td className="px-2 py-1 text-right">{currencyBRL(q.total)}</td>
+                        <td className="px-2 py-1 text-center"><Button size="sm" variant="outline" onClick={()=>{ loadQuoteForEdit(q); setOpenOrcamentos(false); }}>Editar</Button></td>
+                      </tr>
+                    ))}
+                    {quotes.filter(q=> q.type==='ORCAMENTO').length===0 && <tr><td colSpan={5} className="text-center text-xs text-muted-foreground py-6">Nenhum orçamento</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <DialogFooter className="p-4 pt-2 border-t bg-background sticky bottom-0"><Button size="sm" variant="outline" onClick={()=> setOpenOrcamentos(false)}>Fechar</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal Pedidos */}
+        <Dialog open={openPedidos} onOpenChange={setOpenPedidos}>
+          <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+            <DialogHeader className="p-4 pb-2"><DialogTitle>Pedidos</DialogTitle></DialogHeader>
+            <div className="px-4 pb-4 space-y-2 overflow-y-auto flex-1">
+              <div className="text-xs text-muted-foreground">Total: {quotes.filter(q=> q.type==='PEDIDO').length}</div>
+              <div className="border rounded overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/60 text-xs uppercase tracking-wide">
+                    <tr>
+                      <th className="text-left px-2 py-1">Número</th>
+                      <th className="text-left px-2 py-1">Cliente</th>
+                      <th className="text-left px-2 py-1">Status</th>
+                      <th className="text-right px-2 py-1">Total</th>
+                      <th className="text-center px-2 py-1">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quotes.filter(q=> q.type==='PEDIDO').map(q => (
+                      <tr key={q.id} className="border-t hover:bg-accent/30">
+                        <td className="px-2 py-1">{collapseDoublePed(q.number)}</td>
+                        <td className="px-2 py-1">{q.clientSnapshot?.name || '-'}</td>
+                        <td className="px-2 py-1 text-xs">{q.status}</td>
+                        <td className="px-2 py-1 text-right">{currencyBRL(q.total)}</td>
+                        <td className="px-2 py-1 text-center"><Button size="sm" variant="outline" onClick={()=>{ loadQuoteForEdit(q); setOpenPedidos(false); }}>Editar</Button></td>
+                      </tr>
+                    ))}
+                    {quotes.filter(q=> q.type==='PEDIDO').length===0 && <tr><td colSpan={5} className="text-center text-xs text-muted-foreground py-6">Nenhum pedido</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <DialogFooter className="p-4 pt-2 border-t bg-background sticky bottom-0"><Button size="sm" variant="outline" onClick={()=> setOpenPedidos(false)}>Fechar</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal Cancelados */}
+        <Dialog open={openCancelados} onOpenChange={setOpenCancelados}>
+          <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+            <DialogHeader className="p-4 pb-2"><DialogTitle>Cancelados</DialogTitle></DialogHeader>
+            <div className="px-4 pb-4 space-y-2 overflow-y-auto flex-1">
+              <div className="text-xs text-muted-foreground">Total: {quotes.filter(q=> q.status==='Cancelado').length}</div>
+              <div className="border rounded overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/60 text-xs uppercase tracking-wide">
+                    <tr>
+                      <th className="text-left px-2 py-1">Número</th>
+                      <th className="text-left px-2 py-1">Tipo</th>
+                      <th className="text-left px-2 py-1">Cliente</th>
+                      <th className="text-right px-2 py-1">Total</th>
+                      <th className="text-center px-2 py-1">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quotes.filter(q=> q.status==='Cancelado').map(q => (
+                      <tr key={q.id} className="border-t hover:bg-accent/30">
+                        <td className="px-2 py-1">{q.type==='PEDIDO'? collapseDoublePed(q.number): q.number}</td>
+                        <td className="px-2 py-1 text-xs">{q.type}</td>
+                        <td className="px-2 py-1">{q.clientSnapshot?.name || '-'}</td>
+                        <td className="px-2 py-1 text-right">{currencyBRL(q.total)}</td>
+                        <td className="px-2 py-1 text-center"><Button size="sm" variant="outline" onClick={()=>{ loadQuoteForEdit(q); setOpenCancelados(false); }}>Editar</Button></td>
+                      </tr>
+                    ))}
+                    {quotes.filter(q=> q.status==='Cancelado').length===0 && <tr><td colSpan={5} className="text-center text-xs text-muted-foreground py-6">Nenhum registro cancelado</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <DialogFooter className="p-4 pt-2 border-t bg-background sticky bottom-0"><Button size="sm" variant="outline" onClick={()=> setOpenCancelados(false)}>Fechar</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal Crédito Cliente */}
+        <Dialog open={openCredito} onOpenChange={setOpenCredito}>
+          <DialogContent className="sm:max-w-md max-h-[70vh] flex flex-col p-0 overflow-hidden">
+            <DialogHeader className="p-4 pb-2"><DialogTitle>Crédito do Cliente</DialogTitle></DialogHeader>
+            <div className="px-4 pb-4 space-y-3 overflow-y-auto flex-1 text-sm">
+              {(() => {
+                const cli = clients.find(c=> c.id === clientId);
+                if(!cli) return <div>Selecione um cliente antes.</div>;
+                const limit = typeof cli.credit_limit === 'number' ? cli.credit_limit : null;
+                const used = quotes.filter(q => q.clientSnapshot?.id === clientId && (q.type === 'PEDIDO' || ['Aprovado','Faturado','Pago'].includes(q.status))).reduce((s,q)=> s + (Number(q.total)||0),0);
+                if(limit===null) return <div>Cliente sem limite configurado.</div>;
+                const avail = limit - used;
+                return (
+                  <div className="space-y-1">
+                    <div><strong>Limite:</strong> {currencyBRL(limit)}</div>
+                    <div><strong>Utilizado:</strong> {currencyBRL(used)}</div>
+                    <div><strong>Disponível:</strong> {currencyBRL(avail)}</div>
+                    {avail < 0 && <div className="text-red-600">Excedido em {currencyBRL(Math.abs(avail))}</div>}
+                  </div>
+                );
+              })()}
+            </div>
+            <DialogFooter className="p-4 pt-2 border-t bg-background sticky bottom-0"><Button size="sm" variant="outline" onClick={()=> setOpenCredito(false)}>Fechar</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
                 {p.imageDataUrl ? (
                   <img
                     src={p.imageDataUrl}
