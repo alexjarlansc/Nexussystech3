@@ -194,6 +194,7 @@ export default function QuoteBuilder() {
   const [margins, setMargins] = useState<{ id: string; name: string; percent: number }[]>([]);
 
   const [clientId, setClientId] = useState<string>('');
+  const [showCredit, setShowCredit] = useState<boolean>(false);
   const [items, setItems] = useState<QuoteItemSnapshot[]>([]);
   // Campo de entrada do frete (pode ser valor fixo ou percentual ex: "5%")
   const [freight, setFreight] = useState('');
@@ -1716,6 +1717,39 @@ export default function QuoteBuilder() {
         <aside className="space-y-4">
           <Card className="card-elevated p-4">
             <h3 className="font-semibold mb-3">Registros</h3>
+            {/* Filtros rápidos: Orçamentos | Pedidos | Cancelados | Crédito Cliente */}
+            <div className="flex flex-wrap gap-2 mb-3">
+              <Button size="sm" variant={qType==='ALL' && !qStatus ? 'default':'outline'} onClick={()=>{ setQType('ALL'); setQStatus(''); }}>Todos</Button>
+              <Button size="sm" variant={qType==='ORCAMENTO' && !qStatus ? 'default':'outline'} onClick={()=>{ setQType('ORCAMENTO'); setQStatus(''); }}>Orçamentos</Button>
+              <Button size="sm" variant={qType==='PEDIDO' && !qStatus ? 'default':'outline'} onClick={()=>{ setQType('PEDIDO'); setQStatus(''); }}>Pedidos</Button>
+              <Button size="sm" variant={qStatus==='Cancelado' ? 'default':'outline'} onClick={()=>{ setQStatus('Cancelado'); setQType('ALL'); }}>Cancelados</Button>
+              <Button size="sm" variant="secondary" disabled={!clientId} onClick={()=> setShowCredit(prev=> !prev)} title="Ver limite e saldo de crédito do cliente selecionado">Crédito Cliente</Button>
+            </div>
+            {showCredit && (
+              <div className="mb-3 border rounded-md p-2 bg-muted/30 text-xs flex flex-col gap-1">
+                {(() => {
+                  const cli = clients.find(c=> c.id === clientId);
+                  if(!cli){ return <span>Selecione um cliente para ver crédito.</span>; }
+                  const limit = typeof cli.credit_limit === 'number' ? cli.credit_limit : null;
+                  // Considerar uso apenas de pedidos (PEDIDO) e orçamentos aprovados
+                  const used = quotes
+                    .filter(q => q.clientSnapshot?.id === clientId && (
+                      q.type === 'PEDIDO' || ['Aprovado','Faturado','Pago'].includes(q.status)
+                    ))
+                    .reduce((s, q) => s + (Number(q.total)||0), 0);
+                  if(limit === null) return <span>Cliente sem limite configurado.</span>;
+                  const available = limit - used;
+                  return (
+                    <>
+                      <div><strong>Limite:</strong> {currencyBRL(limit)}</div>
+                      <div><strong>Utilizado:</strong> {currencyBRL(used)}</div>
+                      <div><strong>Disponível:</strong> {currencyBRL(available)}</div>
+                      {available < 0 && <div className="text-red-600">Excedido em {currencyBRL(Math.abs(available))}</div>}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
             {/* Barra simples: Nome + ícone de buscas avançadas */}
             <div className="mb-3 flex items-center gap-2">
               <Input placeholder="Nome do cliente" value={qSearch} onChange={e=>setQSearch(e.target.value)} className="h-8" />
